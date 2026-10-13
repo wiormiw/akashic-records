@@ -141,6 +141,17 @@ not change**, so a data-only dump of the current database restores into the new 
 Services receive their dependencies as arguments: a plain function or a factory taking `{ db,
 authz, ... }`. No service imports InferDI, so swapping the container later touches one file.
 
+Agreed for the modules (2026-10-13), keeping dependency injection at the composition boundary:
+
+- Each service is a singleton registered in the container. `start()` resolves every service once,
+  then builds each module's routes with a factory that takes the resolved services
+  (`createRealmRoutes({ realms, ... })`). Routes close over their services; no route looks
+  anything up in the container per request.
+- The request scope carries only what is per request: id, caller, signal. Routes read them from
+  `c.var`, and pass the caller and signal to services as arguments.
+- A service's `db` is an `Executor` (the pool or a transaction), so a test can hand it a
+  transaction that is rolled back afterwards, and `inTransaction` nests as a savepoint.
+
 ### Abort signals
 
 One root `AbortController` is a singleton. Each request's signal is
@@ -207,7 +218,8 @@ route calls `c.json` directly.
 ## Transactions, outbox and audit
 
 - `inTransaction(db, async (tx) => ...)` in `db` wraps `db.transaction`. Returning an `err`
-  rolls back and hands the `err` back, as `uow.run` does today.
+  rolls back and hands the `err` back, as `uow.run` does today. It accepts the pool or a
+  transaction; inside a transaction it opens a savepoint.
 - `publish(tx, events)` and `audit(tx, entry)` accept only the transaction type, so writing an
   event or an audit entry outside a transaction is a type error.
 - Every membership change still publishes `realm.member_changed`, or OpenFGA drifts from Postgres.
@@ -215,13 +227,49 @@ route calls `c.json` directly.
   `packages/broker`. Handlers stay idempotent.
 - Realm-scoped actions still check that an id in the body or path belongs to the realm in the URL.
 
+## Outbox policy
+
+The outbox is for one situation: **the database changed, and losing the side effect that should
+follow would be a bug.** It is not the default way to run background work.
+
+| Use | Why |
+| --- | --- |
+| `realm.member_changed`, `realm.created`, `realm.posting_created` → OpenFGA | A lost event leaves permissions drifting from Postgres |
+| `mail.requested` → Resend | A lost verification or reset email locks a person out |
+
+Not through the outbox: work with no database change (a plain queue or an in-process task), and
+side effects that may be lost (analytics, cache warming). Incoming third-party webhooks, when they
+come, are stored first and processed after (an inbox), with periodic reconciliation for anything
+they miss.
+
+Delivery is at least once, so every consumer is idempotent:
+
+- Handlers write the complete answer, never a delta (the authz sync already does).
+- Calls to a third party carry the outbox event id as their idempotency key (Resend's
+  `idempotencyKey`), so a redelivery is not a second email.
+- No inbox table until a handler exists that can't be made idempotent either way.
+
+Published rows are deleted after `OUTBOX_RETENTION_DAYS` (default 7) by the dispatcher, so the
+table and its metrics stay small. Dead rows are kept until a person replays or removes them.
+
+### Mail through the outbox
+
+better-auth's `sendVerificationEmail` and `sendResetPassword` publish `mail.requested` (recipient,
+subject, html, link) instead of calling Resend. A mail consumer on its own queue
+(`akashic.mail`) sends it with the event id as the idempotency key; a Resend outage becomes
+retries, then a dead event for a person, instead of a lost email. better-auth owns the
+transaction that creates the user, so the event is written in its own transaction right after:
+a crash between the two loses that one email, and the person can ask for another. `/mail-status`
+keeps reporting the last delivery failure, now from the consumer.
+
 ## Testing
 
 - **Pure rules** (governance thresholds, ticket parsing, posting fit, retention agreement): plain
   unit tests.
-- **Services and routes:** against real Postgres. Each test builds the container with InferDI's
-  typed overrides: `db` becomes a transaction that's rolled back afterwards. Tests are isolated
-  and may run in parallel. Routes are exercised with `app.request(...)`.
+- **Services and routes:** against real Postgres. A test helper opens a transaction, builds the
+  services under test with it as their `db`, and rolls it back afterwards. Tests are isolated and
+  may run in parallel. Routes are exercised with `app.request(...)` on an app built from those
+  services.
 - **Third parties** (OpenFGA, RabbitMQ, S3, mail, embedder) are overridden with fakes in service
   and route tests. Their own integration tests hit the real service and skip when it isn't
   running.
