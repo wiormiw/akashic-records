@@ -1,6 +1,6 @@
 # Akashic Records monorepo: design
 
-Date: 2026-10-13. Status: awaiting review.
+Date: 2026-10-13. Status: approved.
 
 ## Why
 
@@ -294,8 +294,23 @@ already running:
   anything that records spans, and is the **last** thing the container disposes, so spans recorded during shutdown are flushed. It is not
   started at module top level.
 - Node auto-instrumentation is not used: on Bun it is partial and nothing instruments `bun:sql`.
-  Manual spans carry over: OpenFGA calls, the outbox dispatcher, and RabbitMQ consumers continuing
-  the `traceparent` header.
+  Custom spans cover what it would have, through one helper, `traced(name, attributes, fn)` in
+  `packages/lib`. It starts an active span, records an exception and sets error status when `fn`
+  throws, marks an `err` Result as an error with its code as an attribute, and always ends the
+  span. Spans are created for:
+  - each transaction (`db.transaction`), with the module and operation as attributes;
+  - OpenFGA checks, writes and deletes (`authz.check`, `authz.write`);
+  - the outbox: claiming a batch, publishing one event (a `PRODUCER` span that injects
+    `traceparent` into the message headers), and marking it published or failed;
+  - RabbitMQ consumption: a `CONSUMER` span continuing the incoming `traceparent`;
+  - outgoing calls: mail send, storage put and delete, embedder requests;
+  - service operations that span several steps (approving a proposal, carrying a recall), so a
+    trace shows the business step and not only the queries under it.
+- Span names and attributes follow OpenTelemetry semantic conventions where one exists
+  (`messaging.*`, `db.*`, `http.*`); otherwise `akashic.*` (for example `akashic.realm.id`).
+  Personal data (emails, message bodies, names) never goes into an attribute.
+- Metrics alongside: outbox backlog and dead count, consumer retries and parks, and HTTP
+  request duration from `@hono/otel`.
 - Logs are pino JSON on stdout with the trace id attached, for whatever collects them.
 - The exporter endpoint is configuration: Grafana Cloud's OTLP endpoint in production, a local
   `grafana/otel-lgtm` container in development.
