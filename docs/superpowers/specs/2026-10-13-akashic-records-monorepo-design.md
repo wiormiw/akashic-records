@@ -39,7 +39,7 @@ typecheck; and either app can be deployed without the other.
 | --- | --- |
 | HTTP | Hono 4 on Bun (`hono/bun`, including WebSockets) |
 | Validation | Valibot 1, through `@hono/standard-validator` |
-| ORM | Drizzle **1.0 beta**: `drizzle-orm/valibot` for row schemas, `defineRelations` for relations. Beta risk accepted; upgrade as it moves. |
+| ORM | Drizzle **1.0** (pinned to `1.0.0-rc.4`, newer than the last beta): `drizzle-orm/valibot` for row schemas, `defineRelations` for relations. Pre-release risk accepted; upgrade as it moves. |
 | Data access | Services call Drizzle directly |
 | Composition | InferDI (`@inferdi/inferdi`, `@inferdi/hono`) |
 | Repo | New repository with a clean history; old repositories frozen as references |
@@ -70,10 +70,11 @@ akashic-records/
       Dockerfile
     web/                    SvelteKit, moved from akashic_records_fe
   packages/
-    db/          tables, defineRelations, row schemas, createDb(), migrations, drizzle config
+    db/          tables, defineRelations, row schemas, createDb(), migrations, drizzle config,
+                 inTransaction, and the outbox and audit writers
     contracts/   Valibot request and response schemas, and the presenters that fill them
-    lib/         Result, errors and codes, enums, time, logging, abort and lifecycle helpers,
-                 outbox and audit writers
+    lib/         Result, errors and codes, enums, time, logging, config, abort and lifecycle
+                 helpers, tracing and telemetry
     authz/       createAuthorizer() and the OpenFGA model
     broker/      createBroker(), the outbox dispatcher, the event consumer
   docs/
@@ -205,7 +206,7 @@ route calls `c.json` directly.
 
 ## Transactions, outbox and audit
 
-- `inTransaction(db, async (tx) => ...)` in `lib` wraps `db.transaction`. Returning an `err`
+- `inTransaction(db, async (tx) => ...)` in `db` wraps `db.transaction`. Returning an `err`
   rolls back and hands the `err` back, as `uow.run` does today.
 - `publish(tx, events)` and `audit(tx, entry)` accept only the transaction type, so writing an
   event or an audit entry outside a transaction is a type error.
@@ -340,7 +341,7 @@ The same image runs on the VPS and on Kubernetes with several pods. What makes t
 | Consumers | Competing consumers on one queue; handlers are idempotent |
 | Migrations | A Job before the rollout, never on pod start |
 | Shutdown | A `preStop` sleep of a few seconds so endpoints are removed, then our SIGTERM sequence; `terminationGracePeriodSeconds` exceeds drain plus hard-exit time |
-| Probes | `/health` for liveness, `/ready` for readiness, 503 while draining |
+| Probes | `/livez` for liveness, `/readyz` for readiness, 503 while draining |
 | Config | ConfigMap and Secret, the Secret synced from the secret manager by External Secrets |
 | Database connections | Pods times pool size stays under `max_connections`; PgBouncer in front of Postgres |
 | Scaling | API on CPU or request rate; `apps/worker` split out and scaled on queue depth (KEDA) |
@@ -361,7 +362,7 @@ Each step is its own commit, with its tests, and leaves `bun run check` green.
 4. `packages/contracts`: shared building blocks (timestamps, ids, pagination, problem shape).
    Module views arrive with their modules.
 5. `apps/api` skeleton: container, `main.ts` lifecycle, HTTP middleware, better-auth, meta routes
-   (health, readiness, mail status), `reply` and `respond`.
+   (`/livez`, `/readyz`, mail status), `reply` and `respond`.
 6. `packages/authz`: authorizer and model, plus the push and backfill scripts.
 7. `packages/broker`: broker, outbox writer and dispatcher, consumer, the replay script.
 8. Modules, one commit each: realm, events, postings, comments, governance, room (including the
@@ -385,7 +386,7 @@ empty `wiormiw/akashic-records` repository on GitHub.
 
 ## Risks
 
-- **Drizzle 1.0 beta** may change APIs between betas. Pin the exact version, upgrade on purpose.
+- **Drizzle 1.0 release candidate** may still change APIs. Pin the exact version, upgrade on purpose.
 - **InferDI** is young (first release May 2026, now on major version 6). Pin it. Only
   `container.ts` imports it, which keeps a replacement cheap.
 - **Integration tests need Docker.** Service and route tests run against real Postgres, so they
