@@ -131,7 +131,7 @@ not change**, so a data-only dump of the current database restores into the new 
 
 `apps/api/src/container.ts` registers everything with its lifetime:
 
-- **Singletons:** telemetry (created first, disposed last), config, logger, the root `AbortController`, db, redis, broker, authorizer,
+- **Singletons:** config, telemetry (right after config, disposed last), logger, the root `AbortController`, db, redis, broker, authorizer,
   mailer, storage, embedder, and the services.
 - **Request scope** (through `@inferdi/hono`, at `c.var.di`): request id, the session user, and
   the request's abort signal. A service that needs these can only be resolved once the scope
@@ -149,7 +149,7 @@ signal; Postgres statement timeouts stay the backstop.
 
 ### Startup
 
-Order: config, logger, db (ping), redis, broker (connect, declare topology), authorizer, services,
+Order: config, telemetry, logger, db (ping), redis, broker (connect, declare topology), authorizer, services,
 outbox dispatcher, consumers, HTTP server. InferDI's async initialisation runs these as the graph is
 built. If any step fails, everything already created is disposed and the process exits non-zero.
 
@@ -290,8 +290,8 @@ already running:
 ## Telemetry
 
 - `@hono/otel`'s `httpInstrumentationMiddleware` creates a span per request.
-- The OpenTelemetry SDK (traces and metrics over OTLP) is the **first** singleton the container
-  creates and the **last** it disposes, so spans recorded during shutdown are flushed. It is not
+- The OpenTelemetry SDK (traces and metrics over OTLP) is created right after config, before
+  anything that records spans, and is the **last** thing the container disposes, so spans recorded during shutdown are flushed. It is not
   started at module top level.
 - Node auto-instrumentation is not used: on Bun it is partial and nothing instruments `bun:sql`.
   Manual spans carry over: OpenFGA calls, the outbox dispatcher, and RabbitMQ consumers continuing
