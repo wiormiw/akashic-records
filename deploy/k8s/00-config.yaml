@@ -1,0 +1,94 @@
+# Namespace, configuration, and the shape of the secret.
+#
+# Applied first, and numbered so `kubectl apply -f deploy/k8s/` orders them without anybody having
+# to remember. Kubernetes does not order a directory by dependency, only by filename.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: akashic
+
+---
+# Deployment variance that is not secret.
+#
+# The split follows the rule the codebase already states: this holds pool sizes, timeouts and
+# addresses, and nothing that decides product behaviour. Page-size caps and verdict weights are
+# constants next to the code that reads them, deliberately — an algorithm configurable per
+# environment cannot be reproduced from the repository.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+  namespace: akashic
+data:
+  NODE_ENV: production
+  PORT: "3000"
+  LOG_LEVEL: info
+
+  # Service DNS, not addresses. A pod that moves keeps its name.
+  FGA_API_URL: http://openfga.akashic.svc.cluster.local:8080
+  # 4318, OTLP over HTTP: the exporters speak HTTP and append /v1/traces themselves. 4317 is the
+  # gRPC port, and HTTP sent there fails every export without failing the pod.
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.akashic.svc.cluster.local:4318
+  OTEL_SERVICE_NAME: akashic-api
+
+  # AI_TIMEOUT_MS must stay inside REQUEST_TIMEOUT_MS; the API refuses to start otherwise.
+  AI_TIMEOUT_MS: "8000"
+  REQUEST_TIMEOUT_MS: "15000"
+
+  # Comma-separated, not a JSON array: a bracketed value is one origin that matches nothing, and
+  # sign-in fails as a CORS refusal.
+  CORS_ORIGINS: https://akashic.example
+
+  BETTER_AUTH_URL: https://api.akashic.example
+
+  # Behind an ingress, so the client address comes from a forwarded header. Left false, the rate
+  # limiter buckets every request in the cluster under the ingress controller's own address.
+  TRUST_PROXY: "true"
+
+  # Both replicas dispatch. Claiming is a guarded UPDATE, so two dispatchers cannot take the same
+  # message, and one pod restarting does not pause delivery. Set this false on all but one only if
+  # the outbox ever becomes hot enough to matter.
+  OUTBOX_DISPATCHER_ENABLED: "true"
+
+---
+# The shape of the secret, with no secrets in it.
+#
+# Checked in as documentation: it names every key the API refuses to start without, so a missing
+# one is found by reading this file rather than by a pod crash-looping with a message about
+# environment validation.
+#
+# Fill it from a real secret manager. `stringData` with placeholder values would be worse than
+# nothing — placeholders get deployed.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-secrets
+  namespace: akashic
+type: Opaque
+stringData:
+  # postgres://user:password@host:5432/akashic?sslmode=require
+  DATABASE_URL: ""
+
+  # redis://host:6379 — the room relay and the rate limiter both need it. Without it rooms still
+  # work within one pod and stop crossing between them, silently.
+  REDIS_URL: ""
+
+  # At least 32 characters. Rotating it invalidates every session, which is the point.
+  BETTER_AUTH_SECRET: ""
+
+  RESEND_API_KEY: ""
+
+  # Object storage for image uploads, with S3_BUCKET/S3_ENDPOINT/S3_PUBLIC_URL. Empty keys fall back
+  # to whatever Bun.S3Client finds in the environment; no bucket means uploads are refused.
+  S3_ACCESS_KEY_ID: ""
+  S3_SECRET_ACCESS_KEY: ""
+  MAIL_FROM: ""
+
+  # From `bun run authz:push`, which prints both. Leaving FGA_MODEL_ID empty pins nothing and uses
+  # the latest model, which is right while the model is still moving.
+  FGA_STORE_ID: ""
+  FGA_MODEL_ID: ""
+
+  # The embedding provider for realm fit. Empty skips the fit check.
+  AI_API_KEY: ""

@@ -1,0 +1,66 @@
+# The one place telemetry enters. The app knows only this address; where the data goes after
+# is the Collector's business, so swapping a backend never touches the app.
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+  # Pino JSON that `bun run dev` tees into each repo's logs/. Container stdout is not read here:
+  # the Collector runs unprivileged and /var/lib/docker/containers is root-only.
+  filelog:
+    include: [/var/log/akashic/*.log, /var/log/animerec/*.log]
+    start_at: end
+    operators:
+      # Anything that isn't pino JSON (a crash trace, say) still ships, just unparsed.
+      - type: json_parser
+        if: body matches "^\\s*\\{"
+        on_error: send_quiet
+        timestamp: { parse_from: attributes.time, layout_type: gotime, layout: "2006-01-02T15:04:05.999Z07:00" }
+        severity: { parse_from: attributes.level }
+      - type: trace_parser
+        trace_id: { parse_from: attributes.trace_id }
+        span_id: { parse_from: attributes.span_id }
+      - type: move
+        from: attributes.msg
+        to: body
+        if: attributes.msg != nil
+      # Pino's `service` base field names the app, so each API's lines are labelled as its own.
+      - type: move
+        from: attributes.service
+        to: resource["service.name"]
+        if: attributes.service != nil
+
+processors:
+  batch: {}
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls: { insecure: true }
+  # Loki 3 takes OTLP natively, so trace ids stay structured rather than parsed out of text.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  # Pushed, not scraped: a scrape would add Prometheus's own up/scrape_* series for the Collector,
+  # and Prometheus should hold nothing but what the apps sent.
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion: { enabled: true }
+
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheusremotewrite]
+    logs:
+      receivers: [otlp, filelog]
+      processors: [batch]
+      exporters: [otlphttp/loki]

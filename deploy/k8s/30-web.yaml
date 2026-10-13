@@ -1,0 +1,137 @@
+# The web front end.
+#
+# Stateless in a way the API is not: it holds no sockets, no pool and no dispatcher, so replicas
+# need nothing coordinating them. Two for availability rather than for load.
+#
+# It talks to the API through its own BFF route, so the browser only ever reaches this origin and
+# the session cookie is never a third-party cookie. That is why `API_BASE` below is a cluster
+# address and not a public one — the hop is server to server, inside the namespace.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: akashic
+  labels:
+    app: web
+spec:
+  replicas: 2
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  selector:
+    matchLabels:
+      app: web
+
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: web
+
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: web
+          # Built from the front end's own repository and its own workflow. The two deploy
+          # together; they are not tested together, and pretending otherwise in CI would report
+          # green for work it never did.
+          image: ghcr.io/wiormiw/akashic-web:latest
+
+          ports:
+            - name: http
+              containerPort: 3000
+
+          env:
+            - name: PORT
+              value: "3000"
+
+            # Where the BFF forwards to. In-cluster, so this never appears in a browser and needs
+            # no TLS between the two hops.
+            #
+            # Note this is a RUNTIME variable and `PUBLIC_API_BASE` is a BUILD one: SvelteKit
+            # inlines PUBLIC_ values into the client bundle, so anything a browser needs has to be
+            # decided when the image is built. Confusing the two is invisible until the browser
+            # calls the wrong origin and CORS refuses it.
+            - name: API_BASE
+              value: http://api.akashic.svc.cluster.local
+
+            - name: ORIGIN
+              value: https://akashic.example
+
+          # The root page: server-rendered, reads no database, and exercises the same path a
+          # reader hits. The node adapter serves no dedicated health route, and adding one would
+          # mean a route that exists only to be probed.
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: akashic
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: akashic
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: web

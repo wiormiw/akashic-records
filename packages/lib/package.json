@@ -1,0 +1,9 @@
+{
+  "name": "@akashic/lib",
+  "private": true,
+  "type": "module",
+  "exports": {},
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

@@ -1,0 +1,191 @@
+# The log agent: one Collector per node, reading this namespace's pod logs off the node's disk.
+#
+# The API writes pino JSON to stdout and knows nothing about where logs go; the kubelet already
+# writes every container's stdout to /var/log/pods. A DaemonSet reads those files rather than a
+# sidecar per pod because a sidecar only helps a process that logs to a file inside its container,
+# and this one doesn't. It is the same arrangement as `bun run dev` teeing into ./logs locally.
+#
+# The agent forwards to the in-cluster Collector over OTLP, like the API's traces and metrics, so
+# only that Collector knows the log backend. Swapping Loki for something else touches one config.
+#
+# Assumes containerd or CRI-O, where /var/log/pods holds the files themselves. Under Docker
+# Engine they are symlinks into /var/lib/docker/containers, which would also need mounting.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: log-agent
+  namespace: akashic
+# No token: the agent reads files and pushes OTLP, and never calls the Kubernetes API. Pod and
+# namespace names come from the log file's path instead.
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-agent-config
+  namespace: akashic
+data:
+  config.yaml: |
+    receivers:
+      filelog:
+        # This namespace only, and never the agent's own output: shipping its own logs would
+        # feed every error it reports back into itself.
+        include: [/var/log/pods/akashic_*/*/*.log]
+        exclude: [/var/log/pods/akashic_log-agent-*/*/*.log]
+        # From the start on first sight of a file, so a pod's boot lines aren't lost; the
+        # checkpoint below stops a restarted agent from sending everything again.
+        start_at: beginning
+        include_file_path: true
+        storage: file_storage
+        operators:
+          # Unwraps the CRI line format, rejoins lines the runtime split, and sets the
+          # k8s.namespace.name, k8s.pod.name and k8s.container.name resource attributes from the
+          # path.
+          - type: container
+            id: container
+          # Anything that isn't pino JSON (a crash trace, say) still ships, just unparsed.
+          - type: json_parser
+            if: body matches "^\\s*\\{"
+            on_error: send_quiet
+            timestamp: { parse_from: attributes.time, layout_type: gotime, layout: "2006-01-02T15:04:05.999Z07:00" }
+            severity: { parse_from: attributes.level }
+          - type: trace_parser
+            trace_id: { parse_from: attributes.trace_id }
+            span_id: { parse_from: attributes.span_id }
+          - type: move
+            from: attributes.msg
+            to: body
+            if: attributes.msg != nil
+          # pino's `service` is OTEL_SERVICE_NAME, so logs and traces share one service name.
+          - type: move
+            from: attributes.service
+            to: resource["service.name"]
+            if: attributes.service != nil
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch: {}
+
+    exporters:
+      otlp:
+        endpoint: otel-collector.akashic.svc.cluster.local:4317
+        tls: { insecure: true }
+        # Retry, and queue on disk rather than in memory, so a Collector restart delays logs
+        # instead of dropping them.
+        sending_queue: { storage: file_storage }
+
+    extensions:
+      health_check: { endpoint: 0.0.0.0:13133 }
+      file_storage:
+        directory: /var/lib/otelcol
+        create_directory: true
+
+    service:
+      extensions: [health_check, file_storage]
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [memory_limiter, batch]
+          exporters: [otlp]
+      telemetry:
+        logs: { encoding: json }
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: log-agent
+  namespace: akashic
+  labels:
+    app: log-agent
+spec:
+  selector:
+    matchLabels:
+      app: log-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: log-agent
+    spec:
+      serviceAccountName: log-agent
+      automountServiceAccountToken: false
+      # A node without an agent loses its pods' logs for good once the kubelet rotates them, so
+      # this runs everywhere the API could land, tainted nodes included.
+      tolerations:
+        - operator: Exists
+      priorityClassName: system-node-critical
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: agent
+          image: otel/opentelemetry-collector-contrib:0.115.1
+          args: ["--config=/etc/otelcol/config.yaml"]
+
+          ports:
+            - name: health
+              containerPort: 13133
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 15
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # memory_limiter above keeps it under this; the limit is the backstop.
+              memory: 256Mi
+
+          # Root, because the kubelet writes pod logs root-only (0640). Nothing else is granted:
+          # every mount is read-only except the checkpoint directory.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["DAC_READ_SEARCH"]
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+            - name: pod-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: checkpoints
+              mountPath: /var/lib/otelcol
+
+      volumes:
+        - name: config
+          configMap:
+            name: log-agent-config
+        - name: pod-logs
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        # On the node, not in the pod, so the read position survives the agent being replaced.
+        - name: checkpoints
+          hostPath:
+            path: /var/lib/otelcol/akashic
+            type: DirectoryOrCreate

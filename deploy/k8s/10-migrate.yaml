@@ -1,0 +1,78 @@
+# Schema migration, as a Job.
+#
+# # Why this is a separate process and not a step in the API's startup
+#
+# Three reasons, and each of them is a real failure somebody has had:
+#
+#   Replicas race. Two pods starting together both try to migrate, and whichever loses either
+#   errors or applies the same DDL twice. A Job is one pod by definition.
+#
+#   Credentials differ. The API needs SELECT, INSERT, UPDATE and DELETE. Migration needs to ALTER
+#   and CREATE. An application that can migrate is an application whose compromise can drop a
+#   table, and that is a choice rather than an inevitability.
+#
+#   Deploy order. Expand-and-contract needs the schema change to land before the code that reads
+#   it, and sometimes several deploys before the code that stops reading the old shape. Startup
+#   migration welds those together and makes the pattern impossible.
+#
+# # Ordering
+#
+# `kubectl apply` does not wait. Run this and let it finish before rolling the API:
+#
+#   kubectl -n akashic apply -f deploy/k8s/10-migrate.yaml
+#   kubectl -n akashic wait --for=condition=complete job/migrate --timeout=5m
+#   kubectl -n akashic apply -f deploy/k8s/20-api.yaml
+#
+# Under Helm this becomes a pre-upgrade hook and the waiting is automatic. Written out here
+# because there is no chart yet, and an undocumented ordering requirement is one that gets skipped
+# at 2am.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: akashic
+spec:
+  # A failed migration is not a transient thing to retry into. It needs somebody to read the
+  # error, because the second attempt fails the same way and the logs of the first are what say
+  # why.
+  backoffLimit: 0
+
+  # Kept for an hour after finishing, so the logs outlive the deploy that produced them.
+  ttlSecondsAfterFinished: 3600
+
+  template:
+    metadata:
+      labels:
+        app: migrate
+    spec:
+      restartPolicy: Never
+
+      containers:
+        - name: migrate
+          # Same image as the API. The migrator is a separate PROCESS with its own entry point,
+          # not a separate image — the property that the API cannot migrate comes from the package
+          # boundary, not from what is installed where.
+          image: ghcr.io/wiormiw/akashic-api:latest
+          command: ["bun", "src/jobs/migrate.ts"]
+
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: DATABASE_URL
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

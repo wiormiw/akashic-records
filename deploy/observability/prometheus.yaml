@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Nothing is scraped. Everything arrives by remote write: the apps' metrics from the Collector,
+# span metrics from Tempo. Scraping the backends would add their own Go runtime series, and even
+# scraping the Collector adds up/scrape_* series that aren't the apps'.
+scrape_configs: []
