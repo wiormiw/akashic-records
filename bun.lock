@@ -20,6 +20,16 @@
         "@opentelemetry/api": "^1.9.1",
       },
     },
+    "packages/broker": {
+      "name": "@akashic/broker",
+      "dependencies": {
+        "@akashic/db": "workspace:*",
+        "@akashic/lib": "workspace:*",
+        "@opentelemetry/api": "^1.9.1",
+        "drizzle-orm": "1.0.0-rc.4",
+        "rabbitmq-client": "^5.0.8",
+      },
+    },
     "packages/contracts": {
       "name": "@akashic/contracts",
       "dependencies": {
@@ -62,6 +72,8 @@
   },
   "packages": {
     "@akashic/authz": ["@akashic/authz@workspace:packages/authz"],
+
+    "@akashic/broker": ["@akashic/broker@workspace:packages/broker"],
 
     "@akashic/contracts": ["@akashic/contracts@workspace:packages/contracts"],
 
@@ -466,6 +478,8 @@
     "proxy-from-env": ["proxy-from-env@2.1.0", "", {}, "sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA=="],
 
     "quick-format-unescaped": ["quick-format-unescaped@4.0.4", "", {}, "sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg=="],
+
+    "rabbitmq-client": ["rabbitmq-client@5.0.8", "", {}, "sha512-nNto/okuVq+d/OamRYX4HIiCkHdOE0RICIDRjS4YQUo2DI/l3R9RlsFaEEYSjIc+LT6DV+1wUub3nD1HwrM4SQ=="],
 
     "real-require": ["real-require@1.0.0", "", {}, "sha512-P4nbQYQfePJxRSmY+v/KINxVucm4NF3p3s7pJveMTtom52FR4YGltUQLB8idDXwDDWW+eYrWDFbuzUnjoWHF7g=="],
 
