@@ -29,10 +29,6 @@ export function security(options: {
   });
 
   const checks = createMiddleware<AppEnv>(async (c, next) => {
-    c.header("content-security-policy", "default-src 'none'; frame-ancestors 'none'");
-    c.header("x-content-type-options", "nosniff");
-    c.header("referrer-policy", "no-referrer");
-
     // Judged on the declared length, so an oversized body is refused before it is read.
     const exempt = largeBodyPaths.some((prefix) => c.req.path.startsWith(prefix));
     if (!exempt && Number(c.req.header("content-length") ?? 0) > maxBodyBytes) {
@@ -56,7 +52,11 @@ export function security(options: {
     await next();
   });
 
-  return createMiddleware<AppEnv>((c, next) =>
-    corsPolicy(c, async () => void (await checks(c, next))),
-  );
+  return createMiddleware<AppEnv>((c, next) => {
+    // Before cors, which answers a preflight without running what follows.
+    c.header("content-security-policy", "default-src 'none'; frame-ancestors 'none'");
+    c.header("x-content-type-options", "nosniff");
+    c.header("referrer-policy", "no-referrer");
+    return corsPolicy(c, async () => void (await checks(c, next)));
+  });
 }

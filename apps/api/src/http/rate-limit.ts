@@ -10,9 +10,9 @@ import type { AppEnv } from "./env.ts";
 export function rateLimit(
   limiter: RateLimiter,
   rule: RateLimitRule,
-  options: { trustProxy: boolean; logger?: Logger },
+  options: { trustProxy: boolean; logger: Logger },
 ) {
-  const log = options.logger?.child({ component: "rate-limit" });
+  const log = options.logger.child({ component: "rate-limit" });
   return createMiddleware<AppEnv>(async (c, next) => {
     const user = c.get("user");
     const caller = user ? `u:${user.id}` : `ip:${clientIp(c, options.trustProxy)}`;
@@ -25,7 +25,7 @@ export function rateLimit(
       c.header("ratelimit-reset", String(counter.resetSeconds));
       if (counter.count > rule.limit) {
         c.header("retry-after", String(counter.resetSeconds));
-        log?.warn({ bucket: rule.bucket, caller, count: counter.count }, "rate limit exceeded");
+        log.warn({ bucket: rule.bucket, caller, count: counter.count }, "rate limit exceeded");
         throw fail.rateLimited(ErrorCode.common.rateLimited, "Too many requests. Slow down.", {
           details: {
             limit: rule.limit,

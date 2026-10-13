@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import { pino } from "pino";
 import { silentLogger, type Logger } from "@akashic/lib/log";
 import type { AppEnv } from "@/http/env.ts";
 import { problemHandler } from "@/http/problem.ts";
@@ -9,7 +10,7 @@ import { createRateLimiter } from "@/integrations/rate-limit.ts";
 
 const rule = { limit: 2, windowSeconds: 60, bucket: "t" };
 
-const build = (logger?: Logger) => {
+const build = (logger: Logger = silentLogger()) => {
   const limiter = createRateLimiter({ counters: createMemoryCounters() });
   const app = new Hono<AppEnv>()
     .use(async (c, next) => {
@@ -18,7 +19,7 @@ const build = (logger?: Logger) => {
       c.set("user", id ? { id, email: `${id}@x.test` } : null);
       await next();
     })
-    .use(rateLimit(limiter, rule, { trustProxy: false, ...(logger ? { logger } : {}) }))
+    .use(rateLimit(limiter, rule, { trustProxy: false, logger }))
     .get("/", (c) => c.text("ok"));
   app.onError(problemHandler(silentLogger()));
   return app;
@@ -46,12 +47,12 @@ describe("rate limit", () => {
 
   test("a refusal is logged with its bucket and count", async () => {
     const warned: Record<string, unknown>[] = [];
-    const logger = {
-      child: () => logger,
-      warn: (line: Record<string, unknown>) => void warned.push(line),
-    } as unknown as Logger;
+    const logger = pino(
+      { level: "trace" },
+      { write: (line: string) => void warned.push(JSON.parse(line)) },
+    );
     const app = build(logger);
     for (let i = 0; i < 3; i++) await app.request("/");
-    expect(warned[0]).toMatchObject({ bucket: "t", count: 3 });
+    expect(warned[0]).toMatchObject({ msg: "rate limit exceeded", bucket: "t", count: 3 });
   });
 });

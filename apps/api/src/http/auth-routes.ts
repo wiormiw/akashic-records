@@ -24,7 +24,7 @@ export function authRoutes(options: {
   ordinary: RateLimitRule;
   credentials: RateLimitRule;
   trustProxy: boolean;
-  logger?: Logger;
+  logger: Logger;
 }) {
   const app = new Hono<AppEnv>();
   app.use(`${PREFIX}/*`, rateLimit(options.limiter, options.ordinary, options));

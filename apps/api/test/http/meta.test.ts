@@ -89,6 +89,7 @@ describe("auth routes", () => {
       ordinary: { limit: 100, windowSeconds: 60, bucket: "o" },
       credentials: { limit: credentialsLimit, windowSeconds: 60, bucket: "c" },
       trustProxy: false,
+      logger: silentLogger(),
     });
     return new Hono<AppEnv>().route("/", routes).onError(problemHandler(silentLogger()));
   };

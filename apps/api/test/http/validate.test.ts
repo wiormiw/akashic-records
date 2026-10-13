@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import * as v from "valibot";
-import { silentLogger } from "@akashic/lib/log";
+import { pino } from "pino";
 import type { AppEnv } from "@/http/env.ts";
 import { problemHandler } from "@/http/problem.ts";
 import { validate } from "@/http/validate.ts";
@@ -11,7 +11,12 @@ const app = new Hono<AppEnv>().post(
   validate("json", v.object({ name: v.pipe(v.string(), v.minLength(2)) })),
   (c) => c.text(c.req.valid("json").name),
 );
-app.onError(problemHandler(silentLogger()));
+const lines: { level: number; msg?: string }[] = [];
+const logger = pino(
+  { level: "trace" },
+  { write: (line: string) => void lines.push(JSON.parse(line)) },
+);
+app.onError(problemHandler(logger));
 
 const post = (body: unknown) =>
   app.request("/x", {
@@ -33,5 +38,17 @@ describe("validate", () => {
   test("a valid body reaches the handler", async () => {
     const res = await post({ name: "ab" });
     expect(await res.text()).toBe("ab");
+  });
+
+  test("a malformed body is a 400 validation problem, not a logged 500", async () => {
+    lines.length = 0;
+    const res = await app.request("/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{bad",
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("common.request.validation_failed");
+    expect(lines.filter((l) => l.level >= 50)).toEqual([]);
   });
 });

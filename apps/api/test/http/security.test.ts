@@ -73,6 +73,15 @@ describe("security", () => {
     expect(foreign.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  test("a CORS preflight carries the hardening headers too", async () => {
+    const res = await app().request("/write", {
+      method: "OPTIONS",
+      headers: { origin: site, "access-control-request-method": "POST" },
+    });
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("access-control-allow-origin")).toBe(site);
+  });
+
   test("parseOrigins splits on commas and drops blanks", () => {
     expect(parseOrigins(" http://a.test , ,http://b.test")).toEqual([
       "http://a.test",

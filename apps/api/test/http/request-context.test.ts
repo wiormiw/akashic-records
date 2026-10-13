@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import { silentLogger, type Logger } from "@akashic/lib/log";
+import { pino } from "pino";
+import { silentLogger } from "@akashic/lib/log";
 import { createLifecycle } from "@akashic/lib/lifecycle";
 import { recordSpans } from "../../../../packages/lib/test/spans.ts";
 import type { AppEnv } from "@/http/env.ts";
@@ -65,11 +66,23 @@ describe("spans", () => {
 describe("access log", () => {
   test("one line per response with its status", async () => {
     const lines: Record<string, unknown>[] = [];
-    const logger = {
-      child: () => logger,
-      info: (line: Record<string, unknown>, msg: string) => void lines.push({ ...line, msg }),
-    } as unknown as Logger;
+    const logger = pino(
+      { level: "trace" },
+      { write: (line: string) => void lines.push(JSON.parse(line)) },
+    );
     await build(1000, logger).request("/x");
     expect(lines.find((l) => l.msg === "request")?.status).toBe(200);
+  });
+
+  test("a request past its budget is logged too, with the 502 it was answered with", async () => {
+    const lines: Record<string, unknown>[] = [];
+    const logger = pino(
+      { level: "trace" },
+      { write: (line: string) => void lines.push(JSON.parse(line)) },
+    );
+    await build(10, logger).request("/slow");
+    const line = lines.find((l) => l.msg === "request");
+    expect(line?.status).toBe(502);
+    expect(typeof line?.ms).toBe("number");
   });
 });

@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import type { Context, ErrorHandler, NotFoundHandler } from "hono";
 import { AppError, ErrorCode, fail } from "@akashic/lib/errors";
 import type { Logger } from "@akashic/lib/log";
@@ -44,6 +45,15 @@ export const notFound: NotFoundHandler<AppEnv> = (c) =>
 /** Maps whatever escaped a handler onto the error vocabulary. */
 function classify(error: unknown): AppError {
   if (error instanceof AppError) return error;
+  if (error instanceof HTTPException) {
+    // Hono's own parsing and body-limit failures: the caller's mistake, not our bug.
+    if (error.status === 400) {
+      return fail.validation(ErrorCode.common.validation, "Request body could not be parsed.");
+    }
+    if (error.status >= 400 && error.status < 500) {
+      return fail.validation(ErrorCode.common.validation, "The request could not be processed.");
+    }
+  }
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return fail.external(ErrorCode.common.timeout, "The request took too long.");
   }

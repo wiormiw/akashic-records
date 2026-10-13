@@ -2,7 +2,9 @@ import { httpInstrumentationMiddleware } from "@hono/otel";
 import { createMiddleware } from "hono/factory";
 import type { Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
+import { ErrorCode, fail } from "@akashic/lib/errors";
 import type { AppEnv } from "./env.ts";
+import { problemResponse } from "./problem.ts";
 
 export const REQUEST_ID_HEADER = "x-request-id";
 
@@ -34,7 +36,10 @@ export function requestContext(options: {
     // Checked after the handler rather than raced against it, so nothing keeps running once the
     // response is sent.
     if (deadline.aborted && !c.req.raw.signal.aborted && c.res.status < 400) {
-      throw new DOMException("request exceeded its budget", "TimeoutError");
+      c.res = problemResponse(
+        c,
+        fail.external(ErrorCode.common.timeout, "The request took too long."),
+      );
     }
     log.info(
       {

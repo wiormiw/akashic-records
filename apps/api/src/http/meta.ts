@@ -13,6 +13,10 @@ const runAll = async (checks: Record<string, Check>) =>
     await Promise.all(Object.entries(checks).map(async ([name, check]) => [name, await check()])),
   );
 
+const DrainingView = v.object({ status: v.literal("draining") });
+// Check names vary per deployment, so the checks pass through as booleans beside the status.
+const ReadinessView = v.looseObject({ status: v.string() });
+
 /**
  * `/livez` while the process runs; `/readyz` once started and every required check passes.
  * An optional failure (Redis) is reported but keeps the instance in rotation.
@@ -22,24 +26,28 @@ export function healthRoutes(options: {
   required: Record<string, Check>;
   optional: Record<string, Check>;
 }) {
-  return new Hono<AppEnv>()
-    .get("/livez", (c) => (options.lifecycle.isAlive() ? c.text("ok") : c.text("stopped", 503)))
-    .get("/readyz", async (c) => {
-      if (!options.lifecycle.isReady()) return c.json({ status: "draining" }, 503);
+  return (
+    new Hono<AppEnv>()
+      // Plain text, as probes and the old API expect; `reply` only sends JSON.
+      .get("/livez", (c) => (options.lifecycle.isAlive() ? c.text("ok") : c.text("stopped", 503)))
+      .get("/readyz", async (c) => {
+        if (!options.lifecycle.isReady())
+          return reply(c, DrainingView, { status: "draining" }, 503);
 
-      const [required, optional] = await Promise.all([
-        runAll(options.required),
-        runAll(options.optional),
-      ]);
-      if (!Object.values(required).every(Boolean))
-        return c.json({ status: "degraded", ...required, ...optional }, 503);
+        const [required, optional] = await Promise.all([
+          runAll(options.required),
+          runAll(options.optional),
+        ]);
+        if (!Object.values(required).every(Boolean))
+          return reply(c, ReadinessView, { status: "degraded", ...required, ...optional }, 503);
 
-      return c.json({
-        status: Object.values(optional).every(Boolean) ? "ready" : "ready-degraded",
-        ...required,
-        ...optional,
-      });
-    });
+        return reply(c, ReadinessView, {
+          status: Object.values(optional).every(Boolean) ? "ready" : "ready-degraded",
+          ...required,
+          ...optional,
+        });
+      })
+  );
 }
 
 const ApiDescriptionView = v.object({
