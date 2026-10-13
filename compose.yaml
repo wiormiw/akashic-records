@@ -1,5 +1,5 @@
 # Local dependencies: Postgres, Redis, OpenFGA, MinIO and the observability stack.
-# `docker compose up -d`, then `bun run dev` on the host. `--profile app` runs the API image too.
+# `docker compose up -d`, then `bun run dev` on the host.
 
 name: akashic
 
@@ -14,8 +14,8 @@ services:
       # Loopback only. Deliberately NOT "5432:5432", which binds 0.0.0.0 and offers Postgres to
       # the whole LAN.
       #
-      # To reach this from pods in a local kind cluster (deploy/k8s/external-services.yaml), add
-      # a second binding on that network's gateway. Look the address up rather than assuming it:
+      # To reach this from containers elsewhere (a local kind cluster, say), add a second binding
+      # on that network's gateway. Look the address up rather than assuming it:
       # Docker assigns one per network, and a binding on an address that does not exist on this
       # machine fails the entire `compose up`, not just the one service.
       #   docker network inspect kind -f "{{range .IPAM.Config}}{{.Gateway}} {{end}}"
@@ -31,7 +31,7 @@ services:
       retries: 30
       start_period: 5s
 
-  # OpenFGA, the authorization service. See docs/AUTHZ.md.
+  # OpenFGA, the authorization service.
   #
   # Its own database, not a schema in the application one. Two reasons, and the second is the
   # real one: OpenFGA runs its own migrations against whatever it is pointed at, so sharing a
@@ -53,9 +53,9 @@ services:
       retries: 30
       start_period: 5s
 
-  # A separate migration container, for the same reason apps/migrator is a separate package:
-  # replicas racing to migrate on boot is how a schema gets corrupted. It runs to completion and
-  # exits, and the server waits on that exit rather than on a port being open.
+  # A separate migration container: replicas racing to migrate on boot is how a schema gets
+  # corrupted. It runs to completion
+  # and exits, and the server waits on that exit rather than on a port being open.
   openfga-migrate:
     image: openfga/openfga:latest
     command: migrate
@@ -75,7 +75,7 @@ services:
       OPENFGA_DATASTORE_URI: postgres://openfga:openfga@openfga-db:5432/openfga?sslmode=disable
       OPENFGA_LOG_FORMAT: json
       # No authentication on the local stack. In a cluster this listens on a ClusterIP with no
-      # Ingress, the same assumption the Go services run under -- see docs/SPLIT.md. Anything
+      # Ingress. Anything
       # that can reach this port can grant itself any role in any realm.
       OPENFGA_AUTHN_METHOD: none
     ports:
@@ -149,7 +149,7 @@ services:
       timeout: 3s
       retries: 30
 
-  # Creates the bucket and opens it for reading. Runs once and exits, like `migrate` below.
+  # Creates the bucket and opens it for reading. Runs once and exits, like openfga-migrate.
   #
   # Public-read is right for what goes in here — listing photos and event banners are shown to
   # anyone who can see the posting, and a signed URL per image would buy nothing while costing a
@@ -266,7 +266,7 @@ services:
       - ./deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "3001:3000" # 3000 is the API's port on the host
+      - "127.0.0.1:3002:3000" # loopback only; 3000 is the API, 3001 the OpenFGA playground
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
       interval: 5s
