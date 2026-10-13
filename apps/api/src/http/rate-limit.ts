@@ -39,13 +39,19 @@ export function rateLimit(
   });
 }
 
+// Proxy headers are the client's own words unless our proxy wrote them, so they are read only
+// when told one is in front. Behind an appending proxy the left-most X-Forwarded-For entry is
+// whatever the client sent; the right-most is the hop our proxy added.
 function clientIp(c: Context<AppEnv>, trustProxy: boolean): string {
   if (trustProxy) {
-    const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
-    if (forwarded) return forwarded;
+    const hops = c.req.header("x-forwarded-for")?.split(",");
+    const forwarded = hops?.at(-1)?.trim();
+    const real = c.req.header("x-real-ip")?.trim();
+    const viaProxy = forwarded || real;
+    if (viaProxy) return viaProxy;
   }
   try {
-    return c.req.header("x-real-ip") ?? getConnInfo(c).remote.address ?? "unknown";
+    return getConnInfo(c).remote.address ?? "unknown";
   } catch {
     // `app.request()` in tests has no socket.
     return "unknown";

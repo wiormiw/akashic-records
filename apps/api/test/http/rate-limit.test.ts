@@ -10,7 +10,7 @@ import { createRateLimiter } from "@/integrations/rate-limit.ts";
 
 const rule = { limit: 2, windowSeconds: 60, bucket: "t" };
 
-const build = (logger: Logger = silentLogger()) => {
+const build = (logger: Logger = silentLogger(), trustProxy = false) => {
   const limiter = createRateLimiter({ counters: createMemoryCounters() });
   const app = new Hono<AppEnv>()
     .use(async (c, next) => {
@@ -19,7 +19,7 @@ const build = (logger: Logger = silentLogger()) => {
       c.set("user", id ? { id, email: `${id}@x.test` } : null);
       await next();
     })
-    .use(rateLimit(limiter, rule, { trustProxy: false, logger }))
+    .use(rateLimit(limiter, rule, { trustProxy, logger }))
     .get("/", (c) => c.text("ok"));
   app.onError(problemHandler(silentLogger()));
   return app;
@@ -54,5 +54,38 @@ describe("rate limit", () => {
     const app = build(logger);
     for (let i = 0; i < 3; i++) await app.request("/");
     expect(warned[0]).toMatchObject({ msg: "rate limit exceeded", bucket: "t", count: 3 });
+  });
+
+  test("spoofed proxy headers are ignored when no proxy is trusted: one bucket", async () => {
+    const app = build();
+    const statuses: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const res = await app.request("/", {
+        headers: { "x-real-ip": `10.0.0.${i}`, "x-forwarded-for": `10.1.0.${i}` },
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses).toEqual([200, 200, 429]);
+  });
+
+  test("with a trusted proxy the right-most forwarded hop is the key", async () => {
+    const app = build(silentLogger(), true);
+    const hit = async (xff: string) =>
+      (await app.request("/", { headers: { "x-forwarded-for": xff } })).status;
+    // The left entries are the client's to forge; only the last hop is ours.
+    expect(await hit("1.1.1.1, 9.9.9.9")).toBe(200);
+    expect(await hit("2.2.2.2, 9.9.9.9")).toBe(200);
+    expect(await hit("3.3.3.3, 9.9.9.9")).toBe(429);
+    expect(await hit("3.3.3.3, 8.8.8.8")).toBe(200);
+  });
+
+  test("with a trusted proxy x-real-ip is the fallback when there is no forwarded chain", async () => {
+    const app = build(silentLogger(), true);
+    const hit = async (ip: string) =>
+      (await app.request("/", { headers: { "x-real-ip": ip } })).status;
+    expect(await hit("5.5.5.5")).toBe(200);
+    expect(await hit("5.5.5.5")).toBe(200);
+    expect(await hit("5.5.5.5")).toBe(429);
+    expect(await hit("6.6.6.6")).toBe(200);
   });
 });
