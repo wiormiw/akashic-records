@@ -33,8 +33,8 @@ akashic-records/
                             Redis counters
         modules/<name>/     <name>.routes.ts, <name>.service.ts, plus domain rules such as
                             governance.rules.ts, room.tickets.ts, postings.fit.ts
-      scripts/              import.meta.main jobs: migrate, authz push and backfill, admin
-                            grant, realm centroids, events replay
+      scripts/              import.meta.main jobs: migrate, authz push and backfill, events
+                            replay (admin grant and realm centroids arrive with Plan 2's modules)
       test/
       Dockerfile
     web/                    SvelteKit, moved from akashic_records_fe
@@ -50,4 +50,5 @@ akashic-records/
   compose.yaml   postgres, redis, rabbitmq, openfga for development
 ```
 
-`modules/`, `apps/web` and the Dockerfile arrive in later plans.
+`modules/`, `apps/web` and the Dockerfile arrive in later plans; so do the admin grant and realm
+centroids scripts, with Plan 2's modules.

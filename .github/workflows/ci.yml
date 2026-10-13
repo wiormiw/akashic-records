@@ -58,4 +58,13 @@ jobs:
       - run: bun apps/api/scripts/migrate.ts
       - run: bun test
       # The generated migrations must match the schema.
-      - run: (cd packages/db && bunx drizzle-kit generate) && git diff --exit-code packages/db/migrations
+      # drizzle-kit writes each migration as a new folder, which `git diff` ignores, so look at
+      # the status instead: any untracked or modified file means db:generate was forgotten.
+      - run: |
+          (cd packages/db && bunx drizzle-kit generate)
+          changes="$(git status --porcelain packages/db/migrations)"
+          if [ -n "$changes" ]; then
+            echo "Migrations are out of date with the schema:"
+            echo "$changes"
+            exit 1
+          fi

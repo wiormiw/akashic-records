@@ -21,10 +21,14 @@ bun run db:migrate / authz:push / authz:backfill / events:replay
 
 - **Nothing runs on import.** Files export factories; `container.ts` constructs everything and
   `main.ts` alone starts the process (`Bun.serve`, `handleSignals`).
-- **Only `container.ts` imports InferDI** (`@inferdi/inferdi`); `app.ts` may use `@inferdi/hono`.
-  Modules never import each other. `apps/api/test/structure.test.ts` enforces both.
+- **Only `container.ts` imports InferDI** (`@inferdi/inferdi`, any subpath, in `src`, `scripts` and
+  `test`); only `app.ts` imports `@inferdi/hono`. A module never imports another module, by alias,
+  relative path, side-effect or dynamic import. Code under `src/modules/` never builds a raw
+  response (`x.json(`, `.body(`, `new Response(`). Only `main.ts` calls `Bun.serve` or
+  `handleSignals` (also checked in `scripts` and `packages/*/src`).
+  `apps/api/test/structure.test.ts` enforces all of this.
 - **One error funnel.** Services return `err(...)` Results; routes hand them to `reply` (success,
-  through a view) or `respond`, and `http/problem.ts` renders errors. Routes never call `c.json`.
+  through a view) or `respond`, and `http/problem.ts` renders errors.
   `throw` is for bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it
   rolls back.
 - **Events and audits only inside `inTransaction`**, via `publish(tx, ...)` and `audit(tx, ...)`.
