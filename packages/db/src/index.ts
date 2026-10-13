@@ -11,6 +11,9 @@ export {
   type Executor,
   type Tx,
 } from "./client.ts";
+export { inTransaction } from "./transaction.ts";
+export { publish, newOutboxEvent, type DomainEvent, type OutboxEvent } from "./outbox.ts";
+export { audit, type AuditEntry } from "./audit.ts";
 
 /** Where drizzle-kit writes migrations and the migrator reads them. */
 export const migrationsFolder = fileURLToPath(new URL("../migrations", import.meta.url));
