@@ -2,7 +2,15 @@
   "name": "@akashic/lib",
   "private": true,
   "type": "module",
-  "exports": {},
+  "exports": {
+    "./result": "./src/result.ts",
+    "./errors": "./src/errors.ts",
+    "./enums": "./src/enums.ts",
+    "./time": "./src/time.ts",
+    "./abort": "./src/abort.ts",
+    "./problem": "./src/problem.ts",
+    "./json": "./src/json.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
   }
