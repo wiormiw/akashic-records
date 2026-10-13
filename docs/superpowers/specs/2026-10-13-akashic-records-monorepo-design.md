@@ -131,7 +131,7 @@ not change**, so a data-only dump of the current database restores into the new 
 
 `apps/api/src/container.ts` registers everything with its lifetime:
 
-- **Singletons:** config, logger, the root `AbortController`, db, redis, broker, authorizer,
+- **Singletons:** telemetry (created first, disposed last), config, logger, the root `AbortController`, db, redis, broker, authorizer,
   mailer, storage, embedder, and the services.
 - **Request scope** (through `@inferdi/hono`, at `c.var.di`): request id, the session user, and
   the request's abort signal. A service that needs these can only be resolved once the scope
@@ -247,8 +247,10 @@ The two apps deploy independently from the same repository.
 
 ### Web on Vercel
 
-- `apps/web` switches from `adapter-node` to `@sveltejs/adapter-vercel`. The comment explaining why
-  it used `adapter-node` goes, since the reason (a plain container) no longer applies.
+- The adapter is chosen per build, not fixed: `adapter-vercel` when `process.env.VERCEL` is set
+  (Vercel sets it during its builds), `adapter-node` otherwise, so local runs, a container, a VPS
+  or Kubernetes get a Node server. An explicit `ADAPTER` variable overrides the choice, so another
+  host later is a config change, not a code change.
 - The Vercel project's root directory is `apps/web`. Vercel installs the workspace, so
   `packages/contracts` resolves.
 - An ignored-build-step command skips a deploy unless `apps/web/**`, `packages/contracts/**`,
@@ -271,6 +273,67 @@ already running:
 - Valibot's `v.object` ignores keys it doesn't declare, so an API that sends more is always safe.
 - For an additive change, deploy the API first. For a removal, deploy the web app first.
 
+## Configuration and secrets
+
+- Each app validates its environment at startup and refuses to start when a required variable is
+  missing or malformed, as `config.ts` does today. A bad secret fails the deploy, not a request.
+- **Web:** variables live in the Vercel project, separately for Production and Preview. The app
+  reads `$env/dynamic/public`, so changing `PUBLIC_API_BASE` needs no rebuild.
+- **API:** secrets live in a GitHub Environment named `production`, which can require approval
+  before a deploy. The deploy workflow builds the image, pushes it to GHCR, writes
+  `/opt/akashic/.env` on the VPS over SSH with mode 600, and restarts the stack with compose.
+- Non-secret defaults are committed in `.env.example` files. Real values never are.
+- When there are several environments or several people, secrets move to Infisical or Doppler,
+  which sync to GitHub, Vercel and Kubernetes. Nothing in the apps changes for that.
+- No Jenkins: GitHub Actions covers building, testing and deploying both apps.
+
+## Telemetry
+
+- `@hono/otel`'s `httpInstrumentationMiddleware` creates a span per request.
+- The OpenTelemetry SDK (traces and metrics over OTLP) is the **first** singleton the container
+  creates and the **last** it disposes, so spans recorded during shutdown are flushed. It is not
+  started at module top level.
+- Node auto-instrumentation is not used: on Bun it is partial and nothing instruments `bun:sql`.
+  Manual spans carry over: OpenFGA calls, the outbox dispatcher, and RabbitMQ consumers continuing
+  the `traceparent` header.
+- Logs are pino JSON on stdout with the trace id attached, for whatever collects them.
+- The exporter endpoint is configuration: Grafana Cloud's OTLP endpoint in production, a local
+  `grafana/otel-lgtm` container in development.
+
+## Infrastructure
+
+At launch, one VPS (about 4 vCPU and 8 GB) runs the API, Postgres, Redis, RabbitMQ and OpenFGA
+with compose. Two things stay off it:
+
+- **Backups:** a nightly `pg_dump` plus WAL archiving (`wal-g`) to S3-compatible storage. A
+  restore is rehearsed once before launch.
+- **Observability:** telemetry goes to Grafana Cloud's free tier, or to `grafana/otel-lgtm` on a
+  second small VPS, so the box that fails isn't the box you'd use to see why.
+
+Uploaded images already go to S3-compatible storage, not the VPS disk.
+
+## Scaling out
+
+The same image runs on the VPS and on Kubernetes with several pods. What makes that safe:
+
+| Concern | How several pods stay correct |
+| --- | --- |
+| Sessions | In Postgres through better-auth; any pod serves any user |
+| Rate limits | Redis counters, shared by all pods |
+| Room WebSocket | Messages go through the Redis pub/sub relay, so they reach sockets on other pods. The in-process relay is for development only. |
+| Outbox dispatcher | Safe on every pod: leases are claimed with `SKIP LOCKED` |
+| Consumers | Competing consumers on one queue; handlers are idempotent |
+| Migrations | A Job before the rollout, never on pod start |
+| Shutdown | A `preStop` sleep of a few seconds so endpoints are removed, then our SIGTERM sequence; `terminationGracePeriodSeconds` exceeds drain plus hard-exit time |
+| Probes | `/health` for liveness, `/ready` for readiness, 503 while draining |
+| Config | ConfigMap and Secret, the Secret synced from the secret manager by External Secrets |
+| Database connections | Pods times pool size stays under `max_connections`; PgBouncer in front of Postgres |
+| Scaling | API on CPU or request rate; `apps/worker` split out and scaled on queue depth (KEDA) |
+| Data services | Managed, or CloudNativePG; not hand-written StatefulSets |
+
+Kubernetes manifests are not written now; this table is what the code must keep true so that
+adding them later needs no code changes.
+
 ## Porting order
 
 Each step is its own commit, with its tests, and leaves `bun run check` green.
@@ -290,7 +353,7 @@ Each step is its own commit, with its tests, and leaves `bun run check` green.
    WebSocket), upload, admin. Each brings its views and presenters into `contracts`.
 9. Remaining scripts: admin grant, realm centroids.
 10. `apps/web`: moved in, its `src/lib/api/*` schemas replaced by imports from `contracts`,
-    adapter switched to Vercel.
+    adapter chosen per build.
 11. Deployment: API Dockerfile and workflow, Vercel configuration, ignored-build step.
 12. Docs: `README.md`, `docs/ARCHITECTURE.md` and `CLAUDE.md` for the new layout.
 
@@ -299,7 +362,9 @@ empty `wiormiw/akashic-records` repository on GitHub.
 
 ## Out of scope
 
-- New features or behaviour changes, apart from the switch to Hono and the frontend's adapter.
+- New features or behaviour changes, apart from the switch to Hono and the frontend's adapter
+  selection.
+- Kubernetes manifests, PgBouncer and the secret manager. The design keeps them possible.
 - Splitting out `apps/worker`. The layout allows it; it isn't done now.
 - Hono RPC (`hc`). The shared Valibot contracts cover type-safe calls for now.
 
