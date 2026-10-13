@@ -11,6 +11,13 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/contracts": {
+      "name": "@akashic/contracts",
+      "dependencies": {
+        "@akashic/lib": "workspace:*",
+        "valibot": "1.5.0",
+      },
+    },
     "packages/db": {
       "name": "@akashic/db",
       "dependencies": {
@@ -45,6 +52,8 @@
     },
   },
   "packages": {
+    "@akashic/contracts": ["@akashic/contracts@workspace:packages/contracts"],
+
     "@akashic/db": ["@akashic/db@workspace:packages/db"],
 
     "@akashic/lib": ["@akashic/lib@workspace:packages/lib"],
