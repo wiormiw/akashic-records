@@ -58,7 +58,8 @@ OpenFGA and RabbitMQ; each skips when nothing answers. Migrations are generated 
 6. **Windows Bun can't see Git Bash's `/tmp`**, and a killed dev server can linger on its port:
    stop it by port with PowerShell.
 7. **`v.object` strips undeclared keys on parse**; that's what `reply` relies on. Don't switch
-   views to `looseObject`.
+   views to `looseObject`. The one exception is `ReadinessView` in `http/meta.ts`: readiness
+   reports a variable set of checks, so it keeps the extra keys.
 8. **Bun SQL queries are lazy thenables**: `expect(query).rejects` hangs. Wrap it in
    `Promise.resolve(query)`.
 9. **OTel ignores a second global registration in one process.** Tests use `recordSpans()` from
