@@ -4,6 +4,12 @@
   "type": "module",
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
+    "dev": "bun --filter @akashic/api dev",
+    "db:generate": "bun --filter @akashic/db generate",
+    "db:migrate": "bun --env-file=.env apps/api/scripts/migrate.ts",
+    "authz:push": "bun --env-file=.env apps/api/scripts/authz-push.ts",
+    "authz:backfill": "bun --env-file=.env apps/api/scripts/authz-backfill.ts",
+    "events:replay": "bun --env-file=.env apps/api/scripts/events-replay.ts",
     "format": "oxfmt apps packages",
     "format:check": "oxfmt --check apps packages",
     "lint": "oxlint --deny-warnings apps packages",
