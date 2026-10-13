@@ -9,9 +9,21 @@
     "./time": "./src/time.ts",
     "./abort": "./src/abort.ts",
     "./problem": "./src/problem.ts",
-    "./json": "./src/json.ts"
+    "./json": "./src/json.ts",
+    "./log": "./src/log.ts",
+    "./config": "./src/config.ts",
+    "./lifecycle": "./src/lifecycle.ts",
+    "./concurrency": "./src/concurrency.ts",
+    "./retry": "./src/retry.ts",
+    "./circuit-breaker": "./src/circuit-breaker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "p-limit": "^7.3.1",
+    "pino": "^10.3.1",
+    "valibot": "1.5.0"
   }
 }
