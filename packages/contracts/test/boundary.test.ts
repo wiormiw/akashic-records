@@ -34,7 +34,8 @@ describe("contracts boundary", () => {
   test("lib's enums and errors import nothing", async () => {
     const imports: string[] = [];
     for (const f of ["packages/lib/src/enums.ts", "packages/lib/src/errors.ts"]) {
-      for (const s of specifiers(await Bun.file(`${repo}/${f}`).text())) imports.push(`${f} -> ${s}`);
+      for (const s of specifiers(await Bun.file(`${repo}/${f}`).text()))
+        imports.push(`${f} -> ${s}`);
     }
     expect(imports).toEqual([]);
   });
