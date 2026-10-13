@@ -28,6 +28,24 @@ const backoffSeconds = (attempts: number): number =>
 const toMillis = (instant: Temporal.Instant) =>
   Temporal.Instant.fromEpochMilliseconds(instant.epochMilliseconds);
 
+/**
+ * Resolves after `ms`, or at once when `signal` aborts, so a polling loop never holds the grace
+ * period open. Either way the timer and the listener are released: the signal outlives every
+ * sleep, and a listener left behind per poll would grow without bound.
+ */
+export function abortableSleep(signal: AbortSignal, ms: number): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
 export interface OutboxOptions {
   store: OutboxStore;
   transport: OutboxTransport;
@@ -98,19 +116,7 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
   const halt = new AbortController();
   const signal = AbortSignal.any([lifecycle.signal, halt.signal]);
 
-  // Resolves early on shutdown, so a polling loop never holds the grace period open.
-  const sleep = (ms: number) =>
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, ms);
-      signal.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        { once: true },
-      );
-    });
+  const sleep = (ms: number) => abortableSleep(signal, ms);
 
   let stopped: Promise<void> = Promise.resolve();
 

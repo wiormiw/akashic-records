@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { silentLogger } from "@akashic/lib/log";
-import { runDispatcher } from "../src/dispatcher.ts";
+import { createLifecycle } from "@akashic/lib/lifecycle";
+import { systemClock } from "@akashic/lib/time";
+import { abortableSleep, createOutbox, runDispatcher } from "../src/dispatcher.ts";
 
 // The dispatcher's pacing, with drain and sleep scripted: nothing touches a database or a clock.
 // Each drain takes the next step; the run stops once the script is spent.
@@ -47,5 +49,81 @@ describe("outbox dispatcher", () => {
       drained: 1,
       slept: [],
     });
+  });
+});
+
+describe("abortableSleep", () => {
+  test("leaves no listener behind on the long-lived signal, however many sleeps", async () => {
+    const real = new AbortController().signal;
+    let added = 0;
+    let removed = 0;
+    const counting = new Proxy(real, {
+      get(target, key) {
+        if (key === "addEventListener") {
+          return (...args: Parameters<AbortSignal["addEventListener"]>) => {
+            added++;
+            return target.addEventListener(...args);
+          };
+        }
+        if (key === "removeEventListener") {
+          return (...args: Parameters<AbortSignal["removeEventListener"]>) => {
+            removed++;
+            return target.removeEventListener(...args);
+          };
+        }
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    for (let i = 0; i < 200; i++) await abortableSleep(counting, 0);
+    expect(added).toBe(200);
+    expect(added - removed).toBe(0);
+  });
+
+  test("returns at once when the signal is already aborted", async () => {
+    const started = performance.now();
+    await abortableSleep(AbortSignal.abort(), 5000);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  test("an abort during the sleep ends it early", async () => {
+    const controller = new AbortController();
+    const started = performance.now();
+    const sleeping = abortableSleep(controller.signal, 5000);
+    controller.abort();
+    await sleeping;
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+});
+
+describe("outbox shutdown", () => {
+  test("disposing after the signal aborted mid-drain returns well under a poll", async () => {
+    const lifecycle = createLifecycle(silentLogger());
+    const outbox = createOutbox({
+      // The shutdown lands while a claim is in flight, so the loop reaches its sleep already aborted.
+      store: {
+        async claim() {
+          lifecycle.abort("test");
+          return [];
+        },
+        async finish() {
+          return true;
+        },
+      },
+      transport: async () => {},
+      clock: systemClock,
+      lifecycle,
+      logger: silentLogger(),
+      batchSize: 10,
+      pollMs: 5000,
+      concurrency: 1,
+      sendTimeoutMs: 1000,
+    });
+    outbox.start();
+
+    const started = performance.now();
+    await outbox[Symbol.asyncDispose]();
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 });
