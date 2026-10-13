@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { stop } from "@/runtime.ts";
+import { listen, stop } from "@/runtime.ts";
 
 test("shutdown drains, then aborts, then releases, then stops", async () => {
   const steps: string[] = [];
@@ -51,4 +51,28 @@ test("the lifecycle is marked stopped even when release fails", async () => {
   });
   await expect(failed).rejects.toThrow("pool would not close");
   expect(steps).toEqual(["stopped"]);
+});
+
+test("a server that cannot listen releases the graph before the error propagates", async () => {
+  const steps: string[] = [];
+  const failed = listen({
+    serve: () => {
+      throw new Error("EADDRINUSE");
+    },
+    container: { dispose: async () => void steps.push("dispose") },
+    lifecycle: { abort: () => steps.push("abort") },
+  });
+  await expect(failed).rejects.toThrow("EADDRINUSE");
+  expect(steps).toEqual(["abort", "dispose"]);
+});
+
+test("a server that listens is handed back, and nothing is released", async () => {
+  const steps: string[] = [];
+  const server = await listen({
+    serve: () => "server",
+    container: { dispose: async () => void steps.push("dispose") },
+    lifecycle: { abort: () => steps.push("abort") },
+  });
+  expect(server).toBe("server");
+  expect(steps).toEqual([]);
 });

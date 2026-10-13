@@ -68,6 +68,24 @@ export async function start(container: AppContainer, modules: readonly ModuleRou
   }
 }
 
+/**
+ * Starts the server. If it can't listen (the port is taken), the graph `start` built is released
+ * before the error propagates, so the outbox loop and the pools don't die mid-flight.
+ */
+export async function listen<S>(options: {
+  serve: () => S;
+  container: Pick<AppContainer, "dispose">;
+  lifecycle: Pick<Lifecycle, "abort">;
+}): Promise<S> {
+  try {
+    return options.serve();
+  } catch (error) {
+    options.lifecycle.abort("could not listen");
+    await options.container.dispose();
+    throw error;
+  }
+}
+
 /** Drain, abort, release, in that order. Called once, by the signal handler. */
 export async function stop(options: {
   reason: string;

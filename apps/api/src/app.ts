@@ -17,12 +17,20 @@ import { sessions } from "@/http/session.ts";
 import type { Mailer } from "@/integrations/mail.ts";
 import type { RateLimiter, RateLimitRule } from "@/integrations/rate-limit.ts";
 
+/**
+ * What routes under the API prefixes carry: the request's DI scope, opened once the caller is
+ * known. Root routes are plain `AppEnv`, so they can't assume a scope that isn't there.
+ */
+export interface ApiEnv extends AppEnv {
+  Variables: AppEnv["Variables"] & { di: RequestContainer };
+}
+
 /** Where a module's routes are mounted. */
 export interface ModuleRoutes {
   /** Under the public API: anonymous reads, no session lookup. */
-  readonly public?: Hono<AppEnv>;
+  readonly public?: Hono<ApiEnv>;
   /** Under the signed-in API. */
-  readonly private?: Hono<AppEnv>;
+  readonly private?: Hono<ApiEnv>;
   /** At the app root, for routes that own their path, such as a socket. */
   readonly root?: Hono<AppEnv>;
 }
@@ -52,17 +60,17 @@ export interface AppDeps {
 export function createApp(deps: AppDeps) {
   const { session } = sessions({ auth: deps.auth, db: deps.db, authorizer: deps.authorizer });
   // One scope per request, opened after the caller is known so services resolved from it see them.
-  const scoped = inferdiHono<AppContainer, AppEnv, RequestContainer>({
+  const scoped = inferdiHono<AppContainer, ApiEnv, RequestContainer>({
     container: deps.container,
     createScope: (root, c) =>
       requestScope(root, { id: c.get("requestId"), signal: c.get("signal"), user: c.get("user") }),
   });
   const limited = (rule: RateLimitRule) => rateLimit(deps.limiter, rule, deps);
 
-  const publicApi = new Hono<AppEnv>()
+  const publicApi = new Hono<ApiEnv>()
     .use(limited({ ...deps.limits.api, bucket: "public" }))
     .use(scoped);
-  const api = new Hono<AppEnv>().use(session).use(limited(deps.limits.api)).use(scoped);
+  const api = new Hono<ApiEnv>().use(session).use(limited(deps.limits.api)).use(scoped);
   for (const group of deps.modules) {
     if (group.public) publicApi.route("/", group.public);
     if (group.private) api.route("/", group.private);

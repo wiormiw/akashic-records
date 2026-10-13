@@ -4,8 +4,8 @@ import { Hono } from "hono";
 import { createBroker } from "@akashic/broker";
 import { createDb, user, verification } from "@akashic/db";
 import { silentLogger } from "@akashic/lib/log";
+import type { ApiEnv } from "@/app.ts";
 import { buildContainer } from "@/container.ts";
-import type { AppEnv } from "@/http/env.ts";
 import { start, stop } from "@/runtime.ts";
 import { testEnv } from "./env.ts";
 
@@ -50,55 +50,60 @@ describe.skipIf(!(postgres && rabbitmq && openfga))("the started app", () => {
     const container = buildContainer(env)
       // Telemetry registers process-wide providers, which other test files' span capture needs.
       .override("telemetry", { async [Symbol.asyncDispose]() {} });
-    const probeRoute = new Hono<AppEnv>().get("/probe", (c) => c.text("ok"));
+    const probeRoute = new Hono<ApiEnv>().get("/probe", (c) => c.text("ok"));
     const { app, lifecycle } = await start(container, [{ private: probeRoute }]);
-    lifecycle.markReady();
+    try {
+      lifecycle.markReady();
 
-    const ready = await app.request("/readyz");
-    expect(ready.status).toBe(200);
-    expect(await ready.json()).toMatchObject({ database: true, rabbitmq: true });
+      const ready = await app.request("/readyz");
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toMatchObject({ database: true, rabbitmq: true });
 
-    const json = { "content-type": "application/json" };
-    const credentials = { email, password: "correct-horse-battery-staple" };
-    const signUp = await app.request("/api/auth/sign-up/email", {
-      method: "POST",
-      headers: json,
-      body: JSON.stringify({ ...credentials, name: "App Integration" }),
-    });
-    expect(signUp.status).toBe(200);
-    // Sign-in needs a verified address; the link went to a mailer that isn't configured.
-    await database.db.update(user).set({ emailVerified: true }).where(eq(user.email, email));
+      const json = { "content-type": "application/json" };
+      const credentials = { email, password: "correct-horse-battery-staple" };
+      const signUp = await app.request("/api/auth/sign-up/email", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ ...credentials, name: "App Integration" }),
+      });
+      expect(signUp.status).toBe(200);
+      // Sign-in needs a verified address; the link went to a mailer that isn't configured.
+      await database.db.update(user).set({ emailVerified: true }).where(eq(user.email, email));
 
-    const signIn = await app.request("/api/auth/sign-in/email", {
-      method: "POST",
-      headers: json,
-      body: JSON.stringify(credentials),
-    });
-    expect(signIn.status).toBe(200);
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((line) => line.split(";")[0])
-      .join("; ");
+      const signIn = await app.request("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify(credentials),
+      });
+      expect(signIn.status).toBe(200);
+      const cookie = signIn.headers
+        .getSetCookie()
+        .map((line) => line.split(";")[0])
+        .join("; ");
 
-    const before = await app.request("/api/v1/probe", { headers: { cookie } });
-    expect(before.status).toBe(200);
+      const before = await app.request("/api/v1/probe", { headers: { cookie } });
+      expect(before.status).toBe(200);
 
-    await database.db
-      .update(user)
-      .set({ bannedAt: new Date(), banReason: "Testing." })
-      .where(eq(user.email, email));
-    const after = await app.request("/api/v1/probe", { headers: { cookie } });
-    expect(after.status).toBe(403);
-    expect(((await after.json()) as { code: string }).code).toBe("auth.account.suspended");
+      await database.db
+        .update(user)
+        .set({ bannedAt: new Date(), banReason: "Testing." })
+        .where(eq(user.email, email));
+      const after = await app.request("/api/v1/probe", { headers: { cookie } });
+      expect(after.status).toBe(403);
+      expect(((await after.json()) as { code: string }).code).toBe("auth.account.suspended");
 
-    await stop({
-      reason: "test",
-      drainMs: 100,
-      server: { stop: async () => {} },
-      container,
-      lifecycle,
-    });
-    expect(lifecycle.isAlive()).toBe(false);
-    expect(lifecycle.signal.aborted).toBe(true);
+      await stop({
+        reason: "test",
+        drainMs: 100,
+        server: { stop: async () => {} },
+        container,
+        lifecycle,
+      });
+      expect(lifecycle.isAlive()).toBe(false);
+      expect(lifecycle.signal.aborted).toBe(true);
+    } finally {
+      // Disposal is idempotent: after `stop` this does nothing, after a failed assertion it releases.
+      await container.dispose();
+    }
   }, 20_000);
 });

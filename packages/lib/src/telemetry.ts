@@ -15,6 +15,24 @@ export interface TelemetryOptions {
   environment: string;
   endpoint: string;
   metricIntervalMs: number;
+  /** How long disposal waits for the final flush. Default 3000. */
+  flushTimeoutMs?: number;
+}
+
+/**
+ * Runs `flush`, giving up after `timeoutMs`; never throws. With the collector down an export
+ * waits out its own retries (about 8s), which would eat most of the shutdown deadline.
+ */
+export async function boundedFlush(flush: () => Promise<void>, timeoutMs: number): Promise<void> {
+  let timer: Timer | undefined;
+  const giveUp = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  try {
+    await Promise.race([flush().catch(() => undefined), giveUp]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -42,13 +60,6 @@ export function createTelemetry(options: TelemetryOptions): AsyncDisposable {
 
   sdk.start();
 
-  async function shutdown(): Promise<void> {
-    try {
-      await sdk.shutdown();
-    } catch {
-      // Never block exit on a telemetry flush.
-    }
-  }
-
-  return owned({}, shutdown);
+  // Never block exit on a telemetry flush.
+  return owned({}, () => boundedFlush(() => sdk.shutdown(), options.flushTimeoutMs ?? 3000));
 }
