@@ -1,0 +1,150 @@
+model
+  schema 1.1
+
+# The authorization model. This file is the source; model.json beside it is generated from it by
+# `bun run authz:build` and is what the SDK uploads.
+#
+# # Why this exists when permissions.ts already worked
+#
+# It did work, for ranks. `can(role, permission)` compares a member's rank against a minimum and
+# is correct, fast and needs no network call. What it cannot express is ownership, and that is
+# where the old code leaked:
+#
+#     // postings.ts:318
+#     if (existing.authorId !== actorId && !canModerate) { ...refuse... }
+#
+# That line is an authorization rule living in an HTTP handler. It is repeated, by hand, at every
+# place an author might edit their own thing, and each repetition is a chance to get it backwards.
+# The rule below says it once:
+#
+#     define can_edit: author or can_moderate from realm
+#
+# # How to read this file
+#
+# Two kinds of relation, and telling them apart is most of understanding FGA:
+#
+#   define admin: [user]              a FACT. Somebody wrote a tuple saying so.
+#   define can_vouch: moderator or admin   a RULE. Computed from facts at check time.
+#
+# Facts are stored (see the outbox sync in adapter/driving/consumer/realm-authz.ts). Rules are
+# not stored at all -- they are evaluated per check. So granting somebody `admin` immediately
+# grants every rule that mentions admin, with no backfill.
+#
+# `X from Y` is the inheritance operator, and it is the whole reason this is worth running a
+# service for. `can_moderate from realm` means "look up the realm this posting belongs to, and
+# ask whether the user can_moderate THERE". The posting itself stores no roles.
+
+type user
+
+# The product itself, so that a platform administrator is expressible.
+#
+# A single object, id "akashic", rather than a relation hanging off nothing. FGA has no global
+# scope: everything is a relation between a user and an object, so "admin of the whole product"
+# needs an object to be admin OF.
+type platform
+  relations
+    define admin: [user]
+
+    # The computed twin of the fact above, so application code can keep asking "may they" rather
+    # than "are they". Every other type here obeys that rule and this one did not, which left the
+    # only way to check platform authority being a direct read of a stored rank -- the exact shape
+    # the model exists to stop appearing in handlers.
+    define can_administer: admin
+
+type realm
+  relations
+    # The platform this realm belongs to, so a platform admin inherits authority everywhere
+    # without a tuple per realm. One fact, every realm.
+    define platform: [platform]
+
+    # The four ranks, as stored facts. Exactly one is written per member -- see the sync
+    # consumer, which deletes the old tuple before writing the new one. A member holding two
+    # rank tuples is not an error to FGA, it is simply a union, and the effect would be a
+    # demotion that silently did nothing.
+    define member: [user]
+    define verified: [user]
+    define moderator: [user]
+    define admin: [user]
+
+    # Ranks are cumulative, and this is where that is stated. In permissions.ts it was implicit
+    # in `role >= MINIMUM_RANK[permission]`, which works precisely because the enum is ordered --
+    # a property nothing enforced and a reordering would have silently broken.
+    define is_member: member or verified or moderator or admin
+
+    # Vouched for by a moderator, and now it MEANS something.
+    #
+    # `verified` existed from the first schema with the comment "no extra powers yet; a signal to
+    # other members". This is the power. It is the answer to "some surfaces need curated people,
+    # and making them all moderators is far too much" -- a moderator can remove anyone's content
+    # and promote people, which is not what vouching for a poster should carry with it.
+    define is_vouched: verified or moderator or admin
+
+    # Posting splits by what a bad post COSTS, which is the only honest axis for this.
+    #
+    # A junk marketplace listing wastes a scroll. A fake job wastes somebody's application, their
+    # hope, and possibly their bank details -- and an event sends real people to a real place at a
+    # real time. The first is worth moderating after the fact; the other two are worth vouching
+    # for beforehand.
+    #
+    # So listings and comments are open to any member, and jobs and events need a vouch. Nobody
+    # has to become an admin, or even a moderator, to post either.
+    define can_post: is_member
+    define can_post_job: is_vouched or admin from platform
+    define can_post_event: is_vouched or admin from platform
+
+    define can_participate: is_member
+    define can_moderate: moderator or admin or admin from platform
+    # The grant that hands out `verified`. A moderator can vouch; it does not need an admin.
+    define can_vouch: moderator or admin or admin from platform
+    define can_administer: admin or admin from platform
+
+# Jobs, listings and events are one shape: something a member posted inside a realm, which the
+# author or a moderator may act on.
+#
+# Three types rather than one `posting` with a kind, because FGA types are namespaces for ids. A
+# single type would mean a job and a listing could collide on id -- they are separate tables with
+# separate uuid spaces -- and the failure would be one person able to edit another's posting.
+type job
+  relations
+    define realm: [realm]
+    define author: [user]
+
+    define can_view: can_post from realm
+    define can_edit: author or can_moderate from realm
+    define can_delete: author or can_moderate from realm
+    # Settling is closing a posting against an applicant. Deliberately NOT granted to the author's
+    # moderators-only counterpart: the person who posted a job decides who got it, and a moderator
+    # stepping in would be making a hiring decision rather than moderating.
+    define can_settle: author
+
+type listing
+  relations
+    define realm: [realm]
+    define author: [user]
+
+    define can_view: can_post from realm
+    define can_edit: author or can_moderate from realm
+    define can_delete: author or can_moderate from realm
+    define can_settle: author
+
+type event
+  relations
+    define realm: [realm]
+    define author: [user]
+
+    define can_view: can_post from realm
+    define can_edit: author or can_moderate from realm
+    define can_delete: author or can_moderate from realm
+    # RSVP is participation, not authorship, so it comes from the realm and the author gets no
+    # special claim -- an organiser attending their own event is an ordinary attendee.
+    define can_rsvp: can_participate from realm
+
+type comment
+  relations
+    define realm: [realm]
+    define author: [user]
+
+    # No can_edit. Comments are not editable in this product, and the absence is the enforcement:
+    # a relation that does not exist cannot be checked true by mistake, where a `can_edit` defined
+    # and then never called is an invitation for somebody to call it.
+    define can_delete: author or can_moderate from realm
