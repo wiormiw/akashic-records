@@ -1,5 +1,7 @@
+import type { BatchObservableCallback } from "@opentelemetry/api";
 import { sql } from "drizzle-orm";
-import type { Db } from "@akashic/db";
+import { OutboxStatus, type Db } from "@akashic/db";
+import { owned } from "@akashic/lib/lifecycle";
 import { meter } from "@akashic/lib/metrics";
 
 /**
@@ -13,17 +15,17 @@ export function observeOutbox(db: Db) {
   const dead = meter().createObservableGauge("akashic.outbox.dead", {
     description: "Outbox events that gave up and need a person",
   });
-  meter().addBatchObservableCallback(
-    async (result) => {
-      const [row] = (await db.execute(sql`
-        SELECT count(*) FILTER (WHERE status = 0)::int AS pending,
-               count(*) FILTER (WHERE status = 3)::int AS dead
+  const callback: BatchObservableCallback = async (result) => {
+    const [row] = (await db.execute(sql`
+        SELECT count(*) FILTER (WHERE status = ${OutboxStatus.pending})::int AS pending,
+               count(*) FILTER (WHERE status = ${OutboxStatus.dead})::int AS dead
         FROM outbox_messages`)) as unknown as { pending: number; dead: number }[];
-      result.observe(backlog, row?.pending ?? 0);
-      result.observe(dead, row?.dead ?? 0);
-    },
-    [backlog, dead],
-  );
+    result.observe(backlog, row?.pending ?? 0);
+    result.observe(dead, row?.dead ?? 0);
+  };
+  meter().addBatchObservableCallback(callback, [backlog, dead]);
+  // Disposing removes the callback, so a stopped container stops querying.
+  return owned({}, () => meter().removeBatchObservableCallback(callback, [backlog, dead]));
 }
 
 const retries = () => meter().createCounter("akashic.consumer.retries");

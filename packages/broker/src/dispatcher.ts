@@ -94,11 +94,15 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
     }
   }
 
+  // Aborts with the lifecycle, or when the outbox is disposed without one.
+  const halt = new AbortController();
+  const signal = AbortSignal.any([lifecycle.signal, halt.signal]);
+
   // Resolves early on shutdown, so a polling loop never holds the grace period open.
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, ms);
-      lifecycle.signal.addEventListener(
+      signal.addEventListener(
         "abort",
         () => {
           clearTimeout(timer);
@@ -129,7 +133,7 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
 
           // Settled, not all: one poisonous event must not abandon the rest of the batch.
           const results = await mapLimitedSettled(claimed, options.concurrency, async (event) => {
-            if (lifecycle.signal.aborted) return;
+            if (signal.aborted) return;
             await processOne(event);
           });
 
@@ -144,7 +148,7 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
       stopped = runDispatcher({
         drain: () => outbox.drainBatch(),
         sleep,
-        signal: lifecycle.signal,
+        signal,
         batchSize: options.batchSize,
         pollMs: options.pollMs,
         log,
@@ -152,7 +156,10 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
     },
   };
 
-  return owned(outbox, () => stopped);
+  return owned(outbox, async () => {
+    halt.abort();
+    await stopped;
+  });
 }
 
 /**

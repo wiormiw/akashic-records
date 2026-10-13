@@ -56,3 +56,21 @@ describe("handleSignals", () => {
     expect(exits).toEqual([1, 0]);
   });
 });
+
+describe("owned", () => {
+  test("wrapping an already-owned value releases the inner first, then the outer", async () => {
+    const order: string[] = [];
+    const inner = owned({}, () => void order.push("inner"));
+    const outer = owned(inner, () => void order.push("outer"));
+    await outer[Symbol.asyncDispose]();
+    expect(order).toEqual(["inner", "outer"]);
+  });
+
+  test("disposing twice releases once", async () => {
+    let released = 0;
+    const value = owned({}, () => void released++);
+    await Promise.all([value[Symbol.asyncDispose](), value[Symbol.asyncDispose]()]);
+    await value[Symbol.asyncDispose]();
+    expect(released).toBe(1);
+  });
+});

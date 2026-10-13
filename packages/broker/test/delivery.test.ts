@@ -8,11 +8,11 @@ import { claimUntil, isClaimedUntil } from "../src/event.ts";
 import type { OutboxStore } from "../src/store.ts";
 
 /** The store's contract in memory: claims lease, and finish writes only while the lease holds. */
-function memoryStore(onClaim?: () => void) {
+function memoryStore(onClaim?: () => Promise<void> | void) {
   const rows = new Map<string, OutboxEvent>();
   const store: OutboxStore = {
     async claim(now, deadline, limit) {
-      onClaim?.();
+      await onClaim?.();
       const due = [...rows.values()]
         .filter((e) => e.status === OutboxStatus.pending && !isBefore(now, e.nextAttemptAt))
         .slice(0, limit)
@@ -31,7 +31,7 @@ function memoryStore(onClaim?: () => void) {
 }
 
 /** `send` stands in for the broker: resolving is its confirm, throwing is a nack or a timeout. */
-function world(send: OutboxTransport, onClaim?: () => void) {
+function world(send: OutboxTransport, onClaim?: () => Promise<void> | void) {
   const clock = mutableClock("2026-06-01T00:00:00Z");
   const { store, rows } = memoryStore(onClaim);
   const lifecycle = createLifecycle(silentLogger());
@@ -120,6 +120,33 @@ describe("outbox delivery", () => {
   });
 
   test("disposing the outbox waits for the loop to stop", async () => {
+    let release = () => {};
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    let claims = 0;
+    const w = world(
+      async () => {},
+      () => {
+        claims++;
+        // The first claim holds the loop until the test lets it go.
+        return claims === 1 ? blocked : undefined;
+      },
+    );
+    w.rows.clear();
+    w.outbox.start();
+    while (claims === 0) await Bun.sleep(1);
+    w.lifecycle.abort("test over");
+
+    let disposed = false;
+    const disposal = w.outbox[Symbol.asyncDispose]().then(() => (disposed = true));
+    await Bun.sleep(30);
+    expect(disposed).toBe(false);
+
+    release();
+    await disposal;
+    expect(disposed).toBe(true);
+  });
+
+  test("disposing the outbox stops its loop even if the lifecycle was never aborted", async () => {
     let claims = 0;
     const w = world(
       async () => {},
@@ -128,8 +155,7 @@ describe("outbox delivery", () => {
     w.rows.clear();
     w.outbox.start();
     while (claims === 0) await Bun.sleep(1);
-    w.lifecycle.abort("test over");
     await w.outbox[Symbol.asyncDispose]();
-    expect(claims).toBeGreaterThan(0); // it ran, and it has stopped without hanging
+    expect(w.lifecycle.signal.aborted).toBe(false);
   });
 });

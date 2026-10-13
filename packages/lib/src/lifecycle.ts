@@ -57,14 +57,24 @@ export function createLifecycle(logger: Logger): Lifecycle {
   };
 }
 
-/** `value`, released by `release` when its owner disposes it. For things the container builds. */
+/**
+ * `value`, released by `release` when its owner disposes it. For things the container builds.
+ * A value that is already disposable keeps its own disposal: this one runs it first, then
+ * `release`. Disposal happens once; later calls return the first one's promise.
+ */
 export function owned<T extends object>(
   value: T,
   release: () => Promise<void> | void,
 ): T & AsyncDisposable {
+  const previous = (value as Partial<AsyncDisposable>)[Symbol.asyncDispose]?.bind(value);
+  let disposal: Promise<void> | undefined;
   return Object.assign(value, {
-    async [Symbol.asyncDispose]() {
-      await release();
+    [Symbol.asyncDispose]() {
+      disposal ??= (async () => {
+        await previous?.();
+        await release();
+      })();
+      return disposal;
     },
   });
 }
