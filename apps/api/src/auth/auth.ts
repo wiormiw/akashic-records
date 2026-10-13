@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
-import type { Db } from "@akashic/db";
+import { account, session, user, verification, type Db } from "@akashic/db";
 import type { Logger } from "@akashic/lib/log";
 import type { Mailer } from "@/integrations/mail.ts";
 import { banMessage, banOf } from "./bans.ts";
@@ -40,7 +40,13 @@ export function createAuth(options: AuthOptions) {
     secret: options.secret,
     baseURL: options.baseUrl,
     trustedOrigins: options.trustedOrigins,
-    database: drizzleAdapter(options.db, { provider: "pg", usePlural: false }),
+    // The tables are named here: a Drizzle client built from relations alone carries no schema
+    // for the adapter to find them in.
+    database: drizzleAdapter(options.db, {
+      provider: "pg",
+      usePlural: false,
+      schema: { user, session, account, verification },
+    }),
 
     emailAndPassword: {
       enabled: true,

@@ -39,10 +39,14 @@ export const url = (fallback?: string) => {
 /** An optional URL with no default: absent stays undefined. */
 export const optionalUrl = () => v.optional(v.pipe(v.string(), v.url("must be a URL")));
 
-export const oneOfEnv = <const T extends readonly [string, ...string[]]>(
+// The fallback is its own type parameter, so a key with one is typed as never undefined.
+export const oneOfEnv = <
+  const T extends readonly [string, ...string[]],
+  const F extends T[number] | undefined = undefined,
+>(
   values: T,
-  fallback?: T[number],
-) => v.optional(v.picklist(values, `must be one of ${values.join(", ")}`), fallback);
+  fallback?: F,
+) => v.optional(v.picklist(values, `must be one of ${values.join(", ")}`), fallback as F);
 
 /** Settings every app needs. Apps spread this into their own `v.object`. */
 export const baseEnv = {
