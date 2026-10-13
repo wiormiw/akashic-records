@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch makes the running check moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: akashic
+          POSTGRES_PASSWORD: akashic
+          POSTGRES_DB: akashic
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U akashic" --health-interval 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-retries 10
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: akashic
+          RABBITMQ_DEFAULT_PASS: akashic
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_port_connectivity" --health-interval 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://akashic:akashic@localhost:5432/akashic?sslmode=disable
+      REDIS_URL: redis://localhost:6379
+      FGA_API_URL: http://localhost:8080
+      RABBITMQ_URL: amqp://akashic:akashic@localhost:5672
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # A service container can't be given a command, and OpenFGA needs `run`.
+      - run: docker run -d -p 8080:8080 openfga/openfga:latest run
+      # Wait for it: tests against an OpenFGA that isn't up yet skip rather than fail.
+      - run: timeout 60 sh -c 'until curl -sf http://localhost:8080/healthz; do sleep 1; done'
+      - run: bun install --frozen-lockfile
+      - run: bun run format:check
+      - run: bun run lint
+      - run: bun run typecheck
+      # The integration suites need a migrated database and an OpenFGA; without them they skip.
+      - run: bun apps/api/scripts/migrate.ts
+      - run: bun test
+      # The generated migrations must match the schema.
+      - run: (cd packages/db && bunx drizzle-kit generate) && git diff --exit-code packages/db/migrations
