@@ -39,21 +39,28 @@ describe("structure", () => {
     expect(await importers(/^@inferdi\/inferdi(\/|$)/)).toEqual(["apps/api/src/container.ts"]);
   });
 
-  // A module is a directory under modules/. The files beside them are shared: module.ts (the
-  // contract every module imports) and index.ts (the one file that knows every module).
-  test("modules never import each other", async () => {
+  // A module is a directory under modules/. Beside them sit module.ts, the contract every module
+  // may import, and index.ts, the one file that knows every module: index.ts imports modules,
+  // never the reverse.
+  test("modules never import each other, nor the module list", async () => {
     const crossing: string[] = [];
     const moduleFiles = scan("apps/api/src/modules/*/**/*.ts", "apps/api/test/modules/*/**/*.ts");
     for (const f of moduleFiles) {
       const own = /^apps\/api\/(?:src|test)\/modules\/([^/]+)\//.exec(f)?.[1];
       const dir = posix.dirname(f);
       for (const s of specifiers(await read(f))) {
-        const alias = /^@\/modules\/([^/]+)\//.exec(s);
-        if (alias && alias[1] !== own) crossing.push(`${f} -> ${alias[1]}`);
-        if (s.startsWith(".")) {
-          const hit = /^apps\/api\/(?:src|test)\/modules\/([^/]+)\//.exec(posix.join(dir, s));
-          if (hit && hit[1] !== own) crossing.push(`${f} -> ${hit[1]}`);
-        }
+        const target = s.startsWith("@/")
+          ? `apps/api/src/${s.slice(2)}`
+          : s.startsWith(".")
+            ? posix.join(dir, s)
+            : undefined;
+        const under = target && /^apps\/api\/(?:src|test)\/modules(?:\/(.*))?$/.exec(target);
+        if (!under) continue;
+        // A bare `modules` path is a directory import, which resolves to index.ts.
+        const rel = under[1] || "index.ts";
+        if (rel === "module.ts" || rel === "module") continue;
+        const name = rel.split("/")[0];
+        if (name !== own) crossing.push(`${f} -> ${rel}`);
       }
     }
     expect(crossing).toEqual([]);
