@@ -1,3 +1,4 @@
+// Test helpers. Only tests import this subpath, so production never loads the SDK pieces below.
 import { context, propagation, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
@@ -6,6 +7,8 @@ import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
+import { pino } from "pino";
+import type { Logger } from "./log.ts";
 
 // OpenTelemetry ignores a second global registration, and `bun test` runs every file in one
 // process, so the provider is registered once and every caller shares its exporter.
@@ -24,4 +27,14 @@ export function recordSpans() {
   }
   const shared = exporter;
   return { spans: () => shared.getFinishedSpans(), reset: () => shared.reset() };
+}
+
+/** A real logger at `trace` level whose lines are parsed into `lines`, so a test can assert on them. */
+export function captureLogger(): { logger: Logger; lines: Record<string, unknown>[] } {
+  const lines: Record<string, unknown>[] = [];
+  const logger = pino(
+    { level: "trace" },
+    { write: (line: string) => void lines.push(JSON.parse(line) as Record<string, unknown>) },
+  );
+  return { logger, lines };
 }

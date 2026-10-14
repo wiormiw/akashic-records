@@ -31,9 +31,6 @@
         "resend": "^6.22.1",
         "valibot": "1.5.0",
       },
-      "devDependencies": {
-        "pino": "^10.3.1",
-      },
     },
     "packages/authz": {
       "name": "@akashic/authz",
@@ -77,20 +74,18 @@
       "name": "@akashic/lib",
       "dependencies": {
         "@opentelemetry/api": "^1.9.1",
+        "@opentelemetry/context-async-hooks": "^2.10.0",
+        "@opentelemetry/core": "^2.10.0",
         "@opentelemetry/exporter-metrics-otlp-http": "^0.221.0",
         "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
         "@opentelemetry/resources": "^2.10.0",
         "@opentelemetry/sdk-metrics": "^2.10.0",
         "@opentelemetry/sdk-node": "^0.221.0",
+        "@opentelemetry/sdk-trace-base": "^2.10.0",
         "@opentelemetry/semantic-conventions": "^1.43.0",
         "p-limit": "^7.3.1",
         "pino": "^10.3.1",
         "valibot": "1.5.0",
-      },
-      "devDependencies": {
-        "@opentelemetry/context-async-hooks": "^2.10.0",
-        "@opentelemetry/core": "^2.10.0",
-        "@opentelemetry/sdk-trace-base": "^2.10.0",
       },
     },
   },

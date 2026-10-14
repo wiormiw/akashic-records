@@ -1,7 +1,7 @@
 import type { Attributes } from "@opentelemetry/api";
 import type { Result } from "@akashic/lib/result";
 import { traced } from "@akashic/lib/tracing";
-import type { Db, Tx } from "./client.ts";
+import type { Executor, Tx } from "./client.ts";
 
 /** Carries a returned `err` out of Drizzle's callback; never leaves this file. */
 class Rollback<T> extends Error {
@@ -12,10 +12,12 @@ class Rollback<T> extends Error {
 
 /**
  * Runs `work` in one transaction: commits on `ok`, rolls back on `err` or a throw, so a failure
- * found halfway never commits the half already written, nor its events.
+ * found halfway never commits the half already written, nor its events. Given a transaction, it
+ * opens a savepoint, so a service called inside another's transaction (or a test's) still rolls
+ * back only its own part.
  */
 export function inTransaction<T>(
-  db: Db,
+  db: Executor,
   work: (tx: Tx) => Promise<Result<T>>,
   attributes: Attributes = {},
 ): Promise<Result<T>> {

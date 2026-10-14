@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { SpanKind } from "@opentelemetry/api";
 import { createBrokerPublisher } from "@akashic/broker";
-import { recordSpans } from "../../lib/test/spans.ts";
+import { recordSpans } from "@akashic/lib/testing";
 
 const recorder = recordSpans();
 beforeEach(() => recorder.reset());

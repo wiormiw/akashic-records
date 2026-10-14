@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import { pino } from "pino";
+import { captureLogger } from "@akashic/lib/testing";
 import { silentLogger, type Logger } from "@akashic/lib/log";
 import type { AppEnv } from "@/http/env.ts";
 import { problemHandler } from "@/http/problem.ts";
@@ -46,11 +46,7 @@ describe("rate limit", () => {
   });
 
   test("a refusal is logged with its bucket and count", async () => {
-    const warned: Record<string, unknown>[] = [];
-    const logger = pino(
-      { level: "trace" },
-      { write: (line: string) => void warned.push(JSON.parse(line)) },
-    );
+    const { logger, lines: warned } = captureLogger();
     const app = build(logger);
     for (let i = 0; i < 3; i++) await app.request("/");
     expect(warned[0]).toMatchObject({ msg: "rate limit exceeded", bucket: "t", count: 3 });

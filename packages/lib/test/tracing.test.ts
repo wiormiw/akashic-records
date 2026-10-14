@@ -3,7 +3,7 @@ import { SpanStatusCode } from "@opentelemetry/api";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok } from "@akashic/lib/result";
 import { currentTraceparent, traced, withConsumerSpan } from "@akashic/lib/tracing";
-import { recordSpans } from "./spans.ts";
+import { recordSpans } from "@akashic/lib/testing";
 
 const recorder = recordSpans();
 beforeEach(() => recorder.reset());

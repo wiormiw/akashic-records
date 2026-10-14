@@ -64,7 +64,7 @@ OpenFGA and RabbitMQ; each skips when nothing answers. Migrations are generated 
 8. **Bun SQL queries are lazy thenables**: `expect(query).rejects` hangs. Wrap it in
    `Promise.resolve(query)`.
 9. **OTel ignores a second global registration in one process.** Tests use `recordSpans()` from
-   `packages/lib/test/spans.ts`, which registers once; reset it in `beforeEach`.
+   `@akashic/lib/testing`, which registers once; reset it in `beforeEach`.
 10. **`owned()` composes with an existing disposer.** Wrap only the extra release; never re-call
     the inner disposer.
 11. **Hono drops headers set with `c.header` when a bare `new Response` is returned.** Problem

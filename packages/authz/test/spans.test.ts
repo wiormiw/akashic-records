@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { silentLogger } from "@akashic/lib/log";
 import { FgaType, Relation, createAuthorizer } from "@akashic/authz";
-import { recordSpans } from "../../lib/test/spans.ts";
+import { recordSpans } from "@akashic/lib/testing";
 
 const recorder = recordSpans();
 beforeEach(() => recorder.reset());

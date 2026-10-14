@@ -24,8 +24,5 @@
     "hono": "4.13.13",
     "resend": "^6.22.1",
     "valibot": "1.5.0"
-  },
-  "devDependencies": {
-    "pino": "^10.3.1"
   }
 }

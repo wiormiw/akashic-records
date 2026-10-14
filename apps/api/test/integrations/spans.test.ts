@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { silentLogger } from "@akashic/lib/log";
-import { recordSpans } from "../../../../packages/lib/test/spans.ts";
+import { recordSpans } from "@akashic/lib/testing";
 import { createEmbedder } from "@/integrations/embedder.ts";
 import { createResendMailer } from "@/integrations/mail.ts";
 import { createS3ImageStore } from "@/integrations/storage.ts";

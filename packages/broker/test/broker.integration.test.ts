@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { Connection } from "rabbitmq-client";
 import { createLifecycle } from "@akashic/lib/lifecycle";
 import { silentLogger } from "@akashic/lib/log";
-import { recordSpans } from "../../lib/test/spans.ts";
+import { recordSpans } from "@akashic/lib/testing";
 import { createBroker } from "../src/connection.ts";
 import { createEventConsumer, type EventHandler } from "../src/consumer.ts";
 import { createBrokerPublisher } from "../src/publisher.ts";

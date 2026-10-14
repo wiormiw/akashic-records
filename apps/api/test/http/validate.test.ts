@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import * as v from "valibot";
-import { pino } from "pino";
+import { captureLogger } from "@akashic/lib/testing";
 import type { AppEnv } from "@/http/env.ts";
 import { problemHandler } from "@/http/problem.ts";
 import { validate } from "@/http/validate.ts";
@@ -11,11 +11,7 @@ const app = new Hono<AppEnv>().post(
   validate("json", v.object({ name: v.pipe(v.string(), v.minLength(2)) })),
   (c) => c.text(c.req.valid("json").name),
 );
-const lines: { level: number; msg?: string }[] = [];
-const logger = pino(
-  { level: "trace" },
-  { write: (line: string) => void lines.push(JSON.parse(line)) },
-);
+const { logger, lines } = captureLogger();
 app.onError(problemHandler(logger));
 
 const post = (body: unknown) =>
@@ -49,6 +45,6 @@ describe("validate", () => {
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { code: string }).code).toBe("common.request.validation_failed");
-    expect(lines.filter((l) => l.level >= 50)).toEqual([]);
+    expect(lines.filter((l) => (l.level as number) >= 50)).toEqual([]);
   });
 });
