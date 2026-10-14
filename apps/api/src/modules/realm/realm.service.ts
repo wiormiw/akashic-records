@@ -19,6 +19,7 @@ import { type Clock, fromDate, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
 import type { Embedder } from "@/integrations/embedder.ts";
 import { createProposals } from "./realm.proposals.ts";
+import { insertModules, liveSummaries, ofMember } from "./realm.queries.ts";
 import { knownModules } from "./realm.rules.ts";
 
 export interface FoundRealm {
@@ -34,44 +35,6 @@ export interface RealmDeps {
   embedder: Embedder;
   clock: Clock;
 }
-
-type SummaryRow = {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  category: string | null;
-  member_count: number;
-  modules: number[] | null;
-};
-
-const summary = sql`
-  SELECT
-    r.id, r.slug, r.name, r.description, r.category,
-    (SELECT count(*)::int FROM realm_member m WHERE m.realm_id = r.id) AS member_count,
-    (SELECT coalesce(array_agg(rm.module ORDER BY rm.module), '{}')
-       FROM realm_module rm WHERE rm.realm_id = r.id) AS modules
-  FROM realm r
-  WHERE r.archived_at IS NULL
-`;
-
-const toSummary = (row: SummaryRow): RealmSummary => ({
-  id: row.id,
-  slug: row.slug,
-  name: row.name,
-  description: row.description,
-  category: row.category,
-  memberCount: Number(row.member_count),
-  modules: row.modules ?? [],
-});
-
-const insertModules = async (tx: Tx, realmId: string, modules: readonly number[]) => {
-  if (modules.length === 0) return;
-  await tx.insert(realmModules).values(modules.map((module) => ({ realmId, module })));
-};
-
-const ofMember = (realmId: string, userId: string) =>
-  and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId));
 
 /**
  * The writes that found a realm, in the caller's transaction: the realm, its modules, the founder
@@ -151,19 +114,17 @@ export function createRealmService(deps: RealmDeps) {
     seedCentroid,
 
     async browse(): Promise<RealmSummary[]> {
-      const rows = (await db.execute(
-        sql`${summary} ORDER BY member_count DESC, r.created_at ASC LIMIT ${policy.pageSize}`,
-      )) as unknown as SummaryRow[];
-      return rows.map(toSummary);
+      return liveSummaries(
+        db,
+        sql`ORDER BY member_count DESC, r.created_at ASC LIMIT ${policy.pageSize}`,
+      );
     },
 
     /** Live realms only. */
     async read(slug: string): Promise<Result<RealmSummary>> {
-      const [row] = (await db.execute(
-        sql`${summary} AND r.slug = ${slug} LIMIT 1`,
-      )) as unknown as SummaryRow[];
-      return row
-        ? ok(toSummary(row))
+      const [realm] = await liveSummaries(db, sql`AND r.slug = ${slug} LIMIT 1`);
+      return realm
+        ? ok(realm)
         : err(fail.notFound(ErrorCode.realm.notFound, `No realm called "${slug}".`));
     },
 
