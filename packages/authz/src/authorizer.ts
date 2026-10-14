@@ -78,25 +78,31 @@ export function createAuthorizer(options: OpenFgaOptions): Authorizer {
             });
             return allowed ?? false;
           }),
+        { signal },
       ),
 
     checkMany: (checks, signal) =>
-      traced("authz.check_many", { "akashic.fga.count": checks.length }, async () => {
-        if (checks.length === 0) return [];
-        const { result } = await call("batchCheck", signal, () =>
-          client.batchCheck({
-            checks: checks.map((c, i) => ({
-              user: userRef(c.userId),
-              relation: c.relation,
-              object: ref(c.type, c.objectId),
-              correlationId: String(i),
-            })),
-          }),
-        );
-        const byId = new Map(result.map((answer) => [answer.correlationId, answer]));
-        // An item the batch failed to answer is a denial, not an outage.
-        return checks.map((_, i) => byId.get(String(i))?.allowed ?? false);
-      }),
+      traced(
+        "authz.check_many",
+        { "akashic.fga.count": checks.length },
+        async () => {
+          if (checks.length === 0) return [];
+          const { result } = await call("batchCheck", signal, () =>
+            client.batchCheck({
+              checks: checks.map((c, i) => ({
+                user: userRef(c.userId),
+                relation: c.relation,
+                object: ref(c.type, c.objectId),
+                correlationId: String(i),
+              })),
+            }),
+          );
+          const byId = new Map(result.map((answer) => [answer.correlationId, answer]));
+          // An item the batch failed to answer is a denial, not an outage.
+          return checks.map((_, i) => byId.get(String(i))?.allowed ?? false);
+        },
+        { signal },
+      ),
 
     write: (changes, signal) =>
       traced(
@@ -126,6 +132,7 @@ export function createAuthorizer(options: OpenFgaOptions): Authorizer {
             ),
           );
         },
+        { signal },
       ),
 
     listObjects: (userId, relation, type, signal) =>
@@ -138,6 +145,7 @@ export function createAuthorizer(options: OpenFgaOptions): Authorizer {
           );
           return objects.map((object) => object.slice(object.indexOf(":") + 1));
         },
+        { signal },
       ),
   };
 }

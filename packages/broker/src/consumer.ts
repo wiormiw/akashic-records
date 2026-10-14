@@ -48,16 +48,18 @@ export function createDeliveryHandler(deps: DeliveryDeps) {
     const handler = deps.handlers[type];
     if (!handler) throw new Error(`no handler for "${type}"`);
     const traceparent = delivery.headers?.["traceparent"];
+    const signal = deps.signal();
     await withConsumerSpan(
       `consume ${type}`,
       typeof traceparent === "string" ? traceparent : undefined,
-      () => handler(delivery.body, deps.signal()),
+      () => handler(delivery.body, signal),
       {
         "messaging.system": "rabbitmq",
         "messaging.destination.name": deps.queue,
         "messaging.message.id": delivery.messageId ?? "",
         "messaging.operation": "process",
       },
+      signal,
     );
   };
 

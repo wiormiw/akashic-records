@@ -6,6 +6,10 @@ import { currentTraceparent, traced, withConsumerSpan } from "@akashic/lib/traci
 import { recordSpans } from "@akashic/lib/testing";
 
 const recorder = recordSpans();
+
+/** What a span carries out of the process. The span object itself is cyclic. */
+const exported = (span: ReturnType<typeof recorder.spans>[number] | undefined) =>
+  JSON.stringify({ attributes: span?.attributes, events: span?.events, status: span?.status });
 beforeEach(() => recorder.reset());
 
 describe("traced", () => {
@@ -48,8 +52,117 @@ describe("traced", () => {
     expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
   });
 
+  test("a TimeoutError or a shutdown abort is cancelled, not an error", async () => {
+    for (const reason of [
+      new DOMException("late", "TimeoutError"),
+      new Error("shutting down: SIGTERM"),
+    ]) {
+      const controller = new AbortController();
+      controller.abort(reason);
+      await expect(
+        traced(
+          "x",
+          {},
+          async () => {
+            throw controller.signal.reason;
+          },
+          { signal: controller.signal },
+        ),
+      ).rejects.toBe(reason);
+    }
+    expect(recorder.spans()).toHaveLength(2);
+    for (const span of recorder.spans()) {
+      expect(span.attributes["akashic.cancelled"]).toBe(true);
+      expect(span.status.code).not.toBe(SpanStatusCode.ERROR);
+      expect(span.events).toEqual([]);
+    }
+  });
+
+  test("an unexpected error's message is not recorded, only its name and code", async () => {
+    const pgError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "user_email_key": (email)=(ann@example.test)',
+      ),
+      { code: "23505" },
+    );
+    await expect(
+      traced("x", {}, async () => {
+        throw pgError;
+      }),
+    ).rejects.toBe(pgError);
+    const [span] = recorder.spans();
+    expect(exported(span)).not.toContain("ann@example.test");
+    expect(span?.attributes["error.type"]).toBe("23505");
+    expect(span?.status).toEqual({ code: SpanStatusCode.ERROR, message: "23505" });
+  });
+
+  test("an AppError keeps its message: it was written for clients", async () => {
+    const failure = fail.external(ErrorCode.common.timeout, "The request took too long.");
+    await expect(
+      traced("x", {}, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    const [span] = recorder.spans();
+    expect(span?.events[0]?.attributes?.["exception.message"]).toBe("The request took too long.");
+    expect(span?.attributes["error.type"]).toBe(ErrorCode.common.timeout);
+  });
+
+  test("a throw that is not the signal's reason is an error even once the signal aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("shutting down: SIGTERM"));
+    const other = new TypeError("boom");
+    await expect(
+      traced(
+        "x",
+        {},
+        async () => {
+          throw other;
+        },
+        { signal: controller.signal },
+      ),
+    ).rejects.toBe(other);
+    const [span] = recorder.spans();
+    expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span?.attributes["error.type"]).toBe("TypeError");
+  });
+
   test("an ok value passes through untouched", async () => {
     expect(await traced("x", {}, async () => ok(1))).toEqual(ok(1));
+  });
+});
+
+describe("withConsumerSpan", () => {
+  test("a handler stopped by its own signal is cancelled, not an error", async () => {
+    const controller = new AbortController();
+    const reason = new DOMException("late", "TimeoutError");
+    controller.abort(reason);
+    await expect(
+      withConsumerSpan(
+        "consume x",
+        undefined,
+        async () => {
+          throw reason;
+        },
+        {},
+        controller.signal,
+      ),
+    ).rejects.toBe(reason);
+    const [span] = recorder.spans();
+    expect(span?.attributes["akashic.cancelled"]).toBe(true);
+    expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+  });
+
+  test("a handler's error records its code, not its message", async () => {
+    const failure = Object.assign(new Error("secret@example.test"), { code: "ECONNRESET" });
+    await expect(
+      withConsumerSpan("consume x", undefined, async () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    const [span] = recorder.spans();
+    expect(exported(span)).not.toContain("secret@example.test");
+    expect(span?.attributes["error.type"]).toBe("ECONNRESET");
   });
 });
 

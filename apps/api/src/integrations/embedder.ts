@@ -59,6 +59,7 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
           "embedder.embed",
           { "akashic.ai.provider": options.provider, "akashic.ai.model": options.model },
           () => request(input, signal),
+          { signal },
         );
         return vector?.length === EMBEDDING_DIMENSIONS ? vector : null;
       } catch (error) {
