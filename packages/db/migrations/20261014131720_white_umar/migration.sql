@@ -1,0 +1,1 @@
+CREATE INDEX "ix_outbox_messages_dead" ON "outbox_messages" ("id") WHERE status = 3;

@@ -110,6 +110,9 @@ describe("outbox shutdown", () => {
         async finish() {
           return true;
         },
+        async prune() {
+          return 0;
+        },
       },
       transport: async () => {},
       clock: systemClock,
@@ -119,6 +122,7 @@ describe("outbox shutdown", () => {
       pollMs: 5000,
       concurrency: 1,
       sendTimeoutMs: 1000,
+      retentionDays: 7,
     });
     outbox.start();
 

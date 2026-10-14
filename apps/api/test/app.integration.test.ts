@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { createBroker } from "@akashic/broker";
-import { createDb, user, verification } from "@akashic/db";
+import { createDb, outboxMessages, user, verification } from "@akashic/db";
 import { silentLogger } from "@akashic/lib/log";
 import { buildContainer } from "@/container.ts";
 import type { AppEnv } from "@/http/env.ts";
@@ -40,6 +40,15 @@ afterAll(async () => {
   if (postgres) {
     await database.db.delete(verification).where(eq(verification.identifier, email));
     await database.db.delete(user).where(eq(user.email, email));
+    // Sign-up wrote a mail.requested event for this address; remove only that one.
+    await database.db
+      .delete(outboxMessages)
+      .where(
+        and(
+          eq(outboxMessages.messageType, "mail.requested"),
+          sql`${outboxMessages.payload}->>'to' = ${email}`,
+        ),
+      );
   }
   await database[Symbol.asyncDispose]();
   await probe.close();

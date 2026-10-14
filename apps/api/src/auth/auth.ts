@@ -1,21 +1,31 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
-import { account, session, user, verification, type Db } from "@akashic/db";
+import {
+  account,
+  inTransaction,
+  publish,
+  session,
+  user,
+  verification,
+  type Executor,
+} from "@akashic/db";
 import type { Logger } from "@akashic/lib/log";
-import type { Mailer } from "@/integrations/mail.ts";
+import { ok } from "@akashic/lib/result";
+import type { Clock } from "@akashic/lib/time";
+import { mailRequested } from "@/modules/mail/mail.events.ts";
 import { banMessage, banOf } from "./bans.ts";
 
 export interface AuthOptions {
   appName: string;
   /** Browsers scope cookies by host, not port: two apps on localhost need different prefixes. */
   cookiePrefix: string;
-  db: Db;
+  db: Executor;
   secret: string;
   baseUrl: string;
   /** Front-end origins. The first is where verification links land. */
   trustedOrigins: string[];
-  mailer: Mailer;
+  clock: Clock;
   sessionExpiryDays: number;
   sessionCacheS: number;
   secureCookies: boolean;
@@ -24,7 +34,15 @@ export interface AuthOptions {
 
 export function createAuth(options: AuthOptions) {
   const log = options.logger.child({ component: "auth" });
-  const { appName, mailer } = options;
+  const { appName, clock } = options;
+
+  // better-auth owns the transaction that creates the user, so this event is written right after
+  // it: a crash between the two loses that one email, and the person can ask for another.
+  const requestMail = (message: { to: string; subject: string; html: string; link: string }) =>
+    inTransaction(options.db, async (tx) => {
+      await publish(tx, [mailRequested(message)], clock.now());
+      return ok(undefined);
+    }).then(() => undefined);
 
   // better-auth's links point at the API; send the reader on to the front end afterwards.
   const toFrontEnd = (url: string): string => {
@@ -52,7 +70,7 @@ export function createAuth(options: AuthOptions) {
       enabled: true,
       requireEmailVerification: true,
       sendResetPassword: ({ user, url }) =>
-        mailer.send({
+        requestMail({
           to: user.email,
           subject: `Reset your ${appName} password`,
           html: `<p>Reset your password: <a href="${url}">${url}</a></p><p>Ignore this if it wasn't you.</p>`,
@@ -65,7 +83,7 @@ export function createAuth(options: AuthOptions) {
       autoSignInAfterVerification: true,
       sendVerificationEmail: ({ user, url }) => {
         const link = toFrontEnd(url);
-        return mailer.send({
+        return requestMail({
           to: user.email,
           subject: `Verify your ${appName} email`,
           html: `<p>Confirm your address: <a href="${link}">${link}</a></p>`,

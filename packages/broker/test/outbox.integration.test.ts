@@ -112,4 +112,36 @@ describe.skipIf(!live)("outbox store", () => {
     });
     expect(await store.claim(lease(3700), lease(3730), 2)).toHaveLength(2);
   });
+  test("prune deletes only published rows past the cutoff", async () => {
+    await seed(3);
+    const now = epoch.add({ hours: 24 * 60 });
+    const [old, recent, dead] = await store.claim(due, lease(30), 3);
+    const stamp = (event: typeof old, at: Temporal.Instant) =>
+      store.finish(markPublished(event!, at), event!.nextAttemptAt);
+    await stamp(old, now.subtract({ hours: 24 * 30 }));
+    await stamp(recent, now.subtract({ hours: 24 }));
+    await store.finish(recordFailure(dead!, lease(40), "gone", true), dead!.nextAttemptAt);
+    // Back-dated far enough to be due for deletion, were it published.
+    await database.db
+      .update(outboxMessages)
+      .set({ createdAt: new Date(now.subtract({ hours: 24 * 30 }).epochMilliseconds) })
+      .where(eq(outboxMessages.id, dead!.id));
+
+    const cutoff = now.subtract({ hours: 24 * 7 });
+    expect(await store.prune(cutoff, 100)).toBe(1);
+    const left = await rowsOf([old!.id, recent!.id, dead!.id]);
+    expect(left.map((row) => row.id).sort()).toEqual([recent!.id, dead!.id].sort());
+    // Nothing more is due, so a second pass finds nothing.
+    expect(await store.prune(cutoff, 100)).toBe(0);
+  });
+
+  test("one prune call is bounded by its limit", async () => {
+    await seed(3);
+    const claimed = await store.claim(due, lease(30), 3);
+    for (const event of claimed) {
+      await store.finish(markPublished(event, epoch.add({ minutes: 5 })), event.nextAttemptAt);
+    }
+    expect(await store.prune(epoch.add({ hours: 1 }), 2)).toBe(2);
+    expect(await store.prune(epoch.add({ hours: 1 }), 2)).toBe(1);
+  });
 });

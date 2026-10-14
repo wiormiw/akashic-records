@@ -26,6 +26,16 @@ function memoryStore(onClaim?: () => Promise<void> | void) {
       rows.set(next.id, next);
       return true;
     },
+    async prune(before, limit) {
+      const old = [...rows.values()]
+        .filter(
+          (e) =>
+            e.status === OutboxStatus.published && e.publishedAt && isBefore(e.publishedAt, before),
+        )
+        .slice(0, limit);
+      for (const e of old) rows.delete(e.id);
+      return old.length;
+    },
   };
   return { store, rows };
 }
@@ -45,6 +55,7 @@ function world(send: OutboxTransport, onClaim?: () => Promise<void> | void) {
     pollMs: 1000,
     concurrency: 2,
     sendTimeoutMs: 1000,
+    retentionDays: 7,
   });
   const event = newOutboxEvent({ type: "realm.created", payload: { realmId: "r1" } }, clock.now());
   rows.set(event.id, event);
@@ -157,5 +168,48 @@ describe("outbox delivery", () => {
     while (claims === 0) await Bun.sleep(1);
     await w.outbox[Symbol.asyncDispose]();
     expect(w.lifecycle.signal.aborted).toBe(false);
+  });
+
+  test("published events past retention are pruned, at most once an hour", async () => {
+    const w = world(async () => {});
+    const old = newOutboxEvent({ type: "x.old", payload: {} }, w.clock.now());
+    const aged = (e: OutboxEvent, at: Temporal.Instant) => ({
+      ...e,
+      status: OutboxStatus.published,
+      publishedAt: at,
+    });
+    w.rows.set(old.id, aged(old, w.clock.now().subtract({ hours: 24 * 8 })));
+    const fresh = newOutboxEvent({ type: "x.fresh", payload: {} }, w.clock.now());
+    w.rows.set(
+      fresh.id,
+      aged(
+        fresh,
+        w.clock
+          .now()
+          .subtract({ hours: 24 * 7 })
+          .add({ minutes: 10 }),
+      ),
+    );
+
+    await w.outbox.drainBatch();
+    expect(w.rows.has(old.id)).toBe(false);
+    expect(w.rows.has(fresh.id)).toBe(true);
+
+    // Within the hour nothing is looked at again, though `fresh` has since aged out.
+    w.clock.advance({ minutes: 30 });
+    await w.outbox.drainBatch();
+    expect(w.rows.has(fresh.id)).toBe(true);
+    w.clock.advance({ minutes: 31 });
+    await w.outbox.drainBatch();
+    expect(w.rows.has(fresh.id)).toBe(false);
+  });
+
+  test("a failing prune never stops delivery", async () => {
+    const w = world(async () => {});
+    w.store.prune = async () => {
+      throw new Error("db hiccup");
+    };
+    expect(await w.outbox.drainBatch()).toBe(1);
+    expect(w.row().status).toBe(OutboxStatus.published);
   });
 });

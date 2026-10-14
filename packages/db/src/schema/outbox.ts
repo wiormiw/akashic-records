@@ -32,5 +32,9 @@ export const outboxMessages = pgTable(
     index("ix_outbox_messages_pending")
       .on(table.nextAttemptAt, table.id)
       .where(sql`status = 0`),
+    // So the dead count reads a handful of index entries, not the table.
+    index("ix_outbox_messages_dead")
+      .on(table.id)
+      .where(sql`status = 3`),
   ],
 );

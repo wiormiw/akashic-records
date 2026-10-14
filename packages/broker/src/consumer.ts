@@ -7,7 +7,21 @@ import type { Broker } from "./connection.ts";
 import { consumerMetrics } from "./metrics.ts";
 
 /** Delivery is at-least-once, so handlers must be idempotent: derive the outcome, don't apply a delta. */
-export type EventHandler = (payload: unknown, signal: AbortSignal) => Promise<void>;
+export type EventHandler = (
+  payload: unknown,
+  signal: AbortSignal,
+  meta: HandlerMeta,
+) => Promise<void>;
+
+/**
+ * Which delivery a handler is running: `messageId` is the outbox event's id (empty if the broker
+ * message carried none), stable across redeliveries, so a third party can dedupe on it.
+ */
+export interface HandlerMeta {
+  readonly messageId: string;
+  /** 1 for a first delivery, counted up each time it goes through retry. */
+  readonly attempt: number;
+}
 
 /** The fields of a delivered message a handler run needs. */
 export type Delivery = Pick<AsyncMessage, "body" | "messageId" | "type" | "routingKey" | "headers">;
@@ -69,7 +83,11 @@ export function createDeliveryHandler(deps: DeliveryDeps) {
     await withConsumerSpan(
       `consume ${type}`,
       typeof traceparent === "string" ? traceparent : undefined,
-      () => handler(delivery.body, deps.signal()),
+      () =>
+        handler(delivery.body, deps.signal(), {
+          messageId: delivery.messageId ?? "",
+          attempt: attemptOf(delivery),
+        }),
       {
         "messaging.system": "rabbitmq",
         "messaging.destination.name": deps.queue,

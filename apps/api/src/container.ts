@@ -23,7 +23,7 @@ import {
   type CounterStore,
 } from "@/integrations/counters.ts";
 import { createEmbedder } from "@/integrations/embedder.ts";
-import { createResendMailer, type Mailer } from "@/integrations/mail.ts";
+import { createResendMailer } from "@/integrations/mail.ts";
 import { createRateLimiter } from "@/integrations/rate-limit.ts";
 import { createRedis, type Redis } from "@/integrations/redis.ts";
 import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/relay.ts";
@@ -140,7 +140,7 @@ export function buildContainer(env: Env) {
       )
       .registerAsyncFactory(
         "auth",
-        async (database: Database, mailer: Mailer, logger: Logger) =>
+        async (database: Database, clock: Clock, logger: Logger) =>
           createAuth({
             appName: "Akashic Records",
             cookiePrefix: "akashic",
@@ -148,13 +148,13 @@ export function buildContainer(env: Env) {
             secret: env.BETTER_AUTH_SECRET,
             baseUrl: env.BETTER_AUTH_URL,
             trustedOrigins: parseOrigins(env.CORS_ORIGINS),
-            mailer,
+            clock,
             sessionExpiryDays: env.SESSION_EXPIRY_DAYS,
             sessionCacheS: env.SESSION_CACHE_S,
             secureCookies: env.NODE_ENV === "production",
             logger,
           }),
-        ["database", "mailer", "logger"] as const,
+        ["database", "clock", "logger"] as const,
       )
       // With Redis every replica shares counts and room traffic; without it this instance is
       // assumed to be the only one. Registered on its own so the memory store's sweep is released.
@@ -211,6 +211,7 @@ export function buildContainer(env: Env) {
             pollMs: env.OUTBOX_POLL_MS,
             concurrency: env.OUTBOX_CONCURRENCY,
             sendTimeoutMs: env.OUTBOX_HANDLER_TIMEOUT_MS,
+            retentionDays: env.OUTBOX_RETENTION_DAYS,
           });
           if (env.OUTBOX_DISPATCHER_ENABLED) outbox.start();
           // `owned` runs the outbox's own disposal (stop the loop, wait for it) before these, so

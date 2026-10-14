@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { AppError, ErrorCode, fail } from "@akashic/lib/errors";
 import type { Logger } from "@akashic/lib/log";
 import { traced } from "@akashic/lib/tracing";
 
@@ -9,9 +10,19 @@ export interface MailHealth {
   failedAt: Temporal.Instant | null;
 }
 
-/** Transactional email. Never throws: a failed send is recorded and reported, not raised. */
+export interface MailMessage {
+  to: string;
+  subject: string;
+  html: string;
+  link?: string | null;
+}
+
+/**
+ * Transactional email. A failed send is recorded for `/mail-status` and then thrown, so the mail
+ * consumer retries it. `idempotencyKey` makes a redelivery not a second email.
+ */
 export interface Mailer {
-  send(message: { to: string; subject: string; html: string; link?: string }): Promise<void>;
+  send(message: MailMessage, options?: { idempotencyKey?: string }): Promise<void>;
   health(now?: Temporal.Instant): MailHealth;
 }
 
@@ -52,14 +63,17 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
       return { configured: resend !== undefined, healthy, lastFailure, failedAt };
     },
 
-    send: (message) =>
+    send: (message, sendOptions = {}) =>
       // The span says whether a link was involved, never to whom or what was sent.
       traced("mail.send", { "akashic.mail.has_link": Boolean(message.link) }, () =>
-        deliver(message),
+        deliver(message, sendOptions.idempotencyKey),
       ),
   };
 
-  async function deliver({ to, subject, html, link }: Parameters<Mailer["send"]>[0]) {
+  async function deliver(
+    { to, subject, html, link }: MailMessage,
+    idempotencyKey: string | undefined,
+  ) {
     if (options.logLinks && link) log.info({ to, subject, link }, "link that would be emailed");
 
     if (!resend) {
@@ -72,7 +86,10 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
       // The SDK takes no AbortSignal, so this bounds how long we wait rather than the request.
       const timeout = AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs)]);
       const { error } = await Promise.race([
-        resend.emails.send({ from: options.from, to, subject, html }),
+        resend.emails.send(
+          { from: options.from, to, subject, html },
+          idempotencyKey ? { idempotencyKey } : undefined,
+        ),
         new Promise<never>((_, reject) => {
           timeout.addEventListener("abort", () => reject(new Error("mail send timed out")), {
             once: true,
@@ -83,12 +100,20 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
       if (error) {
         note(String((error as { message?: string }).message ?? error));
         log.error({ to, subject, err: error }, "resend rejected the message");
-        return;
+        throw failed(error);
       }
       note(null);
     } catch (error) {
+      if (error instanceof AppError) throw error;
       note(error instanceof Error ? error.message : String(error));
       log.error({ to, subject, err: error }, "mail delivery failed");
+      throw failed(error);
     }
   }
 }
+
+// The message is for clients and trace spans, so it says nothing of the recipient or the provider's reply.
+const failed = (cause: unknown) =>
+  fail.external(ErrorCode.external.resendDeliveryFailed, "The email could not be delivered.", {
+    cause,
+  });

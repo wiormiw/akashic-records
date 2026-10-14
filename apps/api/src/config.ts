@@ -33,6 +33,7 @@ export const Env = v.object({
   OUTBOX_HANDLER_TIMEOUT_MS: int({ min: 100, default: 10000 }),
   OUTBOX_CONCURRENCY: int({ min: 1, max: 64, default: 4 }),
   OUTBOX_BATCH_SIZE: int({ min: 1, max: 1000, default: 50 }),
+  OUTBOX_RETENTION_DAYS: int({ min: 1, default: 7 }),
   OUTBOX_POLL_MS: int({ min: 100, default: 1000 }),
 
   CORS_ORIGINS: str({ default: "" }),

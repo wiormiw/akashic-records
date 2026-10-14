@@ -2,4 +2,4 @@
 export const EVENTS_EXCHANGE = "akashic.events";
 
 /** Every queue a consumer reads. Stored in RabbitMQ: never rename one. */
-export const Queues = { authzSync: "akashic.authz-sync" } as const;
+export const Queues = { authzSync: "akashic.authz-sync", mail: "akashic.mail" } as const;

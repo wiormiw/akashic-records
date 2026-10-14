@@ -7,6 +7,7 @@ export {
   type EventConsumer,
   type EventConsumerOptions,
   type EventHandler,
+  type HandlerMeta,
 } from "./consumer.ts";
 export { createOutboxStore, type OutboxStore, type OutboxRecovery } from "./store.ts";
 export {

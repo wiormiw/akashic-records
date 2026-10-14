@@ -23,6 +23,9 @@ const outboxPolicy = {
 const backoffSeconds = (attempts: number): number =>
   Math.min(outboxPolicy.backoffBaseSeconds ** attempts, outboxPolicy.backoffCapSeconds);
 
+const PRUNE_EVERY = Temporal.Duration.from({ hours: 1 });
+const PRUNE_BATCH = 1000;
+
 // The database keeps microseconds and a Date carries milliseconds; a deadline with more precision
 // than that would never compare equal to itself once stored.
 const toMillis = (instant: Temporal.Instant) =>
@@ -56,6 +59,8 @@ export interface OutboxOptions {
   pollMs: number;
   concurrency: number;
   sendTimeoutMs: number;
+  /** Published events older than this many days are deleted. */
+  retentionDays: number;
 }
 
 export interface Outbox {
@@ -120,9 +125,30 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
 
   let stopped: Promise<void> = Promise.resolve();
 
+  // The first poll prunes, so a restart after a long outage doesn't wait an hour.
+  let lastPrune: Temporal.Instant | undefined;
+
+  /** At most hourly; a failure is logged, never allowed to stall delivery. */
+  async function pruneIfDue(now: Temporal.Instant) {
+    if (lastPrune && Temporal.Instant.compare(now, lastPrune.add(PRUNE_EVERY)) < 0) return;
+    lastPrune = now;
+    const before = now.subtract({ hours: 24 * options.retentionDays });
+    try {
+      let total = 0;
+      for (let n = PRUNE_BATCH; n === PRUNE_BATCH && !signal.aborted;) {
+        n = await store.prune(before, PRUNE_BATCH);
+        total += n;
+      }
+      if (total > 0) log.info({ deleted: total }, "pruned published outbox events");
+    } catch (error) {
+      log.warn({ err: error }, "could not prune published outbox events");
+    }
+  }
+
   const outbox: Outbox = {
     async drainBatch() {
       const now = clock.now();
+      await pruneIfDue(now);
       // Claimed before the span: an empty poll every pollMs would otherwise be most traces.
       const claimed = await store.claim(
         now,

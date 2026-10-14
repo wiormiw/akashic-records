@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, lte } from "drizzle-orm";
 import {
   OutboxStatus,
   outboxMessages,
@@ -20,6 +20,11 @@ export interface OutboxStore {
    * False when the lease ran out and another worker claimed it: that worker's outcome wins.
    */
   finish(next: OutboxEvent, deadline: Temporal.Instant): Promise<boolean>;
+  /**
+   * Deletes published events older than `before`, oldest first, at most `limit` so one call is
+   * bounded. Pending and dead events are never touched. Returns how many went.
+   */
+  prune(before: Temporal.Instant, limit: number): Promise<number>;
 }
 
 /** For a person, not the dispatcher: what gave up, and putting it back in line. */
@@ -103,6 +108,28 @@ export function createOutboxStore(db: Db): OutboxStore & OutboxRecovery {
         )
         .returning({ id: outboxMessages.id });
       return written.length > 0;
+    },
+
+    async prune(before, limit) {
+      const old = db
+        .select({ id: outboxMessages.id })
+        .from(outboxMessages)
+        .where(
+          and(
+            eq(outboxMessages.status, OutboxStatus.published),
+            lt(outboxMessages.publishedAt, toDate(before)),
+          ),
+        )
+        .orderBy(asc(outboxMessages.publishedAt), asc(outboxMessages.id))
+        .limit(limit);
+      // The status is repeated on the delete so a row revived meanwhile is never removed.
+      const deleted = await db
+        .delete(outboxMessages)
+        .where(
+          and(inArray(outboxMessages.id, old), eq(outboxMessages.status, OutboxStatus.published)),
+        )
+        .returning({ id: outboxMessages.id });
+      return deleted.length;
     },
   };
 }
