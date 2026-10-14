@@ -122,7 +122,7 @@ describe.skipIf(!live)("event broker", () => {
     const w = await world("dead", {
       "realm.created": async () => {
         calls++;
-        throw new Error("payload is malformed");
+        throw Object.assign(new Error("payload is malformed"), { code: "malformed" });
       },
     });
     await w.publish("e3", "realm.created", { realmId: "r3" });
@@ -133,7 +133,8 @@ describe.skipIf(!live)("event broker", () => {
     expect(parked?.messageId).toBe("e3");
     expect(parked?.headers).toMatchObject({
       "x-attempt": 4,
-      "x-last-error": "payload is malformed",
+      // The error's name and code; a message could carry row data.
+      "x-last-error": "Error malformed",
     });
     // The publish span's context replaces the stored one (here a stand-in "x").
     expect(String(parked?.headers?.traceparent)).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);

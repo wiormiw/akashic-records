@@ -1,7 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { ConsumerStatus } from "rabbitmq-client";
+import { ErrorCode, fail } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
+import { recordSpans } from "@akashic/lib/testing";
 import { attemptOf, createDeliveryHandler, type Delivery } from "../src/consumer.ts";
+
+const recorder = recordSpans();
+beforeEach(() => recorder.reset());
 
 const delivery = (headers: Record<string, unknown> = {}): Delivery => ({
   body: { realmId: "r1" },
@@ -47,7 +53,7 @@ describe("event consumer", () => {
     expect(w.copies).toEqual([
       {
         queue: "work.retry",
-        headers: { traceparent: "00-a-b-01", "x-attempt": 2, "x-last-error": "openfga down" },
+        headers: { traceparent: "00-a-b-01", "x-attempt": 2, "x-last-error": "Error" },
       },
     ]);
   });
@@ -64,7 +70,7 @@ describe("event consumer", () => {
     await w.handle(unknown);
     expect(w.copies[0]).toMatchObject({
       queue: "work.retry",
-      headers: { "x-last-error": 'no handler for "realm.renamed"' },
+      headers: { "x-last-error": "Error no_handler" },
     });
   });
 
@@ -93,6 +99,62 @@ describe("event consumer", () => {
     }, shutdown);
     expect(await w.handle(delivery({ "x-attempt": 2 }))).toBe(ConsumerStatus.REQUEUE);
     expect(w.copies).toEqual([]);
+  });
+
+  test("a handler that ran out of time is an error in the trace, and retries", async () => {
+    const timedOut = new AbortController();
+    const reason = new DOMException("late", "TimeoutError");
+    const handle = createDeliveryHandler({
+      queue: "work",
+      handlers: {
+        "realm.created": async (_payload, signal) => {
+          timedOut.abort(reason);
+          throw signal.reason;
+        },
+      },
+      retryQueue: "work.retry",
+      deadQueue: "work.dead",
+      maxAttempts: 3,
+      republish: async () => {},
+      signal: () => timedOut.signal,
+      shutdown: new AbortController().signal,
+      log: silentLogger(),
+    });
+    expect(await handle(delivery())).toBe(ConsumerStatus.ACK);
+    const [span] = recorder.spans();
+    expect(span?.attributes["akashic.cancelled"]).toBeUndefined();
+    expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span?.attributes["error.type"]).toBe("TimeoutError");
+  });
+
+  test("a handler cut off by shutdown is cancelled in the trace", async () => {
+    const shutdown = new AbortController();
+    const w = world(async () => {
+      shutdown.abort(new Error("shutting down: SIGTERM"));
+      throw shutdown.signal.reason;
+    }, shutdown);
+    await w.handle(delivery());
+    const [span] = recorder.spans();
+    expect(span?.attributes["akashic.cancelled"]).toBe(true);
+    expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+  });
+
+  test("the retry copy names the error, never a driver's message", async () => {
+    const w = world(async () => {
+      throw Object.assign(new Error("(email)=(ann@example.test)"), { code: "23505" });
+    });
+    await w.handle(delivery());
+    expect(w.copies[0]?.headers["x-last-error"]).toBe("Error 23505");
+  });
+
+  test("an AppError's client-facing message is kept on the retry copy", async () => {
+    const w = world(async () => {
+      throw fail.external(ErrorCode.external.authzUnavailable, "Could not check permissions.");
+    });
+    await w.handle(delivery());
+    expect(w.copies[0]?.headers["x-last-error"]).toBe(
+      `${ErrorCode.external.authzUnavailable}: Could not check permissions.`,
+    );
   });
 
   test("the attempt is read from the header, and anything odd there counts as the first", () => {

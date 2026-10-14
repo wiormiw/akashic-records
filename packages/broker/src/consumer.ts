@@ -1,4 +1,5 @@
 import { ConsumerStatus, type AsyncMessage } from "rabbitmq-client";
+import { AppError } from "@akashic/lib/errors";
 import { owned, type Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
 import { withConsumerSpan } from "@akashic/lib/tracing";
@@ -19,6 +20,19 @@ export const attemptOf = (delivery: Pick<Delivery, "headers">): number => {
   const value = Number(delivery.headers?.[ATTEMPT_HEADER] ?? 1);
   return Number.isInteger(value) && value >= 1 ? value : 1;
 };
+
+/**
+ * What the retry and dead copies say went wrong. Headers are readable by anyone with access to
+ * the broker, and a driver's message can carry row values, so only an AppError (written for
+ * clients) keeps its message; anything else is its name and code. The log keeps the full error.
+ */
+function describeError(error: unknown): string {
+  if (error instanceof AppError)
+    return `${error.code}: ${error.message}`.slice(0, MAX_ERROR_LENGTH);
+  const name = error instanceof Error ? error.name : typeof error;
+  const code = (error as { code?: unknown } | null)?.code;
+  return (typeof code === "string" ? `${name} ${code}` : name).slice(0, MAX_ERROR_LENGTH);
+}
 
 export interface DeliveryDeps {
   /** The work queue, for span attributes and metric labels. */
@@ -48,20 +62,22 @@ export function createDeliveryHandler(deps: DeliveryDeps) {
 
   const handle = async (delivery: Delivery, type: string) => {
     const handler = deps.handlers[type];
-    if (!handler) throw new Error(`no handler for "${type}"`);
+    if (!handler) {
+      throw Object.assign(new Error(`no handler for "${type}"`), { code: "no_handler" });
+    }
     const traceparent = delivery.headers?.["traceparent"];
-    const signal = deps.signal();
     await withConsumerSpan(
       `consume ${type}`,
       typeof traceparent === "string" ? traceparent : undefined,
-      () => handler(delivery.body, signal),
+      () => handler(delivery.body, deps.signal()),
       {
         "messaging.system": "rabbitmq",
         "messaging.destination.name": deps.queue,
         "messaging.message.id": delivery.messageId ?? "",
         "messaging.operation": "process",
       },
-      signal,
+      // Only shutdown is "cancelled": a handler that ran out of time failed, and retries.
+      deps.shutdown,
     );
   };
 
@@ -69,7 +85,7 @@ export function createDeliveryHandler(deps: DeliveryDeps) {
   const setAside = async (delivery: Delivery, type: string, error: unknown) => {
     const attempt = attemptOf(delivery);
     const parked = attempt >= deps.maxAttempts;
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = describeError(error);
     await deps.republish(parked ? deps.deadQueue : deps.retryQueue, delivery, {
       ...delivery.headers,
       [ATTEMPT_HEADER]: attempt + 1,
