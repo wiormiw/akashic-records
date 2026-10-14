@@ -28,6 +28,7 @@ import { createRateLimiter } from "@/integrations/rate-limit.ts";
 import { createRedis, type Redis } from "@/integrations/redis.ts";
 import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/relay.ts";
 import { createS3ImageStore } from "@/integrations/storage.ts";
+import { createCommentService } from "@/modules/comments/comments.service.ts";
 import { createEventService } from "@/modules/events/events.service.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
 
@@ -190,6 +191,12 @@ export function buildContainer(env: Env) {
       .registerAsyncFactory(
         "events",
         async (database: Database, clock: Clock) => createEventService({ db: database.db, clock }),
+        ["database", "clock"] as const,
+      )
+      .registerAsyncFactory(
+        "comments",
+        async (database: Database, clock: Clock) =>
+          createCommentService({ db: database.db, clock }),
         ["database", "clock"] as const,
       )
       .registerAsyncFactory(

@@ -1,4 +1,5 @@
 import type { AppContainer } from "@/container.ts";
+import { createCommentsModule } from "./comments/comments.module.ts";
 import { createEventsModule } from "./events/events.module.ts";
 import { createMailModule } from "./mail/mail.module.ts";
 import type { HttpKit, Module } from "./module.ts";
@@ -16,6 +17,10 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     }),
     createEventsModule({
       events: await container.getAsync("events"),
+      realmContext: http.realmContext,
+    }),
+    createCommentsModule({
+      comments: await container.getAsync("comments"),
       realmContext: http.realmContext,
     }),
     createMailModule({ mailer: container.get("mailer") }),
