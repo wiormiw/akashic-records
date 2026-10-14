@@ -26,16 +26,6 @@ describe("container", () => {
     expect(released).toEqual([]);
   });
 
-  test("a request scope exposes its input", async () => {
-    const c = buildContainer(testEnv());
-    const scope = c.createScope({
-      request: { id: "r1", signal: new AbortController().signal, user: null },
-    });
-    expect(scope.get("request").id).toBe("r1");
-    await scope.dispose();
-    await c.dispose();
-  });
-
   test("releases what it built in reverse order of creation", async () => {
     const c = buildContainer(testEnv({ REDIS_URL: "" }));
     c.get("logger");

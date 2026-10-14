@@ -29,7 +29,6 @@ export async function start(container: AppContainer, modules: readonly ModuleRou
     await container.getAsync("outbox");
 
     const app = createApp({
-      container,
       logger,
       lifecycle,
       auth,

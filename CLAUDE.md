@@ -22,7 +22,8 @@ bun run db:migrate / authz:push / authz:backfill / events:replay
 - **Nothing runs on import.** Files export factories; `container.ts` constructs everything and
   `main.ts` alone starts the process (`Bun.serve`, `handleSignals`).
 - **Only `container.ts` imports InferDI** (`@inferdi/inferdi`, any subpath, in `src`, `scripts` and
-  `test`); only `app.ts` imports `@inferdi/hono`. A module never imports another module, by alias,
+  `test`). Nothing is resolved per request: routes close over services built at startup, and
+  read the request id, caller and signal from `c.var`. A module never imports another module, by alias,
   relative path, side-effect or dynamic import. Code under `src/modules/` never builds a raw
   response (`x.json(`, `.body(`, `new Response(`). Only `main.ts` calls `Bun.serve` or
   `handleSignals` (also checked in `scripts` and `packages/*/src`).
@@ -69,5 +70,5 @@ OpenFGA and RabbitMQ; each skips when nothing answers. Migrations are generated 
 11. **Hono drops headers set with `c.header` when a bare `new Response` is returned.** Problem
     responses use `c.newResponse`.
 12. **Drizzle 1.0 names constraints `_pkey` / `_fkey`.**
-13. **Module routes use `ApiEnv`** (request scope at `c.var.di`); root routes use `AppEnv` and
-    have no scope.
+13. **There is no request scope.** Every route group uses `AppEnv`; per-request values are on
+    `c.var` and go to services as arguments.

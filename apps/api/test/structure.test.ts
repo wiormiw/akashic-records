@@ -39,10 +39,6 @@ describe("structure", () => {
     expect(await importers(/^@inferdi\/inferdi(\/|$)/)).toEqual(["apps/api/src/container.ts"]);
   });
 
-  test("only app.ts imports the InferDI Hono adapter", async () => {
-    expect(await importers(/^@inferdi\/hono(\/|$)/)).toEqual(["apps/api/src/app.ts"]);
-  });
-
   test("modules never import each other", async () => {
     const crossing: string[] = [];
     const moduleFiles = scan("apps/api/src/modules/**/*.ts", "apps/api/test/modules/**/*.ts");

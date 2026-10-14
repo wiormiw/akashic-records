@@ -1,11 +1,9 @@
-import { inferdiHono } from "@inferdi/hono";
 import { Hono } from "hono";
 import type { Authorizer } from "@akashic/authz";
 import type { Db } from "@akashic/db";
 import type { Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
 import type { Auth } from "@/auth/auth.ts";
-import { requestScope, type AppContainer, type RequestContainer } from "@/container.ts";
 import { authRoutes } from "@/http/auth-routes.ts";
 import type { AppEnv } from "@/http/env.ts";
 import { healthRoutes, metaRoutes } from "@/http/meta.ts";
@@ -17,20 +15,12 @@ import { sessions } from "@/http/session.ts";
 import type { Mailer } from "@/integrations/mail.ts";
 import type { RateLimiter, RateLimitRule } from "@/integrations/rate-limit.ts";
 
-/**
- * What routes under the API prefixes carry: the request's DI scope, opened once the caller is
- * known. Root routes are plain `AppEnv`, so they can't assume a scope that isn't there.
- */
-export interface ApiEnv extends AppEnv {
-  Variables: AppEnv["Variables"] & { di: RequestContainer };
-}
-
 /** Where a module's routes are mounted. */
 export interface ModuleRoutes {
   /** Under the public API: anonymous reads, no session lookup. */
-  readonly public?: Hono<ApiEnv>;
+  readonly public?: Hono<AppEnv>;
   /** Under the signed-in API. */
-  readonly private?: Hono<ApiEnv>;
+  readonly private?: Hono<AppEnv>;
   /** At the app root, for routes that own their path, such as a socket. */
   readonly root?: Hono<AppEnv>;
 }
@@ -38,7 +28,6 @@ export interface ModuleRoutes {
 type Check = () => Promise<boolean>;
 
 export interface AppDeps {
-  container: AppContainer;
   logger: Logger;
   lifecycle: Lifecycle;
   auth: Auth;
@@ -59,18 +48,10 @@ export interface AppDeps {
 /** The HTTP surface: cross-cutting middleware around the routes each module brings. */
 export function createApp(deps: AppDeps) {
   const { session } = sessions({ auth: deps.auth, db: deps.db, authorizer: deps.authorizer });
-  // One scope per request, opened after the caller is known so services resolved from it see them.
-  const scoped = inferdiHono<AppContainer, ApiEnv, RequestContainer>({
-    container: deps.container,
-    createScope: (root, c) =>
-      requestScope(root, { id: c.get("requestId"), signal: c.get("signal"), user: c.get("user") }),
-  });
   const limited = (rule: RateLimitRule) => rateLimit(deps.limiter, rule, deps);
 
-  const publicApi = new Hono<ApiEnv>()
-    .use(limited({ ...deps.limits.api, bucket: "public" }))
-    .use(scoped);
-  const api = new Hono<ApiEnv>().use(session).use(limited(deps.limits.api)).use(scoped);
+  const publicApi = new Hono<AppEnv>().use(limited({ ...deps.limits.api, bucket: "public" }));
+  const api = new Hono<AppEnv>().use(session).use(limited(deps.limits.api));
   for (const group of deps.modules) {
     if (group.public) publicApi.route("/", group.public);
     if (group.private) api.route("/", group.private);

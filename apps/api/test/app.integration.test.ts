@@ -4,8 +4,8 @@ import { Hono } from "hono";
 import { createBroker } from "@akashic/broker";
 import { createDb, user, verification } from "@akashic/db";
 import { silentLogger } from "@akashic/lib/log";
-import type { ApiEnv } from "@/app.ts";
 import { buildContainer } from "@/container.ts";
+import type { AppEnv } from "@/http/env.ts";
 import { start, stop } from "@/runtime.ts";
 import { testEnv } from "./env.ts";
 
@@ -50,7 +50,7 @@ describe.skipIf(!(postgres && rabbitmq && openfga))("the started app", () => {
     const container = buildContainer(env)
       // Telemetry registers process-wide providers, which other test files' span capture needs.
       .override("telemetry", { async [Symbol.asyncDispose]() {} });
-    const probeRoute = new Hono<ApiEnv>().get("/probe", (c) => c.text("ok"));
+    const probeRoute = new Hono<AppEnv>().get("/probe", (c) => c.text("ok"));
     const { app, lifecycle } = await start(container, [{ private: probeRoute }]);
     try {
       lifecycle.markReady();

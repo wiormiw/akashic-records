@@ -15,7 +15,6 @@
     "@akashic/lib": "workspace:*",
     "@hono/otel": "1.2.0",
     "@hono/standard-validator": "0.4.0",
-    "@inferdi/hono": "6.1.0",
     "@inferdi/inferdi": "6.1.0",
     "@openfga/sdk": "^0.9.7",
     "@openfga/syntax-transformer": "^0.2.2",

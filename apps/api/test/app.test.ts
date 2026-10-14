@@ -1,21 +1,15 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { Authorizer } from "@akashic/authz";
 import type { Db } from "@akashic/db";
 import { createLifecycle } from "@akashic/lib/lifecycle";
 import { silentLogger } from "@akashic/lib/log";
-import { createApp, type ApiEnv } from "@/app.ts";
+import { createApp } from "@/app.ts";
 import type { Auth } from "@/auth/auth.ts";
-import { buildContainer } from "@/container.ts";
 import type { AppEnv } from "@/http/env.ts";
 import { createMemoryCounters } from "@/integrations/counters.ts";
 import type { Mailer } from "@/integrations/mail.ts";
 import { createRateLimiter } from "@/integrations/rate-limit.ts";
-import { testEnv } from "./env.ts";
-
-// Only scopes are opened on it; nothing that connects is ever resolved.
-const container = buildContainer(testEnv());
-afterAll(() => container.dispose());
 
 const rule = { limit: 100, windowSeconds: 60 };
 
@@ -25,7 +19,6 @@ const build = (session: { user: { id: string; email: string } } | null) => {
   const lifecycle = createLifecycle(silentLogger());
   lifecycle.markReady();
   return createApp({
-    container,
     logger: silentLogger(),
     lifecycle,
     auth: {
@@ -58,13 +51,10 @@ const build = (session: { user: { id: string; email: string } } | null) => {
     checks: { required: { database: async () => true }, optional: {} },
     modules: [
       {
-        private: new Hono<ApiEnv>().get("/whoami", (c) => {
-          const request = c.var.di.get("request");
-          return c.text(`${request.id} ${request.user?.id}`);
-        }),
-        public: new Hono<ApiEnv>().get("/whoami", (c) =>
-          c.text(String(c.var.di.get("request").user)),
+        private: new Hono<AppEnv>().get("/whoami", (c) =>
+          c.text(`${c.var.requestId} ${c.var.user?.id}`),
         ),
+        public: new Hono<AppEnv>().get("/whoami", (c) => c.text(String(c.var.user))),
         root: new Hono<AppEnv>().get("/socket", (c) => c.text("root")),
       },
     ],
@@ -86,7 +76,7 @@ describe("app", () => {
     expect(((await res.json()) as { code: string }).code).toBe("auth.session.unauthenticated");
   });
 
-  test("a private route resolves the request scope, caller included", async () => {
+  test("a private route sees the request id and the caller on the context", async () => {
     const res = await build({ user: { id: "u1", email: "u1@x.test" } }).request("/api/v1/whoami", {
       headers: { "x-request-id": "req-1" },
     });

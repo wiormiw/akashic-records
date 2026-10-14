@@ -41,7 +41,7 @@ typecheck; and either app can be deployed without the other.
 | Validation | Valibot 1, through `@hono/standard-validator` |
 | ORM | Drizzle **1.0** (pinned to `1.0.0-rc.4`, newer than the last beta): `drizzle-orm/valibot` for row schemas, `defineRelations` for relations. Pre-release risk accepted; upgrade as it moves. |
 | Data access | Services call Drizzle directly |
-| Composition | InferDI (`@inferdi/inferdi`, `@inferdi/hono`) |
+| Composition | InferDI (`@inferdi/inferdi`) |
 | Repo | New repository with a clean history; old repositories frozen as references |
 | Frontend | Moves in as `apps/web` |
 | Migrations | One fresh baseline, after a `pg_dump` of the current database |
@@ -134,9 +134,7 @@ not change**, so a data-only dump of the current database restores into the new 
 
 - **Singletons:** config, telemetry (right after config, disposed last), logger, the root `AbortController`, db, redis, broker, authorizer,
   mailer, storage, embedder, and the services.
-- **Request scope** (through `@inferdi/hono`, at `c.var.di`): request id, the session user, and
-  the request's abort signal. A service that needs these can only be resolved once the scope
-  supplies them, and the compiler checks it.
+- Per-request values (id, caller, signal) live on the Hono context; services receive them as arguments.
 
 Services receive their dependencies as arguments: a plain function or a factory taking `{ db,
 authz, ... }`. No service imports InferDI, so swapping the container later touches one file.
@@ -147,8 +145,8 @@ Agreed for the modules (2026-10-13), keeping dependency injection at the composi
   then builds each module's routes with a factory that takes the resolved services
   (`createRealmRoutes({ realms, ... })`). Routes close over their services; no route looks
   anything up in the container per request.
-- The request scope carries only what is per request: id, caller, signal. Routes read them from
-  `c.var`, and pass the caller and signal to services as arguments.
+- Nothing is resolved per request. What is per request (id, caller, signal) is on the Hono
+  context; routes read it from `c.var`, and pass the caller and signal to services as arguments.
 - A service's `db` is an `Executor` (the pool or a transaction), so a test can hand it a
   transaction that is rolled back afterwards, and `inTransaction` nests as a savepoint.
 
@@ -186,7 +184,6 @@ request
   security          CORS, headers, body size, Origin check on writes
   rate limit        per user once known, else per IP (Redis counters)
   session           better-auth session and ban check
-  di scope          @inferdi/hono: a request scope with id, user, signal
   realm context     realm, modules, role, permissions -> requireModule, requirePermission
   validator         sValidator(target, schema from contracts)
   route             calls the service, then reply() or respond()

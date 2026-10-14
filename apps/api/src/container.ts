@@ -16,7 +16,6 @@ import { createTelemetry } from "@akashic/lib/telemetry";
 import { systemClock, type Clock } from "@akashic/lib/time";
 import { createAuth } from "@/auth/auth.ts";
 import type { Env } from "@/config.ts";
-import type { Caller } from "@/http/env.ts";
 import { parseOrigins } from "@/http/security.ts";
 import {
   createMemoryCounters,
@@ -30,13 +29,6 @@ import { createRedis, type Redis } from "@/integrations/redis.ts";
 import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/relay.ts";
 import { createS3ImageStore } from "@/integrations/storage.ts";
 
-/** What a request scope is given. Services that need the caller resolve it from here. */
-export interface RequestScope {
-  id: string;
-  signal: AbortSignal;
-  user: Caller | null;
-}
-
 /**
  * The composition root: the only place that constructs things, and the only file that imports
  * InferDI. Nothing here runs until resolved; `start` in runtime.ts resolves in startup order, and
@@ -45,7 +37,6 @@ export interface RequestScope {
 export function buildContainer(env: Env) {
   return (
     new Container()
-      .declareScopeInputs<{ request: RequestScope }>()
       .registerValue("env", env)
       .registerValue("clock", systemClock as Clock)
       .registerFactory("telemetry", () =>
@@ -235,9 +226,3 @@ export function buildContainer(env: Env) {
 }
 
 export type AppContainer = ReturnType<typeof buildContainer>;
-
-/** A request's scope: the root graph plus the request itself, which services may resolve. */
-export const requestScope = (root: AppContainer, request: RequestScope) =>
-  root.createScope({ request });
-
-export type RequestContainer = ReturnType<typeof requestScope>;
