@@ -5,7 +5,8 @@ import { withRollback } from "@akashic/db/testing";
 import { ProposalStatus, RealmModule, RealmRole } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { realmApp } from "./app.ts";
-import { databaseUrl, uniqueSlug, Web, world } from "./fixtures.ts";
+import { databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
+import { Web, world } from "./fixtures.ts";
 
 // Every realm route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and each group has its refusal.

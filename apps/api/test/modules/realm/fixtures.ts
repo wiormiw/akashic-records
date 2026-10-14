@@ -1,25 +1,12 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
-import { outboxMessages, realmMembers, type Tx, user } from "@akashic/db";
+import { realmMembers, type Tx } from "@akashic/db";
 import { narrow, RealmRole } from "@akashic/lib/enums";
-import { fixedClock } from "@akashic/lib/time";
 import type { Embedder } from "@/integrations/embedder.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
+import { clock, outbox, person, uniqueSlug } from "../../support/fixtures.ts";
 
-export const databaseUrl =
-  Bun.env.DATABASE_URL ?? "postgres://akashic:akashic@localhost:5432/akashic";
-
-export const clock = fixedClock("2026-06-01T12:00:00Z");
 export const noEmbedder: Embedder = { available: false, embed: async () => null };
-
-/** A fresh, verified account. */
-export async function person(tx: Tx, name = "Member"): Promise<string> {
-  const id = Bun.randomUUIDv7();
-  await tx.insert(user).values({ id, name, email: `${id}@example.test`, emailVerified: true });
-  return id;
-}
-
-export const uniqueSlug = (prefix = "t") => `${prefix}-${Bun.randomUUIDv7().slice(-12)}`;
 
 /** The realm service on `tx`, and the helpers the scenarios share. */
 export function world(tx: Tx, embedder: Embedder = noEmbedder) {
@@ -52,18 +39,7 @@ export function world(tx: Tx, embedder: Embedder = noEmbedder) {
       return row ? narrow(RealmRole, row.role) : null;
     },
 
-    /** The outbox rows of `type` about `realmId`. */
-    async outbox(type: string, realmId: string) {
-      return tx
-        .select({ payload: outboxMessages.payload })
-        .from(outboxMessages)
-        .where(
-          and(
-            eq(outboxMessages.messageType, type),
-            sql`${outboxMessages.payload}->>'realmId' = ${realmId}`,
-          ),
-        );
-    },
+    outbox: (type: string, realmId: string) => outbox(tx, type, realmId),
   };
 }
 

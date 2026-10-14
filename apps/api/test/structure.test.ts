@@ -66,6 +66,45 @@ describe("structure", () => {
     expect(crossing).toEqual([]);
   });
 
+  // Test support is shared scaffolding: the app may not depend on it, and it may not reach into
+  // a module's internals (module.ts is the contract every module may import).
+  test("src never imports test code", async () => {
+    const importing: string[] = [];
+    for (const f of scan("apps/api/src/**/*.ts")) {
+      const dir = posix.dirname(f);
+      for (const s of specifiers(await read(f))) {
+        const target = s.startsWith("@/")
+          ? `apps/api/src/${s.slice(2)}`
+          : s.startsWith(".")
+            ? posix.join(dir, s)
+            : s;
+        if (/^apps\/api\/test(\/|$)/.test(target) || /^@\/?test(\/|$)/.test(s)) {
+          importing.push(`${f} -> ${s}`);
+        }
+      }
+    }
+    expect(importing).toEqual([]);
+  });
+
+  test("test/support never imports a module's internals", async () => {
+    const reaching: string[] = [];
+    for (const f of scan("apps/api/test/support/**/*.ts")) {
+      const dir = posix.dirname(f);
+      for (const s of specifiers(await read(f))) {
+        const target = s.startsWith("@/")
+          ? `apps/api/src/${s.slice(2)}`
+          : s.startsWith(".")
+            ? posix.join(dir, s)
+            : undefined;
+        const under = target && /^apps\/api\/(?:src|test)\/modules(?:\/(.*))?$/.exec(target);
+        if (!under) continue;
+        const rel = under[1] || "index.ts";
+        if (rel !== "module.ts" && rel !== "module") reaching.push(`${f} -> ${rel}`);
+      }
+    }
+    expect(reaching).toEqual([]);
+  });
+
   test("module code replies through a view, never a raw response", async () => {
     const raw: string[] = [];
     for (const f of scan("apps/api/src/modules/**/*.ts")) {

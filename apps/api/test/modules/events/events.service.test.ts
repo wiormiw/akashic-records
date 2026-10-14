@@ -4,7 +4,8 @@ import { withRollback } from "@akashic/db/testing";
 import { RealmModule, RsvpStatus } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
-import { clock, databaseUrl, world } from "./fixtures.ts";
+import { clock, databaseUrl } from "../../support/fixtures.ts";
+import { world } from "./fixtures.ts";
 
 // The events service on the real database, each test in a transaction that is rolled back.
 

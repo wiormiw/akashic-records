@@ -14,7 +14,8 @@ import { ErrorCode } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
 import type { Embedder } from "@/integrations/embedder.ts";
-import { databaseUrl, uniqueSlug, world } from "./fixtures.ts";
+import { databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
+import { world } from "./fixtures.ts";
 
 // The realm service on the real database, each test in a transaction that is rolled back.
 // Skips when nothing answers at DATABASE_URL.

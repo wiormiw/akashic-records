@@ -18,7 +18,6 @@ import { mapOk } from "@akashic/lib/result";
 import { type AppEnv, callerOf } from "@/http/env.ts";
 import { type RealmEnv, requireModule, requirePermission } from "@/http/realm-context.ts";
 import { reply, respond } from "@/http/reply.ts";
-import type { Sessions } from "@/http/session.ts";
 import { validate } from "@/http/validate.ts";
 import type { ModuleRoutes } from "../module.ts";
 import type { EventService } from "./events.service.ts";
@@ -27,7 +26,6 @@ const eventsModule = requireModule(RealmModule.events);
 
 export function createEventsRoutes(deps: {
   events: EventService;
-  sessions: Sessions;
   realmContext: MiddlewareHandler<RealmEnv>;
 }): ModuleRoutes {
   const { events, realmContext } = deps;

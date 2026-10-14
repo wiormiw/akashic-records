@@ -7,7 +7,8 @@ import { RealmModule, RsvpStatus } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { expectOk } from "@akashic/lib/testing";
 import { eventsApp } from "./app.ts";
-import { clock, databaseUrl, uniqueSlug, Web, world } from "./fixtures.ts";
+import { clock, databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
+import { Web, world } from "./fixtures.ts";
 
 // Every events route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and each group has its refusal.

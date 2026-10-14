@@ -16,7 +16,6 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     }),
     createEventsModule({
       events: await container.getAsync("events"),
-      sessions: http.sessions,
       realmContext: http.realmContext,
     }),
     createMailModule({ mailer: container.get("mailer") }),

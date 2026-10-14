@@ -4,7 +4,7 @@ import { createDb, outboxMessages, realmMembers, realms, user } from "@akashic/d
 import { RealmRole } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { realmApp } from "./app.ts";
-import { databaseUrl, uniqueSlug } from "./fixtures.ts";
+import { databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
 
 // Two joins at once need two connections, so this can't run inside one rolled-back transaction:
 // it commits its own uniquely named rows and deletes exactly those afterwards.

@@ -1,32 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as v from "valibot";
-import {
-  eventRsvps,
-  events,
-  outboxMessages,
-  realmMembers,
-  realmModules,
-  realms,
-  type Tx,
-  user,
-} from "@akashic/db";
+import { eventRsvps, events, realmMembers, realmModules, realms, type Tx } from "@akashic/db";
 import { RealmModule, RealmRole } from "@akashic/lib/enums";
-import { fixedClock } from "@akashic/lib/time";
 import { createEventService } from "@/modules/events/events.service.ts";
-
-export const databaseUrl =
-  Bun.env.DATABASE_URL ?? "postgres://akashic:akashic@localhost:5432/akashic";
-
-export const clock = fixedClock("2026-06-01T12:00:00Z");
-
-/** A fresh, verified account. */
-export async function person(tx: Tx, name = "Member"): Promise<string> {
-  const id = Bun.randomUUIDv7();
-  await tx.insert(user).values({ id, name, email: `${id}@example.test`, emailVerified: true });
-  return id;
-}
-
-export const uniqueSlug = (prefix = "t") => `${prefix}-${Bun.randomUUIDv7().slice(-12)}`;
+import { clock, outbox, person, uniqueSlug } from "../../support/fixtures.ts";
 
 /** The events service on `tx`, and the rows the scenarios start from. */
 export function world(tx: Tx) {
@@ -72,18 +49,7 @@ export function world(tx: Tx) {
       return row;
     },
 
-    /** The outbox rows of `type` about `realmId`. */
-    async outbox(type: string, realmId: string) {
-      return tx
-        .select({ payload: outboxMessages.payload })
-        .from(outboxMessages)
-        .where(
-          and(
-            eq(outboxMessages.messageType, type),
-            sql`${outboxMessages.payload}->>'realmId' = ${realmId}`,
-          ),
-        );
-    },
+    outbox: (type: string, realmId: string) => outbox(tx, type, realmId),
   };
 }
 

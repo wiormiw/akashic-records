@@ -14,7 +14,7 @@ import {
 import { RealmModule, RealmRole, RsvpStatus } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { eventsApp } from "./app.ts";
-import { clock, databaseUrl, uniqueSlug } from "./fixtures.ts";
+import { clock, databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
 
 // Two RSVPs for the last place need two connections, so this can't run inside one rolled-back
 // transaction: it commits its own uniquely named rows and deletes exactly those afterwards.
