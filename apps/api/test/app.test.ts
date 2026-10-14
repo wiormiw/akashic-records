@@ -7,6 +7,7 @@ import { silentLogger } from "@akashic/lib/log";
 import { createApp } from "@/app.ts";
 import type { Auth } from "@/auth/auth.ts";
 import type { AppEnv } from "@/http/env.ts";
+import { sessions } from "@/http/session.ts";
 import { createMemoryCounters } from "@/integrations/counters.ts";
 import type { Mailer } from "@/integrations/mail.ts";
 import { createRateLimiter } from "@/integrations/rate-limit.ts";
@@ -18,22 +19,26 @@ let sessionLookups = 0;
 const build = (session: { user: { id: string; email: string } } | null) => {
   const lifecycle = createLifecycle(silentLogger());
   lifecycle.markReady();
+  const auth = {
+    api: {
+      getSession: async () => {
+        sessionLookups += 1;
+        return session;
+      },
+    },
+  } as unknown as Auth;
   return createApp({
     logger: silentLogger(),
     lifecycle,
-    auth: {
-      api: {
-        getSession: async () => {
-          sessionLookups += 1;
-          return session;
-        },
-      },
-    } as unknown as Auth,
-    // The ban lookup finds no row: nobody is suspended.
-    db: {
-      select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
-    } as unknown as Db,
-    authorizer: { check: async () => false } as unknown as Authorizer,
+    auth,
+    sessions: sessions({
+      auth,
+      // The ban lookup finds no row: nobody is suspended.
+      db: {
+        select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+      } as unknown as Db,
+      authorizer: { check: async () => false } as unknown as Authorizer,
+    }),
     mailer: {
       send: async () => {},
       health: () => ({ configured: false, healthy: false, lastFailure: null, failedAt: null }),

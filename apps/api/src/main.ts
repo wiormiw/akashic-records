@@ -15,13 +15,14 @@ await container.getAsync("telemetry");
 const logger = container.get("logger");
 const lifecycle = container.get("lifecycle");
 
-// Until the server exists there is nothing to drain.
+// Until the server exists there is nothing to drain, and until `start` returns no consumer to stop.
 let server: { stop(closeActive?: boolean): Promise<void> } = { stop: async () => {} };
+let consumers: AsyncDisposable = { async [Symbol.asyncDispose]() {} };
 handleSignals({
   logger,
   hardExitMs: env.SHUTDOWN_TIMEOUT_MS,
   shutdown: (reason) =>
-    stop({ reason, server, container, lifecycle, drainMs: env.DRAIN_TIMEOUT_MS }),
+    stop({ reason, server, consumers, container, lifecycle, drainMs: env.DRAIN_TIMEOUT_MS }),
 });
 
 // A signal during startup has begun shutdown already, and the signal handler exits.
@@ -29,9 +30,11 @@ const signalled = () => lifecycle.phase() !== "starting";
 
 // Both release what they built before rejecting.
 try {
-  const { app } = await start(container);
+  const started = await start(container);
+  consumers = started.consumers;
   server = await listen({
-    serve: () => Bun.serve({ port: env.PORT, fetch: app.fetch }),
+    serve: () => Bun.serve({ port: env.PORT, fetch: started.app.fetch }),
+    consumers,
     container,
     lifecycle,
   });

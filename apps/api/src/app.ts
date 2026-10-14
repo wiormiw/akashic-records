@@ -1,6 +1,4 @@
 import { Hono } from "hono";
-import type { Authorizer } from "@akashic/authz";
-import type { Db } from "@akashic/db";
 import type { Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
 import type { Auth } from "@/auth/auth.ts";
@@ -11,19 +9,10 @@ import { notFound, problemHandler } from "@/http/problem.ts";
 import { rateLimit } from "@/http/rate-limit.ts";
 import { requestContext } from "@/http/request-context.ts";
 import { security } from "@/http/security.ts";
-import { sessions } from "@/http/session.ts";
+import type { Sessions } from "@/http/session.ts";
 import type { Mailer } from "@/integrations/mail.ts";
 import type { RateLimiter, RateLimitRule } from "@/integrations/rate-limit.ts";
-
-/** Where a module's routes are mounted. */
-export interface ModuleRoutes {
-  /** Under the public API: anonymous reads, no session lookup. */
-  readonly public?: Hono<AppEnv>;
-  /** Under the signed-in API. */
-  readonly private?: Hono<AppEnv>;
-  /** At the app root, for routes that own their path, such as a socket. */
-  readonly root?: Hono<AppEnv>;
-}
+import type { ModuleRoutes } from "@/modules/module.ts";
 
 type Check = () => Promise<boolean>;
 
@@ -31,8 +20,8 @@ export interface AppDeps {
   logger: Logger;
   lifecycle: Lifecycle;
   auth: Auth;
-  db: Db;
-  authorizer: Authorizer;
+  /** Shared with the modules, which guard their own routes with them. */
+  sessions: Sessions;
   mailer: Mailer;
   limiter: RateLimiter;
   limits: { api: RateLimitRule; auth: RateLimitRule; credentials: RateLimitRule };
@@ -47,7 +36,7 @@ export interface AppDeps {
 
 /** The HTTP surface: cross-cutting middleware around the routes each module brings. */
 export function createApp(deps: AppDeps) {
-  const { session } = sessions({ auth: deps.auth, db: deps.db, authorizer: deps.authorizer });
+  const { session } = deps.sessions;
   const limited = (rule: RateLimitRule) => rateLimit(deps.limiter, rule, deps);
 
   const publicApi = new Hono<AppEnv>().use(limited({ ...deps.limits.api, bucket: "public" }));

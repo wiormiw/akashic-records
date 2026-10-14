@@ -30,6 +30,8 @@ export interface DeliveryDeps {
   /** Republishes a copy to a queue and resolves on the broker's confirm. */
   republish(queue: string, delivery: Delivery, headers: Record<string, unknown>): Promise<void>;
   signal(): AbortSignal;
+  /** The process's shutdown signal. A handler that fails once it aborts was cut off, not wrong. */
+  shutdown: AbortSignal;
   log: Logger;
 }
 
@@ -37,7 +39,7 @@ export interface DeliveryDeps {
  * Runs one delivery's handler. A failure is never sent back to the head of the queue, where it
  * would spin: it goes to the retry queue to wait, or, out of attempts, to the dead queue for a
  * person. The original is acked only once that copy is confirmed; if the copy can't be made, the
- * error propagates and the message is requeued.
+ * error propagates and the message is requeued. A failure during shutdown is requeued untouched.
  */
 export function createDeliveryHandler(deps: DeliveryDeps) {
   // Once per handler, not per message.
@@ -88,6 +90,9 @@ export function createDeliveryHandler(deps: DeliveryDeps) {
     try {
       await handle(delivery, type);
     } catch (error) {
+      // Back to the queue as it was, for whichever consumer runs next: shutting down isn't the
+      // handler failing, so it costs no attempt.
+      if (deps.shutdown.aborted) return ConsumerStatus.REQUEUE;
       await setAside(delivery, type, error);
     }
     return ConsumerStatus.ACK;
@@ -173,6 +178,7 @@ export function createEventConsumer(
             delivery.body,
           ),
         signal: () => lifecycle.linkedSignal(options.handlerTimeoutMs),
+        shutdown: lifecycle.signal,
         log,
       });
 

@@ -42,7 +42,8 @@ bun run db:migrate / authz:push / authz:backfill / events:replay
 ## Testing
 
 `bun test`. Unit tests use in-memory fakes. Integration tests run against the real database,
-OpenFGA and RabbitMQ; each skips when nothing answers. Migrations are generated with
+OpenFGA and RabbitMQ; each skips when nothing answers. The database holds real dev data: a test
+writes inside `withRollback` (`@akashic/db/testing`), so nothing it creates persists. Migrations are generated with
 `cd packages/db && bunx drizzle-kit generate`; CI fails if they differ from the schema.
 
 ## Traps already hit

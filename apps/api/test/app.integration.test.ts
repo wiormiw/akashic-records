@@ -51,7 +51,9 @@ describe.skipIf(!(postgres && rabbitmq && openfga))("the started app", () => {
       // Telemetry registers process-wide providers, which other test files' span capture needs.
       .override("telemetry", { async [Symbol.asyncDispose]() {} });
     const probeRoute = new Hono<AppEnv>().get("/probe", (c) => c.text("ok"));
-    const { app, lifecycle } = await start(container, [{ private: probeRoute }]);
+    const { app, lifecycle, consumers } = await start(container, async () => [
+      { name: "probe", routes: { private: probeRoute } },
+    ]);
     try {
       lifecycle.markReady();
 
@@ -96,6 +98,7 @@ describe.skipIf(!(postgres && rabbitmq && openfga))("the started app", () => {
         reason: "test",
         drainMs: 100,
         server: { stop: async () => {} },
+        consumers,
         container,
         lifecycle,
       });

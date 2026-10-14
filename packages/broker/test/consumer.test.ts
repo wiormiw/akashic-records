@@ -12,7 +12,7 @@ const delivery = (headers: Record<string, unknown> = {}): Delivery => ({
 });
 
 /** A handler run whose republishes are recorded instead of sent. */
-function world(handler: (payload: unknown) => Promise<void>) {
+function world(handler: (payload: unknown) => Promise<void>, shutdown = new AbortController()) {
   const copies: { queue: string; headers: Record<string, unknown> }[] = [];
   const handle = createDeliveryHandler({
     queue: "work",
@@ -22,6 +22,7 @@ function world(handler: (payload: unknown) => Promise<void>) {
     maxAttempts: 3,
     republish: async (queue, _delivery, headers) => void copies.push({ queue, headers }),
     signal: () => new AbortController().signal,
+    shutdown: shutdown.signal,
     log: silentLogger(),
   });
   return { handle, copies };
@@ -78,9 +79,20 @@ describe("event consumer", () => {
         throw new Error("channel closed");
       },
       signal: () => new AbortController().signal,
+      shutdown: new AbortController().signal,
       log: silentLogger(),
     });
     await expect(handle(delivery())).rejects.toThrow("channel closed");
+  });
+
+  test("a handler cut off by shutdown is requeued as it was, without spending an attempt", async () => {
+    const shutdown = new AbortController();
+    const w = world(async () => {
+      shutdown.abort(new Error("shutting down: SIGTERM"));
+      throw shutdown.signal.reason;
+    }, shutdown);
+    expect(await w.handle(delivery({ "x-attempt": 2 }))).toBe(ConsumerStatus.REQUEUE);
+    expect(w.copies).toEqual([]);
   });
 
   test("the attempt is read from the header, and anything odd there counts as the first", () => {
