@@ -1,5 +1,4 @@
 import type { Proposal } from "@akashic/contracts";
-import { parseVector } from "@akashic/db/sql";
 import { RealmModule } from "@akashic/lib/enums";
 import { fromDate } from "@akashic/lib/time";
 
@@ -12,15 +11,7 @@ export const knownModules = (modules: readonly number[]): RealmModule[] => [
   ...new Set(modules.filter((module): module is RealmModule => MODULES.has(module))),
 ];
 
-/** The stored centroid, read as text, as numbers; a realm with none has learned from nothing. */
-export const centroidFrom = (
-  row: { centroid: string | null; samples: number | null } | undefined,
-): { centroid: number[] | null; samples: number } => ({
-  centroid: row?.centroid ? parseVector(row.centroid) : null,
-  samples: row?.samples ?? 0,
-});
-
-/** One proposal row, joined to its proposer (who may have deleted their account). */
+/** One proposal row, joined to its proposer (`proposed_by` cascades, so there always is one). */
 export interface ProposalRow {
   id: string;
   slug: string;
@@ -34,9 +25,9 @@ export interface ProposalRow {
   decidedAt: Date | null;
   realmId: string | null;
   createdAt: Date;
-  proposerId: string | null;
-  proposerName: string | null;
-  proposerEmail: string | null;
+  proposerId: string;
+  proposerName: string;
+  proposerEmail: string;
 }
 
 export const toProposal = ({
@@ -48,7 +39,5 @@ export const toProposal = ({
   ...row,
   decidedAt: row.decidedAt && fromDate(row.decidedAt),
   createdAt: fromDate(row.createdAt),
-  proposedBy: proposerId
-    ? { id: proposerId, name: proposerName ?? "", email: proposerEmail ?? "" }
-    : null,
+  proposedBy: { id: proposerId, name: proposerName, email: proposerEmail },
 });

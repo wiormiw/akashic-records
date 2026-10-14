@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ProposalStatus, RealmModule } from "@akashic/lib/enums";
-import {
-  centroidFrom,
-  knownModules,
-  type ProposalRow,
-  toProposal,
-} from "@/modules/realm/realm.rules.ts";
+import { knownModules, type ProposalRow, toProposal } from "@/modules/realm/realm.rules.ts";
 
 describe("proposal row", () => {
   const row: ProposalRow = {
@@ -32,21 +27,6 @@ describe("proposal row", () => {
     expect(proposal.createdAt).toEqual(Temporal.Instant.from("2026-05-01T00:00:00Z"));
     expect(proposal.decidedAt).toBeNull();
     expect("proposerId" in proposal).toBe(false);
-  });
-
-  test("a proposer who deleted their account leaves no proposer", () => {
-    expect(toProposal({ ...row, proposerId: null }).proposedBy).toBeNull();
-  });
-});
-
-describe("realm centroid", () => {
-  test("a stored vector is read as numbers; none means nothing learned", () => {
-    expect(centroidFrom({ centroid: "[0.5,0.25]", samples: 4 })).toEqual({
-      centroid: [0.5, 0.25],
-      samples: 4,
-    });
-    expect(centroidFrom({ centroid: null, samples: null })).toEqual({ centroid: null, samples: 0 });
-    expect(centroidFrom(undefined)).toEqual({ centroid: null, samples: 0 });
   });
 });
 

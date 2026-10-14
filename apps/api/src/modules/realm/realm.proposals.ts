@@ -14,8 +14,8 @@ import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { type Clock, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
+import { foundIn } from "./realm.queries.ts";
 import { toProposal } from "./realm.rules.ts";
-import type { FoundRealm } from "./realm.service.ts";
 
 export interface NewProposal {
   slug: string;
@@ -34,15 +34,9 @@ export interface NewProposal {
 export function createProposals(deps: {
   db: Executor;
   clock: Clock;
-  foundIn: (
-    tx: Tx,
-    founderId: string,
-    realm: FoundRealm,
-    now: Temporal.Instant,
-  ) => Promise<Result<string>>;
   seedCentroid: (realmId: string, name: string, description: string | null) => Promise<boolean>;
 }) {
-  const { db, clock, foundIn, seedCentroid } = deps;
+  const { db, clock, seedCentroid } = deps;
 
   const select = (where: SQL | undefined) =>
     db
@@ -64,7 +58,7 @@ export function createProposals(deps: {
         proposerEmail: user.email,
       })
       .from(realmProposals)
-      .leftJoin(user, eq(user.id, realmProposals.proposedBy))
+      .innerJoin(user, eq(user.id, realmProposals.proposedBy))
       .where(where);
 
   /** Only a pending proposal is decided; false otherwise. */
@@ -165,11 +159,17 @@ export function createProposals(deps: {
         if (!founded.ok) return founded;
         const realmId = founded.value;
 
-        await decide(tx, proposalId, {
+        // Locked above, so this holds; if it ever doesn't, the err rolls the realm back with it.
+        const decided = await decide(tx, proposalId, {
           status: ProposalStatus.approved,
           decidedBy: actorId,
           realmId,
         });
+        if (!decided) {
+          return err(
+            fail.conflict(ErrorCode.realm.duplicateSlug, "That proposal has already been decided."),
+          );
+        }
         await audit(tx, {
           actorId,
           entityType: "realm_proposal",

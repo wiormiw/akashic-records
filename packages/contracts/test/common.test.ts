@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import * as v from "valibot";
 import { CommentSubject } from "@akashic/lib/enums";
-import { ListLimit, Slug, Timestamp, iso, oneOf, subjectOf, trimmed } from "@akashic/contracts";
+import {
+  ListLimit,
+  Slug,
+  Timestamp,
+  iso,
+  oneOf,
+  subjectOf,
+  trimmed,
+  trimmedAsSent,
+} from "@akashic/contracts";
 
 describe("contracts", () => {
   test("a timestamp at nanosecond precision is a valid date-time", () => {
@@ -18,6 +27,13 @@ describe("contracts", () => {
   test("trimmed measures its minimum after trimming", () => {
     expect(v.parse(trimmed({ minLength: 3 }), "  abc  ")).toBe("abc");
     expect(v.safeParse(trimmed({ minLength: 3 }), "  ab  ").success).toBe(false);
+  });
+
+  test("trimmedAsSent measures its maximum as sent and its minimum after trimming", () => {
+    const field = trimmedAsSent({ minLength: 3, maxLength: 6 });
+    expect(v.parse(field, " abc ")).toBe("abc");
+    expect(v.safeParse(field, "  abc  ").success).toBe(false);
+    expect(v.safeParse(field, "  ab ").success).toBe(false);
   });
 
   test("oneOf accepts exactly an enum's values", () => {

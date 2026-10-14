@@ -1,20 +1,13 @@
 import * as v from "valibot";
 import { narrow, ProposalStatus, RealmModule, RealmRole } from "@akashic/lib/enums";
-import { iso, isoOrNull, oneOf, Slug, Timestamp } from "./common.ts";
+import { iso, isoOrNull, oneOf, Slug, Timestamp, trimmedAsSent } from "./common.ts";
 
 // The realms API contract: what realms, membership and proposals accept and answer.
 
-/**
- * Text trimmed before the handler sees it. As the old API measured: the maximum on the text as
- * sent, the minimum after trimming, so whitespace alone never meets a minimum.
- */
-const text = (minLength: number, maxLength: number) =>
-  v.pipe(v.string(), v.maxLength(maxLength), v.trim(), v.minLength(minLength));
-
 const modules = v.array(oneOf(RealmModule));
-const name = text(2, 80);
-const description = text(0, 500);
-const category = text(0, 40);
+const name = trimmedAsSent({ minLength: 2, maxLength: 80 });
+const description = trimmedAsSent({ maxLength: 500 });
+const category = trimmedAsSent({ maxLength: 40 });
 
 export const CreateRealmBody = v.object({
   slug: Slug,
@@ -27,7 +20,7 @@ export type CreateRealmBody = v.InferOutput<typeof CreateRealmBody>;
 
 export const ProposeRealmBody = v.object({
   ...CreateRealmBody.entries,
-  rationale: text(40, 1000),
+  rationale: trimmedAsSent({ minLength: 40, maxLength: 1000 }),
 });
 
 export const UpdateRealmBody = v.pipe(
@@ -41,11 +34,13 @@ export const UpdateRealmBody = v.pipe(
 );
 export type RealmEdit = v.InferOutput<typeof UpdateRealmBody>;
 
-export const RejectProposalBody = v.object({ note: text(4, 500) });
+export const RejectProposalBody = v.object({
+  note: trimmedAsSent({ minLength: 4, maxLength: 500 }),
+});
 
 export const RoleBody = v.object({ role: oneOf(RealmRole) });
 
-/** `?archived=false` restores; anything else, or nothing, retires. */
+/** `?archived=true` (or none) retires, `?archived=false` restores; any other value is refused. */
 export const ArchiveQuery = v.object({
   archived: v.pipe(
     v.optional(v.union([v.boolean(), v.picklist(["true", "false"])]), true),
@@ -95,8 +90,7 @@ export interface Proposal {
   category: string | null;
   modules: number[];
   rationale: string;
-  /** Null once the proposer's account is gone. */
-  proposedBy: { id: string; name: string; email: string } | null;
+  proposedBy: { id: string; name: string; email: string };
   status: number;
   decisionNote: string | null;
   decidedAt: Temporal.Instant | null;
@@ -194,11 +188,7 @@ export const presentProposal = (p: Proposal): v.InferInput<typeof ProposalView> 
   category: p.category,
   modules: moduleList(p.modules),
   rationale: p.rationale,
-  proposedBy: p.proposedBy && {
-    id: p.proposedBy.id,
-    name: p.proposedBy.name,
-    email: p.proposedBy.email,
-  },
+  proposedBy: { id: p.proposedBy.id, name: p.proposedBy.name, email: p.proposedBy.email },
   status: narrow(ProposalStatus, p.status),
   decisionNote: p.decisionNote,
   decidedAt: isoOrNull(p.decidedAt),

@@ -41,6 +41,14 @@ export const trimmed = (options: { minLength?: number; maxLength?: number }) =>
     v.maxLength(options.maxLength ?? Number.MAX_SAFE_INTEGER),
   );
 
+/**
+ * A string trimmed before the handler sees it, measured as the old API measured: `maxLength` on
+ * the text as sent, `minLength` after trimming (so whitespace alone never meets a minimum). Use
+ * it for every field the old API declared with `trimmed`, so the same inputs pass.
+ */
+export const trimmedAsSent = (options: { minLength?: number; maxLength: number }) =>
+  v.pipe(v.string(), v.maxLength(options.maxLength), v.trim(), v.minLength(options.minLength ?? 0));
+
 /** A realm's URL name: lowercase words separated by single dashes. */
 export const Slug = v.pipe(
   v.string(),

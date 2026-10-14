@@ -190,6 +190,38 @@ describe.skipIf(!live)("membership routes", () => {
     }));
 });
 
+describe.skipIf(!live)("validation comes before the realm's guards", () => {
+  test("a non-admin's malformed edit is a validation failure, not a refusal", () =>
+    scenario(async ({ call, w }) => {
+      const { slug, people } = await w.realm([], 1);
+      const [member] = people as [string];
+      const bad = await call("PATCH", `/api/v1/realms/${slug}`, {
+        as: member,
+        body: { modules: ["jobs"] },
+      });
+      expect(bad.status).toBe(400);
+      expect(bad.body.code).toBe("common.request.validation_failed");
+      const fine = await call("PATCH", `/api/v1/realms/${slug}`, {
+        as: member,
+        body: { name: "Taken over" },
+      });
+      expect(fine.status).toBe(403);
+    }));
+
+  test("a malformed slug on the realm root is a validation failure, not 404", () =>
+    scenario(async ({ call, w }) => {
+      const someone = await w.person();
+      for (const [method, body] of [
+        ["PATCH", { name: "Renamed" }],
+        ["DELETE", undefined],
+      ] as const) {
+        const bad = await call(method, "/api/v1/realms/Not_A_Slug", { as: someone, body });
+        expect(bad.status).toBe(400);
+        expect(bad.body.code).toBe("common.request.validation_failed");
+      }
+    }));
+});
+
 describe.skipIf(!live)("platform administration routes", () => {
   test("found directly, and approve and reject proposals", () =>
     scenario(async ({ call, grants, w }) => {

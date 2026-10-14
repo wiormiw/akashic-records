@@ -13,5 +13,13 @@ export const pgVector = (values: readonly number[]): string => `[${values.join("
 
 export const parseVector = (value: string): number[] => JSON.parse(value) as number[];
 
+/** A realm's stored centroid, read as text, as numbers; a realm with none has learned from nothing. */
+export const centroidFrom = (
+  row: { centroid: string | null; samples: number | null } | undefined,
+): { centroid: number[] | null; samples: number } => ({
+  centroid: row?.centroid ? parseVector(row.centroid) : null,
+  samples: row?.samples ?? 0,
+});
+
 /** An ILIKE pattern matching `text` anywhere, with its wildcards escaped. */
 export const containing = (text: string): string => `%${text.replaceAll(/[\\%_]/g, "\\$&")}%`;

@@ -29,7 +29,7 @@ import {
   UpdateRealmBody,
 } from "@akashic/contracts";
 import { mapOk } from "@akashic/lib/result";
-import type { AppEnv, Caller } from "@/http/env.ts";
+import { type AppEnv, callerOf } from "@/http/env.ts";
 import { type RealmEnv, requirePermission } from "@/http/realm-context.ts";
 import { reply, respond } from "@/http/reply.ts";
 import type { Sessions } from "@/http/session.ts";
@@ -40,12 +40,6 @@ import type { RealmService } from "./realm.service.ts";
 const Realms = v.array(RealmSummaryView);
 const Members = v.array(MemberView);
 const Proposals = v.array(ProposalView);
-
-/** The caller on a private route, which the session middleware has already required. */
-const callerOf = (c: { var: { user: Caller | null } }): Caller => {
-  if (!c.var.user) throw new Error("a private route ran without a caller");
-  return c.var.user;
-};
 
 export function createRealmRoutes(deps: {
   realms: RealmService;
@@ -65,7 +59,8 @@ export function createRealmRoutes(deps: {
     );
 
   // Each guard is on its route, not `use`d: a `use` here would also run for every other module's
-  // routes under the same path.
+  // routes under the same path. Validation comes before the guards, as it did in the old API, so
+  // a malformed request is a validation failure whoever sends it.
   const realm = new Hono<RealmEnv>()
     .get("/me", realmContext, (c) =>
       reply(c, StandingView, presentStanding(c.var.realm.realmRole, c.var.realm.permissions)),
@@ -79,9 +74,10 @@ export function createRealmRoutes(deps: {
     })
     .patch(
       "/",
+      validate("param", RealmSlugParam),
+      validate("json", UpdateRealmBody),
       realmContext,
       requirePermission("administer"),
-      validate("json", UpdateRealmBody),
       async (c) =>
         respond(
           c,
@@ -91,9 +87,10 @@ export function createRealmRoutes(deps: {
     )
     .delete(
       "/",
+      validate("param", RealmSlugParam),
+      validate("query", ArchiveQuery),
       realmContext,
       requirePermission("administer"),
-      validate("query", ArchiveQuery),
       async (c) =>
         respond(
           c,
@@ -106,10 +103,10 @@ export function createRealmRoutes(deps: {
     )
     .patch(
       "/members/:userId",
-      realmContext,
-      requirePermission("vouch"),
       validate("param", RealmMemberParam),
       validate("json", RoleBody),
+      realmContext,
+      requirePermission("vouch"),
       async (c) => {
         const { realmId, realmRole } = c.var.realm;
         const caller = callerOf(c);
@@ -130,14 +127,14 @@ export function createRealmRoutes(deps: {
     .get("/", sessions.platformAdmin, async (c) =>
       reply(c, Proposals, (await realms.pendingProposals()).map(presentProposal)),
     )
-    .post("/:id/approve", sessions.platformAdmin, validate("param", IdParam), async (c) =>
+    .post("/:id/approve", validate("param", IdParam), sessions.platformAdmin, async (c) =>
       respond(c, await realms.approve(c.req.valid("param").id, callerOf(c).id), ApprovedView, 201),
     )
     .post(
       "/:id/reject",
-      sessions.platformAdmin,
       validate("param", IdParam),
       validate("json", RejectProposalBody),
+      sessions.platformAdmin,
       async (c) =>
         respond(
           c,
@@ -147,7 +144,7 @@ export function createRealmRoutes(deps: {
     );
 
   const privateRoutes = new Hono<AppEnv>()
-    .post("/realms", sessions.platformAdmin, validate("json", CreateRealmBody), async (c) =>
+    .post("/realms", validate("json", CreateRealmBody), sessions.platformAdmin, async (c) =>
       respond(c, await realms.found(callerOf(c).id, c.req.valid("json")), FoundedView, 201),
     )
     .post("/proposals", validate("json", ProposeRealmBody), async (c) =>

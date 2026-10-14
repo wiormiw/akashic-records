@@ -2,10 +2,11 @@ import { eq } from "drizzle-orm";
 import * as v from "valibot";
 import { createAuthorizer, FgaType, PLATFORM_ID, type Authorizer } from "@akashic/authz";
 import { audit, createDb, type Executor, inTransaction, user } from "@akashic/db";
-import { int, loadEnv, str, url } from "@akashic/lib/config";
+import { loadEnv } from "@akashic/lib/config";
 import { AuditAction } from "@akashic/lib/enums";
 import { createLogger } from "@akashic/lib/log";
 import { ok } from "@akashic/lib/result";
+import { Env } from "@/config.ts";
 
 // Platform authority over every realm. The account must exist and have verified its address.
 //
@@ -57,13 +58,7 @@ if (import.meta.main) {
   const revoke = flag === "--revoke";
 
   const env = loadEnv(
-    v.object({
-      DATABASE_URL: url(),
-      FGA_API_URL: url("http://localhost:8080"),
-      FGA_STORE_ID: str({ minLength: 1 }),
-      FGA_MODEL_ID: v.optional(v.string()),
-      FGA_TIMEOUT_MS: int({ min: 100, default: 2000 }),
-    }),
+    v.pick(Env, ["DATABASE_URL", "FGA_API_URL", "FGA_STORE_ID", "FGA_MODEL_ID", "FGA_TIMEOUT_MS"]),
     Bun.env,
   );
   const logger = createLogger({

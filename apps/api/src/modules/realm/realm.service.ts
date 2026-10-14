@@ -8,7 +8,6 @@ import {
   realmMembers,
   realmModules,
   realms,
-  type Tx,
   user,
 } from "@akashic/db";
 import { pgVector } from "@akashic/db/sql";
@@ -19,62 +18,19 @@ import { type Clock, fromDate, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
 import type { Embedder } from "@/integrations/embedder.ts";
 import { createProposals } from "./realm.proposals.ts";
-import { insertModules, liveSummaries, ofMember } from "./realm.queries.ts";
+import {
+  type FoundRealm,
+  foundIn,
+  insertModules,
+  liveSummaries,
+  ofMember,
+} from "./realm.queries.ts";
 import { knownModules } from "./realm.rules.ts";
-
-export interface FoundRealm {
-  slug: string;
-  name: string;
-  description?: string | null | undefined;
-  category?: string | null | undefined;
-  modules: readonly number[];
-}
 
 export interface RealmDeps {
   db: Executor;
   embedder: Embedder;
   clock: Clock;
-}
-
-/**
- * The writes that found a realm, in the caller's transaction: the realm, its modules, the founder
- * as admin, and both facts announced. A taken slug is a conflict and writes nothing.
- */
-export async function foundIn(
-  tx: Tx,
-  founderId: string,
-  realm: FoundRealm,
-  now: Temporal.Instant,
-): Promise<Result<string>> {
-  const [created] = await tx
-    .insert(realms)
-    .values({
-      slug: realm.slug,
-      name: realm.name,
-      description: realm.description ?? null,
-      category: realm.category ?? null,
-      createdBy: founderId,
-    })
-    .onConflictDoNothing()
-    .returning({ id: realms.id });
-  if (!created) {
-    return err(fail.conflict(ErrorCode.realm.duplicateSlug, `The slug "${realm.slug}" is taken.`));
-  }
-  await insertModules(tx, created.id, knownModules(realm.modules));
-  await tx.insert(realmMembers).values({
-    realmId: created.id,
-    userId: founderId,
-    role: RealmRole.admin,
-  });
-  await publish(
-    tx,
-    [
-      realmEvents.created(created.id),
-      realmEvents.memberChanged(created.id, founderId, RealmRole.admin),
-    ],
-    now,
-  );
-  return ok(created.id);
 }
 
 export function createRealmService(deps: RealmDeps) {
@@ -306,7 +262,7 @@ export function createRealmService(deps: RealmDeps) {
       });
     },
 
-    ...createProposals({ db, clock, foundIn, seedCentroid }),
+    ...createProposals({ db, clock, seedCentroid }),
   };
 }
 
