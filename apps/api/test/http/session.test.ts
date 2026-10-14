@@ -67,4 +67,38 @@ describe("sessions", () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("auth.account.suspended");
   });
+
+  test("platformAdmin behind session looks the caller up once, and still checks authority", async () => {
+    let lookups = 0;
+    const auth = {
+      api: {
+        getSession: async () => {
+          lookups++;
+          return signedIn;
+        },
+      },
+    } as unknown as Auth;
+    const build = (allowed: boolean) => {
+      const kit = sessions({
+        auth,
+        db: fakeDb([]) as unknown as Db,
+        authorizer: { check: async () => allowed } as unknown as Authorizer,
+      });
+      const app = new Hono<AppEnv>()
+        .use(async (c, next) => {
+          c.set("requestId", "r");
+          c.set("signal", new AbortController().signal);
+          await next();
+        })
+        .use(kit.session)
+        .get("/admin", kit.platformAdmin, (c) => c.json({ user: c.get("user") }));
+      app.onError(problemHandler(silentLogger()));
+      return app;
+    };
+
+    const res = await build(true).request("/admin");
+    expect(await res.json()).toEqual({ user: { id: "u1", email: "u1@x.test" } });
+    expect(lookups).toBe(1);
+    expect((await build(false).request("/admin")).status).toBe(404);
+  });
 });

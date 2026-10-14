@@ -35,7 +35,8 @@ export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }
   // A 404 rather than a 403, so the admin surface doesn't announce itself.
   const platformAdmin = createMiddleware<AppEnv>(async (c, next) => {
     const signal = c.get("signal");
-    const user = await identify(c.req.raw.headers, signal);
+    // Behind `session` the caller is already identified and ban-checked: one lookup, not two.
+    const user = c.get("user") ?? (await identify(c.req.raw.headers, signal));
     const allowed = await options.authorizer.check(
       {
         userId: user.id,

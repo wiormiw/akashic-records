@@ -9,8 +9,8 @@ import { problemResponse } from "./problem.ts";
  * Sends `value` as `view` describes it. Parsing drops keys the view doesn't declare, so a column
  * added to a query never reaches the wire; a value the view rejects throws, and is our bug.
  */
-export function reply<S extends v.GenericSchema>(
-  c: Context<AppEnv>,
+export function reply<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
+  c: Context<E>,
   view: S,
   value: v.InferInput<S>,
   status: ContentfulStatusCode = 200,
@@ -19,8 +19,8 @@ export function reply<S extends v.GenericSchema>(
 }
 
 /** A service's Result as the answer: the value through `view`, or the problem a throw would be. */
-export function respond<S extends v.GenericSchema>(
-  c: Context<AppEnv>,
+export function respond<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
+  c: Context<E>,
   result: Result<v.InferInput<S>>,
   view: S,
   status: ContentfulStatusCode = 200,

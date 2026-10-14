@@ -10,7 +10,7 @@ import type { AppEnv } from "./env.ts";
 const CLIENT_CLOSED_REQUEST = 499;
 
 /** The problem+json response for a failure; also how `respond` renders a returned `err`. */
-export function problemResponse(c: Context<AppEnv>, failure: AppError): Response {
+export function problemResponse<E extends AppEnv>(c: Context<E>, failure: AppError): Response {
   const { body, status } = toProblem(failure, c.get("requestId") ?? "");
   // newResponse, not `new Response`, so headers set earlier (request id, CORS, Retry-After) ride along.
   return c.newResponse(JSON.stringify(body), status as ContentfulStatusCode, {

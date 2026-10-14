@@ -22,12 +22,13 @@ import {
   createRedisCounters,
   type CounterStore,
 } from "@/integrations/counters.ts";
-import { createEmbedder } from "@/integrations/embedder.ts";
+import { createEmbedder, type Embedder } from "@/integrations/embedder.ts";
 import { createResendMailer } from "@/integrations/mail.ts";
 import { createRateLimiter } from "@/integrations/rate-limit.ts";
 import { createRedis, type Redis } from "@/integrations/redis.ts";
 import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/relay.ts";
 import { createS3ImageStore } from "@/integrations/storage.ts";
+import { createRealmService } from "@/modules/realm/realm.service.ts";
 
 /**
  * The composition root: the only place that constructs things, and the only file that imports
@@ -178,6 +179,12 @@ export function buildContainer(env: Env) {
             ? createRedisRelay({ redis: redis.client, channel: "akashic:room-relay", logger })
             : createLocalRelay({ logger }),
         ["redis", "logger"] as const,
+      )
+      .registerAsyncFactory(
+        "realms",
+        async (database: Database, embedder: Embedder, clock: Clock) =>
+          createRealmService({ db: database.db, embedder, clock }),
+        ["database", "embedder", "clock"] as const,
       )
       .registerAsyncFactory(
         "outbox",

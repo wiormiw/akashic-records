@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, mapOk, ok } from "@akashic/lib/result";
-import { expectErr, expectOk } from "./expect-result.ts";
+import { expectErr, expectOk } from "@akashic/lib/testing";
 
 describe("result", () => {
   test("mapOk transforms a success", () => {

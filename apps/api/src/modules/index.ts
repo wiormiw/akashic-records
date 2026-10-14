@@ -1,8 +1,18 @@
 import type { AppContainer } from "@/container.ts";
 import { createMailModule } from "./mail/mail.module.ts";
 import type { HttpKit, Module } from "./module.ts";
+import { createRealmModule } from "./realm/realm.module.ts";
 
 /** Every module, in mount order. The one file that knows them all. */
-export async function buildModules(container: AppContainer, _http: HttpKit): Promise<Module[]> {
-  return [createMailModule({ mailer: container.get("mailer") })];
+export async function buildModules(container: AppContainer, http: HttpKit): Promise<Module[]> {
+  return [
+    createRealmModule({
+      realms: await container.getAsync("realms"),
+      sessions: http.sessions,
+      realmContext: http.realmContext,
+      authorizer: container.get("authorizer"),
+      logger: http.logger,
+    }),
+    createMailModule({ mailer: container.get("mailer") }),
+  ];
 }

@@ -10,6 +10,8 @@
     "authz:push": "bun --env-file=.env apps/api/scripts/authz-push.ts",
     "authz:backfill": "bun --env-file=.env apps/api/scripts/authz-backfill.ts",
     "events:replay": "bun --env-file=.env apps/api/scripts/events-replay.ts",
+    "admin:grant": "bun --env-file=.env apps/api/scripts/admin-grant.ts",
+    "realm:centroids": "bun --env-file=.env apps/api/scripts/realm-centroids.ts",
     "format": "oxfmt apps packages",
     "format:check": "oxfmt --check apps packages",
     "lint": "oxlint --deny-warnings apps packages",

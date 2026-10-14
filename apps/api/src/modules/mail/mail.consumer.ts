@@ -1,7 +1,7 @@
 import * as v from "valibot";
 import type { EventHandler } from "@akashic/broker";
 import type { Mailer } from "@/integrations/mail.ts";
-import { MAIL_REQUESTED, MailRequestedPayload } from "./mail.events.ts";
+import { MAIL_REQUESTED, MailRequestedPayload } from "@akashic/contracts";
 
 export function mailHandlers(mailer: Mailer): Record<string, EventHandler> {
   return {

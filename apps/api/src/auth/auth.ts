@@ -13,7 +13,7 @@ import {
 import type { Logger } from "@akashic/lib/log";
 import { ok } from "@akashic/lib/result";
 import type { Clock } from "@akashic/lib/time";
-import { mailRequested } from "@/modules/mail/mail.events.ts";
+import { mailRequested } from "@akashic/contracts";
 import { banMessage, banOf } from "./bans.ts";
 
 export interface AuthOptions {
