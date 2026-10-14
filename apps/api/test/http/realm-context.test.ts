@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
-import type { Authorizer } from "@akashic/authz";
+import { FgaType, type Authorizer, type Check } from "@akashic/authz";
 import { createDb, realmMembers, realmModules, realms, user, type Tx } from "@akashic/db";
 import { withRollback } from "@akashic/db/testing";
 import { RealmModule, RealmRole } from "@akashic/lib/enums";
@@ -10,6 +10,7 @@ import { problemHandler } from "@/http/problem.ts";
 import {
   realmContext,
   requireModule,
+  requireOn,
   requirePermission,
   type RealmEnv,
 } from "@/http/realm-context.ts";
@@ -36,6 +37,10 @@ interface World {
     as?: "admin" | "member",
   ): Promise<{ status: number; body: any }>;
   slugs: { live: string; retired: string };
+  /** Each request's signal, and what the authorizer was handed, in order. */
+  signals: { request: AbortSignal[]; checkMany: (AbortSignal | undefined)[] };
+  /** The checks `requireOn` asked for. */
+  checks: Check[];
 }
 
 async function inWorld(run: (world: World) => Promise<void>) {
@@ -67,13 +72,26 @@ async function inWorld(run: (world: World) => Promise<void>) {
     ]);
 
     const ids = { admin: admin!.id, member: member!.id };
+    const signals: World["signals"] = { request: [], checkMany: [] };
+    const checks: Check[] = [];
     const authorizer = {
-      checkMany: async (checks: readonly { userId: string; relation: string }[]) =>
-        checks.map(
+      checkMany: async (
+        asked: readonly { userId: string; relation: string }[],
+        signal?: AbortSignal,
+      ) => {
+        signals.checkMany.push(signal);
+        return asked.map(
           (check) =>
             check.userId === ids.admin && ["can_post", "can_administer"].includes(check.relation),
-        ),
+        );
+      },
+      // Only the object called "allowed" may be settled.
+      check: async (check: Check) => {
+        checks.push(check);
+        return check.objectId === "allowed";
+      },
     } as unknown as Authorizer;
+    const settle = requireOn(authorizer, "can_settle", FgaType.job);
 
     const realm = new Hono<RealmEnv>()
       .use(realmContext({ db: tx, authorizer }))
@@ -81,12 +99,16 @@ async function inWorld(run: (world: World) => Promise<void>) {
       .post("/", (c) => c.text("restored"))
       .post("/jobs", requireModule(RealmModule.jobs), (c) => c.text("posted"))
       .post("/market", requireModule(RealmModule.market), (c) => c.text("listed"))
-      .post("/moderate", requirePermission("moderate"), (c) => c.text("moderated"));
+      .post("/moderate", requirePermission("moderate"), (c) => c.text("moderated"))
+      .post("/jobs/:id/settle", settle, (c) => c.text("settled"))
+      .post("/settle", settle, (c) => c.text("settled"));
 
     const app = new Hono<AppEnv>()
       .use(async (c, next) => {
         c.set("requestId", "r");
-        c.set("signal", new AbortController().signal);
+        const signal = new AbortController().signal;
+        signals.request.push(signal);
+        c.set("signal", signal);
         const as = c.req.header("x-user") as keyof typeof ids | undefined;
         c.set("user", as ? { id: ids[as], email: `${as}@example.test` } : null);
         await next();
@@ -96,6 +118,8 @@ async function inWorld(run: (world: World) => Promise<void>) {
 
     await run({
       slugs,
+      signals,
+      checks,
       async call(method, path, as) {
         const response = await app.request(path, {
           method,
@@ -163,5 +187,46 @@ describe.skipIf(!live)("realm context", () => {
       const { status, body } = await call("POST", `/realms/${slugs.live}/moderate`, "admin");
       expect(status).toBe(403);
       expect(body.code).toBe("realm.forbidden");
+    }));
+
+  test("the authorizer is asked under the request's signal", () =>
+    inWorld(async ({ call, slugs, signals }) => {
+      await call("GET", `/realms/${slugs.live}`, "admin");
+      expect(signals.checkMany).toHaveLength(1);
+      expect(signals.checkMany[0]).toBe(signals.request[0]);
+    }));
+
+  test("requireOn refuses without a caller, without an id, and on a denied check", () =>
+    inWorld(async ({ call, slugs, checks }) => {
+      for (const [path, as] of [
+        [`/realms/${slugs.live}/jobs/allowed/settle`, undefined],
+        [`/realms/${slugs.live}/settle`, "admin"],
+        [`/realms/${slugs.live}/jobs/denied/settle`, "admin"],
+      ] as const) {
+        const { status, body } = await call("POST", path, as);
+        expect(status).toBe(403);
+        expect(body.code).toBe("realm.forbidden");
+      }
+      // Only the denied one reached the authorizer: the others were refused before asking.
+      expect(checks.map((check) => check.objectId)).toEqual(["denied"]);
+    }));
+
+  test("requireOn lets an allowed check through, asking about the path's object", () =>
+    inWorld(async ({ call, slugs, checks }) => {
+      const { status, body } = await call(
+        "POST",
+        `/realms/${slugs.live}/jobs/allowed/settle`,
+        "admin",
+      );
+      expect(status).toBe(200);
+      expect(body).toBe("settled");
+      expect(checks).toEqual([
+        {
+          userId: expect.any(String),
+          relation: "can_settle",
+          type: FgaType.job,
+          objectId: "allowed",
+        },
+      ]);
     }));
 });
