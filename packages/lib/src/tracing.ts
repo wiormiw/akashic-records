@@ -32,7 +32,7 @@ const isCancellation = (error: unknown, signal: AbortSignal | undefined): boolea
  * code are recorded: a driver's message can carry row values (an email in a unique violation),
  * and spans leave the process. An AppError's message was written for clients, so it stays.
  */
-function recordThrow(span: Span, error: unknown, signal: AbortSignal | undefined): void {
+export function recordThrow(span: Span, error: unknown, signal?: AbortSignal): void {
   if (isCancellation(error, signal)) {
     span.setAttribute("akashic.cancelled", true);
     return;

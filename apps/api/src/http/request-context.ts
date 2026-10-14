@@ -1,8 +1,10 @@
 import { httpInstrumentationMiddleware } from "@hono/otel";
+import { trace } from "@opentelemetry/api";
 import { createMiddleware } from "hono/factory";
 import type { Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
 import { ErrorCode, fail } from "@akashic/lib/errors";
+import { recordThrow } from "@akashic/lib/tracing";
 import type { AppEnv } from "./env.ts";
 import { problemResponse } from "./problem.ts";
 
@@ -56,6 +58,16 @@ export function requestContext(options: {
   return createMiddleware<AppEnv>((c, next) =>
     UNTRACED_PATHS.has(c.req.path)
       ? context(c, next)
-      : traced(c, async () => void (await context(c, next))),
+      : traced(c, async () => {
+          await context(c, next);
+          // @hono/otel records `c.error` as is, message and stack, when it ends the server span;
+          // a driver's message can carry row values. Record it scrubbed here and leave it nothing.
+          // The problem response and its log line were written before this point.
+          if (c.error) {
+            const span = trace.getActiveSpan();
+            if (span) recordThrow(span, c.error, c.get("signal"));
+            c.error = undefined;
+          }
+        }),
   );
 }

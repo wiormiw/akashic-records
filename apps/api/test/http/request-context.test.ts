@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import { ErrorCode, fail } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
 import { createLifecycle } from "@akashic/lib/lifecycle";
 import { captureLogger, recordSpans } from "@akashic/lib/testing";
@@ -25,8 +26,14 @@ const build = (budgetMs = 1000, logger = silentLogger()) => {
       await Bun.sleep(60);
       return c.text("late");
     })
-    .get("/livez", (c) => c.text("ok"));
-  app.onError(problemHandler(silentLogger()));
+    .get("/livez", (c) => c.text("ok"))
+    .get("/dup", () => {
+      throw Object.assign(new Error("dup key (email)=(ann@example.test)"), { code: "23505" });
+    })
+    .get("/refused", () => {
+      throw fail.conflict(ErrorCode.realm.duplicateSlug, "That name is taken.");
+    });
+  app.onError(problemHandler(logger));
   return app;
 };
 
@@ -59,6 +66,40 @@ describe("spans", () => {
     const names = recorder.spans().map((s) => s.name);
     expect(names.some((n) => n.includes("/x"))).toBe(true);
     expect(names.some((n) => n.includes("/livez"))).toBe(false);
+  });
+});
+
+/** What a span carries out of the process. The span object itself is cyclic. */
+const exported = (span: ReturnType<typeof recorder.spans>[number] | undefined) =>
+  JSON.stringify({ attributes: span?.attributes, events: span?.events, status: span?.status });
+
+const serverSpan = (path: string) => recorder.spans().find((s) => s.name.includes(path));
+
+describe("server span errors", () => {
+  test("an unexpected error's message and stack stay out of the server span", async () => {
+    const { logger, lines } = captureLogger();
+    const res = await build(1000, logger).request("/dup");
+    // The response and its log line are what they were.
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { code: string }).code).toBe(ErrorCode.common.unexpected);
+    expect(JSON.stringify(lines.find((l) => l.msg === "unhandled error"))).toContain(
+      "ann@example.test",
+    );
+
+    const span = serverSpan("/dup");
+    expect(span).toBeDefined();
+    expect(exported(span)).not.toContain("ann@example.test");
+    expect(exported(span)).not.toContain("at ");
+    expect(span?.attributes["error.type"]).toBe("23505");
+    expect(span?.events.filter((e) => e.name === "exception")).toHaveLength(1);
+  });
+
+  test("an AppError keeps its client-facing message on the server span", async () => {
+    const res = await build().request("/refused");
+    expect(res.status).toBe(409);
+    const span = serverSpan("/refused");
+    expect(span?.attributes["error.type"]).toBe(ErrorCode.realm.duplicateSlug);
+    expect(span?.events[0]?.attributes?.["exception.message"]).toBe("That name is taken.");
   });
 });
 
