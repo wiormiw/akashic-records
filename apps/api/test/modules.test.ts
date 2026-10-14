@@ -41,11 +41,27 @@ const eventType = `test.modules.${run}`;
 afterAll(async () => {
   await database[Symbol.asyncDispose]();
   if (rabbitmq) {
-    for (const q of [queue, `${queue}.retry`, `${queue}.dead`])
+    for (const q of [queue, `${queue}.retry`, `${queue}.dead`, `${queue}.late`])
       await probe.queueDelete({ queue: q });
   }
   await broker.close();
 });
+
+const signedInWhenAsked = {
+  api: {
+    getSession: async ({ headers }: { headers: Headers }) =>
+      headers.get("x-test-user")
+        ? { user: { id: Bun.randomUUIDv7(), email: "modules-test@example.test" } }
+        : null,
+  },
+};
+
+/** Whether `name` exists on the broker. */
+const declared = (name: string) =>
+  probe.queueDeclare({ queue: name, passive: true }).then(
+    () => true,
+    () => false,
+  );
 
 /** How many consumers read `queue` right now. */
 const consumersOn = async (name: string) =>
@@ -69,7 +85,9 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
     };
     const container = buildContainer(env)
       // Telemetry registers process-wide providers, which other test files' span capture needs.
-      .override("telemetry", { async [Symbol.asyncDispose]() {} });
+      .override("telemetry", { async [Symbol.asyncDispose]() {} })
+      // Signed in when the request says so; the ban lookup finds no row for a fresh id.
+      .override("auth", signedInWhenAsked as never);
     const { app, lifecycle, consumers } = await start(container, async (_container, http) => {
       built = { http };
       return [fake];
@@ -82,9 +100,14 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
         "sessions",
       ]);
 
-      // Private routes sit behind the session: no cookie, no entry.
-      const privateRes = await app.request("/api/v1/fake");
-      expect(privateRes.status).toBe(401);
+      // Private routes sit behind the session; signed in, the mounted path answers and only it.
+      expect((await app.request("/api/v1/fake")).status).toBe(401);
+      const signedIn = { headers: { "x-test-user": "yes" } };
+      const privateRes = await app.request("/api/v1/fake", signedIn);
+      expect(privateRes.status).toBe(200);
+      expect(await privateRes.text()).toBe("private");
+      expect((await app.request("/api/v1/not-mounted", signedIn)).status).toBe(404);
+      expect((await app.request("/api/public/v1/not-mounted")).status).toBe(404);
       expect(await (await app.request("/api/public/v1/fake")).text()).toBe("public");
       expect(await (await app.request("/fake-root")).text()).toBe("root");
 
@@ -140,4 +163,31 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
       await container.dispose();
     }
   }, 20_000);
+
+  test("a shutdown that begins while the modules are built starts no consumer", async () => {
+    const lateQueue = `${queue}.late`;
+    const container = buildContainer(env).override("telemetry", {
+      async [Symbol.asyncDispose]() {},
+    });
+    let disposed = false;
+    const original = container.dispose.bind(container);
+    container.dispose = async () => {
+      disposed = true;
+      await original();
+    };
+    const started = start(container, async (built) => {
+      built.get("lifecycle").abort("SIGTERM");
+      return [
+        {
+          name: "late",
+          routes: {},
+          consumer: { queue: lateQueue, handlers: { x: async () => {} } },
+        },
+      ];
+    });
+    await expect(started).rejects.toThrow("shutdown began");
+    expect(disposed).toBe(true);
+    await Bun.sleep(200);
+    expect(await declared(lateQueue)).toBe(false);
+  });
 });

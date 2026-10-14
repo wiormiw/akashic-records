@@ -8,10 +8,22 @@ import { sessions } from "@/http/session.ts";
 import { buildModules } from "@/modules/index.ts";
 import type { HttpKit } from "@/modules/module.ts";
 
-/** Releases each in reverse order of creation. */
-const releaseAll = (disposables: AsyncDisposable[]) =>
+/**
+ * Releases each in reverse order of creation. One that fails doesn't stop the rest: a consumer
+ * left running would be cut off when the broker closes. The failures are thrown afterwards.
+ */
+export const releaseAll = (disposables: AsyncDisposable[]) =>
   owned({}, async () => {
-    for (const disposable of disposables.toReversed()) await disposable[Symbol.asyncDispose]();
+    const failures: unknown[] = [];
+    for (const disposable of disposables.toReversed()) {
+      try {
+        await disposable[Symbol.asyncDispose]();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "several could not be released");
   });
 
 /**
@@ -49,6 +61,9 @@ export async function start(container: AppContainer, build = buildModules) {
       logger,
     };
     const modules = await build(container, http);
+    // A signal while the modules were built has begun shutdown, whose `stop` can't see consumers
+    // started from here on: start none, and release what was built.
+    if (lifecycle.signal.aborted) throw new Error("shutdown began during startup");
 
     for (const { consumer } of modules) {
       if (!consumer) continue;

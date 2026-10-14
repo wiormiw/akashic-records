@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { listen, stop } from "@/runtime.ts";
+import { listen, releaseAll, stop } from "@/runtime.ts";
 
 const consumers = (steps: string[]): AsyncDisposable => ({
   async [Symbol.asyncDispose]() {
@@ -108,4 +108,37 @@ test("the container is released even when stopping a consumer fails", async () =
   });
   await expect(failed).rejects.toThrow("channel closed");
   expect(steps).toEqual(["dispose", "stopped"]);
+});
+
+const disposable = (steps: string[], name: string, fails = false): AsyncDisposable => ({
+  async [Symbol.asyncDispose]() {
+    steps.push(name);
+    if (fails) throw new Error(`${name} would not close`);
+  },
+});
+
+test("releasing consumers stops every one, in reverse, even past a failure", async () => {
+  const steps: string[] = [];
+  const all = releaseAll([
+    disposable(steps, "a"),
+    disposable(steps, "b", true),
+    disposable(steps, "c"),
+  ]);
+  await expect(all[Symbol.asyncDispose]()).rejects.toThrow("b would not close");
+  expect(steps).toEqual(["c", "b", "a"]);
+});
+
+test("several failures to release are reported together", async () => {
+  const steps: string[] = [];
+  const all = releaseAll([disposable(steps, "a", true), disposable(steps, "b", true)]);
+  const failure = await all[Symbol.asyncDispose]().then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect((failure as AggregateError).errors.map((e: Error) => e.message)).toEqual([
+    "b would not close",
+    "a would not close",
+  ]);
+  expect(steps).toEqual(["b", "a"]);
 });
