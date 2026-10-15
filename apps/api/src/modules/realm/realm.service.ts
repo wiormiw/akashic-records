@@ -207,7 +207,8 @@ export function createRealmService(deps: RealmDeps) {
         .from(realmMembers)
         .innerJoin(user, eq(user.id, realmMembers.userId))
         .where(eq(realmMembers.realmId, realmId))
-        .orderBy(desc(realmMembers.role), asc(realmMembers.joinedAt))
+        // The user id breaks ties, so people who joined in the same instant keep one order.
+        .orderBy(desc(realmMembers.role), asc(realmMembers.joinedAt), asc(realmMembers.userId))
         .limit(policy.pageSize);
       return rows.map((row) => ({ ...row, joinedAt: fromDate(row.joinedAt) }));
     },
