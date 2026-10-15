@@ -15,6 +15,8 @@ bun run check          format:check, lint, typecheck, test: what CI runs
 bun run format         oxfmt apps packages
 bun run db:generate    migration from a schema change; never hand-edit packages/db/migrations/
 bun run db:migrate / authz:push / authz:backfill / events:replay
+bun run admin:grant <email> [--revoke]   make (or stop) someone a platform admin
+bun run realm:centroids                  recompute each realm's fit centroid from its postings
 ```
 
 ## Rules
@@ -36,13 +38,23 @@ bun run db:migrate / authz:push / authz:backfill / events:replay
   wire shapes); inline object types only for local, unexported shapes. Tests mirror the files.
   `structure.test.ts` enforces the file names and the named types (a text heuristic). Spec:
   "Inside a module" in `docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md`.
+- **Routes validate first, then guard, per route.** `validate(...)` comes before `realmContext`,
+  `requireModule`, `requirePermission` and `platformAdmin`, so a malformed request is a 400 for
+  everyone. Guards go on each route, never `use`d on a shared prefix. Transports (routes,
+  consumers, later grpc/graphql) call services and hold no business logic.
+- **Shared test support lives in `test/support/`** (`fixtures.ts`: `person`, `uniqueSlug`,
+  `outbox`; `app.ts`: the fake-authorizer route scaffold). A module's own `world()` stays in its
+  `test/modules/<m>/fixtures.ts`. `test/contract.test.ts` holds every response view to the web
+  app's schemas (`test/fixtures/web-schemas.ts`, deleted in Plan 3): add a new view there.
 - **One error funnel.** Services return `err(...)` Results; routes hand them to `reply` (success,
   through a view) or `respond`, and `http/problem.ts` renders errors.
   `throw` is for bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it
   rolls back.
 - **Events and audits only inside `inTransaction`**, via `publish(tx, ...)` and `audit(tx, ...)`.
   Every membership change publishes `realm.member_changed`, or OpenFGA drifts from Postgres.
-- **Outbox handlers are idempotent.** Write the complete answer, don't apply a delta.
+- **Outbox handlers are idempotent.** Write the complete answer, don't apply a delta. The outbox
+  is only for a database change whose lost side effect would be a bug (authz sync, mail); not for
+  background work in general (spec "Outbox policy").
 - **Realm-scoped actions check the realm.** An id in the body or path must belong to the realm in
   the URL; otherwise a member of one realm can act in another.
 - **Comments say why, briefly.**

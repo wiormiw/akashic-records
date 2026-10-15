@@ -17,6 +17,23 @@ bun run dev
 
 `bun run check` runs format, lint, typecheck and tests, as CI does.
 
+## Scripts
+
+All run from the repository root; the `.env` is read for you.
+
+```
+bun run dev              the API on :3000 with reload
+bun run check            format:check, lint, typecheck, test
+bun run format           oxfmt apps packages
+bun run db:generate      a migration from a schema change
+bun run db:migrate       apply migrations
+bun run authz:push       write the OpenFGA model
+bun run authz:backfill   rewrite every tuple from Postgres
+bun run events:replay    republish dead outbox events
+bun run admin:grant <email> [--revoke]   grant or revoke platform admin
+bun run realm:centroids  recompute each realm's fit centroid
+```
+
 ## Layout
 
 ```
@@ -32,10 +49,12 @@ akashic-records/
         integrations/       api-only third parties: mail (Resend), storage (S3), embedder,
                             Redis counters
         modules/<name>/     role files only: <name>.module.ts, .service.ts (or .<area>.service.ts),
-                            .routes.ts, .consumer.ts, .types.ts
+                            .routes.ts, .consumer.ts, .types.ts. Modules: realm, events,
+                            postings, comments, governance, room, upload, admin, mail
       scripts/              import.meta.main jobs: migrate, authz push and backfill, events
-                            replay (admin grant and realm centroids arrive with Plan 2's modules)
-      test/
+                            replay, admin grant, realm centroids
+      test/                 mirrors src; support/ (shared fixtures), contract.test.ts (the web
+                            app's schemas), integration tests that skip without services
       Dockerfile
     web/                    SvelteKit, moved from akashic_records_fe
   packages/
@@ -50,5 +69,4 @@ akashic-records/
   compose.yaml   postgres, redis, rabbitmq, openfga for development
 ```
 
-`modules/`, `apps/web` and the Dockerfile arrive in later plans; so do the admin grant and realm
-centroids scripts, with Plan 2's modules.
+`apps/web` and the Dockerfile arrive in a later plan.

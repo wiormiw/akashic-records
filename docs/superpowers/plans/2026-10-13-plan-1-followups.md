@@ -1,40 +1,38 @@
 # Plan 1 follow-ups
 
-What the foundation's reviews deferred, and what Plan 2 must decide first. Written from the
+What the foundation's reviews deferred. Plan 2 settled the first section; the rest remains. Written from the
 execution ledger when Plan 1 finished (2026-10-13); the ledger itself was scratch.
 
-## Plan 2 must decide before the first module
+## Plan 2 had to decide before the first module (all settled)
 
-1. **How a service gets `db`.** `database` is an async registration, so anything depending on it
-   is async too. Pick one: resolve every service in `start()`; register a sync `db` derived from
-   the resolved `database`; or build module routes inside `start()` from resolved services.
-   Document it in `container.ts`.
-2. **How module routes are built.** `start(container, modules)` takes prebuilt `ModuleRoutes`;
-   `main.ts` passes none yet.
-3. **A rollback test harness.** Override `database` so `db` is a transaction rolled back after each
-   test. `Tx` is deliberately not a `Db`, so the harness needs an `Executor`-typed path or a cast.
-4. **Consumers.** Wire them as owned registrations after the outbox; choose their disposal order
-   deliberately (the old code stopped publishing before consuming). On a shutdown abort, requeue
-   instead of counting a retry, and make `withConsumerSpan` treat an abort as cancelled.
-5. **Room WebSocket.** `listen()`/`main.ts` need `hono/bun`'s websocket handler, and
-   `relay.start(deliver)` must be called with `server.publish`.
-6. **Realm context middleware** (old `http/realm.ts`: realm, modules, role, permissions,
-   `requireModule`, `requirePermission`) moves into `http/` before the first realm-scoped module.
-7. **Admin routes** would run `session` twice (group middleware plus `platformAdmin`). Give admin
-   its own mount group, or have `platformAdmin` reuse `c.get("user")`.
-8. **Move `ApiEnv`** from `app.ts` to `http/env.ts` with a structural `di` type, so module routes
-   depend only on `http/`. Export lib's test helpers as `@akashic/lib/testing`.
-9. **`trimmed` measures `maxLength` after trimming**; the old TypeBox schemas measured before.
-   Decide per field when porting each request schema.
-10. **Still to port:** the retention sweep, `admin:grant`, `realm:centroids`.
-11. **Scrub error messages in `traced`** before services write user data: Postgres unique-violation
-    messages contain values (emails) and would land in exception events.
+- [x] **How a service gets `db`.** Services take a `db: Executor`; `container.ts` builds them in
+  `start()` from the resolved `database` and documents the pattern.
+- [x] **How module routes are built.** Each module's `<name>.module.ts` builds its services and
+  routes; `src/modules/index.ts` lists them and `start()` mounts them.
+- [x] **A rollback test harness.** `withRollback` in `@akashic/db/testing`: `db` is a transaction
+  rolled back after each test, with savepoint-nesting `inTransaction`.
+- [x] **Consumers.** Wired after the outbox, disposed in a chosen order (none start once shutdown
+  began); a shutdown abort requeues instead of counting a retry, and `withConsumerSpan` reads it
+  as cancelled.
+- [x] **Room WebSocket.** `hono/bun`'s websocket handler is wired and `relay.start(deliver)` runs
+  with `server.publish`.
+- [x] **Realm context middleware.** `http/realm-context.ts`, with `requireModule`,
+  `requirePermission` and `requireOn`.
+- [x] **Admin routes ran `session` twice.** `platformAdmin` reuses the session lookup already on
+  `c.var`.
+- [x] **`ApiEnv`.** Removed; routes depend on `http/env.ts` (`AppEnv`, `callerOf`). Lib's test
+  helpers are the `@akashic/lib/testing` subpath.
+- [x] **`trimmed` measures `maxLength` after trimming.** Decided per field: `trimmedAsSent` keeps
+  the old measure (max before trimming, min after) and every ported field uses it.
+- [x] **Still to port:** the retention sweep, `admin:grant` and `realm:centroids` are done.
+- [x] **Scrub error messages in `traced`.** Row data stays out of exception events, in `traced`
+  and in the server span.
 
 ## Before the first production deploy
 
-- `observeOutbox` counts the whole `outbox_messages` table every export, and published rows are
-  never deleted. Use the partial index (`status = 0` literal), count dead rows differently, or add
-  retention for published rows.
+- [x] `observeOutbox` counted the whole `outbox_messages` table every export, and published rows
+  were never deleted. Partial indexes (`status = 0`, `status = 3` literals) serve the counts, and
+  the dispatcher deletes published rows after `OUTBOX_RETENTION_DAYS`.
 - Pin `openfga/openfga` (compose and CI) instead of `latest`.
 - Bound `SHUTDOWN_TIMEOUT_MS` against drain + in-flight broker confirms + pool close + flush, or
   cancel publishes on abort.
