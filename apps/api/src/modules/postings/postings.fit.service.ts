@@ -71,9 +71,12 @@ export const stillLearning = (samples: number): boolean => samples < rules.minSa
 
 // ---- Queries ---------------------------------------------------------------------------------
 
-/** Reads the realm table directly: modules share tables, not code. */
-async function centroidOf(db: Executor, realmId: string): Promise<Centroid> {
-  const [row] = await db
+/**
+ * Reads the realm table directly: modules share tables, not code. `lock` holds the row until the
+ * transaction ends, so a read-then-nudge inside one can't lose another's nudge.
+ */
+async function centroidOf(db: Executor, realmId: string, lock = false): Promise<Centroid> {
+  const query = db
     .select({
       centroid: sql<string | null>`${realms.centroid}::text`,
       samples: realms.centroidSamples,
@@ -81,7 +84,7 @@ async function centroidOf(db: Executor, realmId: string): Promise<Centroid> {
     .from(realms)
     .where(eq(realms.id, realmId))
     .limit(1);
-  return centroidFrom(row);
+  return centroidFrom((await (lock ? query.for("update") : query))[0]);
 }
 
 async function setCentroid(db: Executor, realmId: string, centroid: Vector): Promise<void> {
@@ -183,6 +186,8 @@ export function createFitService(deps: PostingsDeps) {
       );
     }
     if (stillLearning(samples)) {
+      // Unlocked, as before: a young realm's nudge is a best-effort follow-up after the commit,
+      // and the slow model call above must not hold the realm row.
       return ok(async () => setCentroid(db, realmId, nudge(centroid, embedding)));
     }
     if (fit === "uncertain") {
@@ -194,7 +199,7 @@ export function createFitService(deps: PostingsDeps) {
   /** Moves the realm's centroid toward a posting a moderator kept, once there is one to move. */
   async function learn(tx: Tx, realmId: string, embedding: Vector | null) {
     if (!embedding) return;
-    const { centroid } = await centroidOf(tx, realmId);
+    const { centroid } = await centroidOf(tx, realmId, true);
     if (centroid) await setCentroid(tx, realmId, nudge(centroid, embedding));
   }
 

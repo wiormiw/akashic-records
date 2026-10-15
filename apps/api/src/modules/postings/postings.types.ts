@@ -1,6 +1,5 @@
 import type { MiddlewareHandler } from "hono";
 import type { Authorizer } from "@akashic/authz";
-import type { Job, Listing } from "@akashic/contracts";
 import type { Executor, Tx } from "@akashic/db";
 import type { CommentSubject, JobStatus, JobType, ListingStatus } from "@akashic/lib/enums";
 import type { Clock } from "@akashic/lib/time";
@@ -100,8 +99,7 @@ export interface Posted {
   id: string;
 }
 
-export type JobForViewer = Job & { viewerInterested: boolean };
-export type ListingForViewer = Listing & { viewerInterested: boolean };
+export type { JobForViewer, ListingForViewer } from "@akashic/contracts";
 
 export interface JobStatusSet {
   status: JobStatus;

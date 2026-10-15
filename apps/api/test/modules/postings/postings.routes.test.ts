@@ -275,6 +275,67 @@ describe.skipIf(!live)("listings", () => {
       expect(off.status).toBe(404);
       expect(off.body.code).toBe("realm.module_disabled");
     }));
+  test("a listing of another realm is 404 through this realm's URL, and is left alone", () =>
+    scenario(async ({ call, grant, grantOn, w }) => {
+      const home = await w.realm();
+      const elsewhere = await w.realm({ members: 1 });
+      const { listing } = await w.seed(elsewhere.id, elsewhere.admin);
+      const buyer = elsewhere.people[0]!;
+      expect((await w.interest.show(elsewhere.id, listing, buyer, undefined)).ok).toBe(true);
+      grant(elsewhere.admin, participate, moderate);
+      grantOn(elsewhere.admin, edit, FgaType.listing, listing.id);
+      grantOn(elsewhere.admin, settle, FgaType.listing, listing.id);
+      // The seller is a member here too, so only the realm check stops them.
+      await w.join(home.id, elsewhere.admin);
+      const path = `/api/v1/realms/${home.slug}/listings/${listing.id}`;
+
+      for (const [method, url, body] of [
+        ["PATCH", path, { status: ListingStatus.sold }],
+        ["POST", `${path}/deal`, { buyerId: buyer }],
+      ] as const) {
+        const answer = await call(method, url, { as: elsewhere.admin, body });
+        expect(answer.status).toBe(404);
+        expect(answer.body.code).toBe("event.not_found");
+      }
+      expect(await w.listing(listing.id)).toMatchObject({
+        status: ListingStatus.active,
+        buyerId: null,
+      });
+      expect(await w.interestOf(listing.id, buyer)).toBe(InterestStatus.open);
+    }));
+});
+
+describe.skipIf(!live)("money", () => {
+  test("an amount past the int4 columns is 400; the largest that fits is 201", () =>
+    scenario(async ({ call, grant, w }) => {
+      const realm = await w.realm();
+      grant(realm.admin, postJob, post);
+      const jobs = `/api/v1/realms/${realm.slug}/jobs`;
+      const listings = `/api/v1/realms/${realm.slug}/listings`;
+
+      for (const [path, body] of [
+        [jobs, { ...newJob, budgetCents: 2_147_483_648 }],
+        [listings, { ...newListing, priceCents: 2_147_483_648 }],
+      ] as const) {
+        const over = await call("POST", path, { as: realm.admin, body });
+        expect(over.status).toBe(400);
+        expect(over.body.code).toBe("common.request.validation_failed");
+      }
+      expect(await w.jobsIn(realm.id)).toEqual([]);
+
+      const job = await call("POST", jobs, {
+        as: realm.admin,
+        body: { ...newJob, budgetCents: 2_147_483_647 },
+      });
+      expect(job.status).toBe(201);
+      expect((await w.job(job.body.id))?.budgetCents).toBe(2_147_483_647);
+      const listing = await call("POST", listings, {
+        as: realm.admin,
+        body: { ...newListing, priceCents: 2_147_483_647 },
+      });
+      expect(listing.status).toBe(201);
+      expect((await w.listing(listing.body.id))?.priceCents).toBe(2_147_483_647);
+    }));
 });
 
 describe.skipIf(!live)("interest", () => {

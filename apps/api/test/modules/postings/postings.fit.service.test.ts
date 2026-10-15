@@ -43,6 +43,9 @@ describe("realm fit rules", () => {
     expect(judge(0.18, 30)).toBe("uncertain");
     expect(judge(0.9, 30)).toBe("doesNotBelong");
     expect(judge(0.9, 3)).toBe("uncertain");
+    // The thresholds themselves: `belongs` is inclusive, refusal needs strictly more than 0.2.
+    expect(judge(0.15, 30)).toBe("belongs");
+    expect(judge(0.2, 30)).toBe("uncertain");
     expect(stillLearning(24)).toBe(true);
     expect(stillLearning(25)).toBe(false);
   });

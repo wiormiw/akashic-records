@@ -17,7 +17,9 @@ import { iso, ListLimit, oneOf, Timestamp, trimmedAsSent, Uuid } from "./common.
 const title = trimmedAsSent({ minLength: 3, maxLength: 140 });
 const description = trimmedAsSent({ minLength: 1, maxLength: 8000 });
 const currency = trimmedAsSent({ minLength: 3, maxLength: 3 });
-const money = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(10 ** 12));
+// The money columns are int4: a larger amount is a 400 here, not a 500 from the database.
+const INT4_MAX = 2_147_483_647;
+const money = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(INT4_MAX));
 const Integer = v.pipe(v.number(), v.integer());
 
 export const CreateJobBody = v.object({
@@ -87,6 +89,16 @@ export interface Listing extends ListingSummary {
   commentsEnabled: boolean;
   sellerId: string;
   sellerName: string;
+}
+
+/** A job as a member reads it: whether they have their hand up for it. */
+export interface JobForViewer extends Job {
+  viewerInterested: boolean;
+}
+
+/** A listing as a member reads it: whether they have an offer in. */
+export interface ListingForViewer extends Listing {
+  viewerInterested: boolean;
 }
 
 export interface Interest {
@@ -187,7 +199,7 @@ export function presentJobSummary(job: JobSummary): v.InferInput<typeof JobSumma
   };
 }
 
-export function presentJob(job: Job & { viewerInterested: boolean }): v.InferInput<typeof JobView> {
+export function presentJob(job: JobForViewer): v.InferInput<typeof JobView> {
   return {
     ...presentJobSummary(job),
     description: job.description,
@@ -214,9 +226,7 @@ export function presentListingSummary(
   };
 }
 
-export function presentListing(
-  listing: Listing & { viewerInterested: boolean },
-): v.InferInput<typeof ListingView> {
+export function presentListing(listing: ListingForViewer): v.InferInput<typeof ListingView> {
   return {
     ...presentListingSummary(listing),
     description: listing.description,
