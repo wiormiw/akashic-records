@@ -30,6 +30,7 @@ import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/r
 import { createS3ImageStore } from "@/integrations/storage.ts";
 import { createCommentService } from "@/modules/comments/comments.service.ts";
 import { createEventService } from "@/modules/events/events.service.ts";
+import { createPostingServices } from "@/modules/postings/postings.module.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
 
 /**
@@ -192,6 +193,12 @@ export function buildContainer(env: Env) {
         "events",
         async (database: Database, clock: Clock) => createEventService({ db: database.db, clock }),
         ["database", "clock"] as const,
+      )
+      .registerAsyncFactory(
+        "postings",
+        async (database: Database, embedder: Embedder, clock: Clock) =>
+          createPostingServices({ db: database.db, embedder, clock }),
+        ["database", "embedder", "clock"] as const,
       )
       .registerAsyncFactory(
         "comments",

@@ -9,16 +9,23 @@ import { type RealmEnv, realmContext } from "@/http/realm-context.ts";
 import { type Sessions, sessions } from "@/http/session.ts";
 import type { ModuleRoutes } from "@/modules/module.ts";
 
-/** Who may do what: platform admins, and each caller's relations in any realm. */
+/** Who may do what: platform admins, each caller's relations in any realm, and on objects. */
 export interface Grants {
   platform: Set<string>;
   realm: Map<string, Set<string>>;
+  /** Per caller, `type:objectId#relation` keys, as `grantOn` writes them. */
+  objects?: Map<string, Set<string>>;
 }
+
+const objectKey = (type: string, objectId: string, relation: string) =>
+  `${type}:${objectId}#${relation}`;
 
 /** What a module's route factory is given to build its routes from. */
 export interface Kit {
   sessions: Sessions;
   realmContext: MiddlewareHandler<RealmEnv>;
+  /** The fake authorizer, for routes that check a relation on an object (`requireOn`). */
+  authorizer: Authorizer;
 }
 
 /**
@@ -33,7 +40,12 @@ export function testApp(
   const grants: Grants = options.grants ?? { platform: new Set(), realm: new Map() };
   const checks: Check[][] = [];
   const authorizer = {
-    check: async (check: Check) => grants.platform.has(check.userId),
+    check: async (check: Check) =>
+      grants.platform.has(check.userId) ||
+      (grants.objects
+        ?.get(check.userId)
+        ?.has(objectKey(check.type, check.objectId, check.relation)) ??
+        false),
     checkMany: async (asked: readonly Check[]) => {
       checks.push([...asked]);
       return asked.map((check) => grants.realm.get(check.userId)?.has(check.relation) ?? false);
@@ -52,6 +64,7 @@ export function testApp(
   const routes = options.routes({
     sessions: kit,
     realmContext: realmContext({ db, authorizer }),
+    authorizer,
   });
   const app = new Hono<AppEnv>().use(async (c, next) => {
     c.set("requestId", "test");
@@ -84,5 +97,13 @@ export function testApp(
   const grant = (userId: string, ...relations: string[]) =>
     grants.realm.set(userId, new Set(relations));
 
-  return { call, grant, grants, checks };
+  /** Lets `userId` have `relation` on one object, as `requireOn` asks it. */
+  function grantOn(userId: string, relation: string, type: string, objectId: string) {
+    grants.objects ??= new Map();
+    const held = grants.objects.get(userId) ?? new Set<string>();
+    held.add(objectKey(type, objectId, relation));
+    grants.objects.set(userId, held);
+  }
+
+  return { call, grant, grantOn, grants, checks };
 }

@@ -3,6 +3,7 @@ import { createCommentsModule } from "./comments/comments.module.ts";
 import { createEventsModule } from "./events/events.module.ts";
 import { createMailModule } from "./mail/mail.module.ts";
 import type { HttpKit, Module } from "./module.ts";
+import { createPostingsModule } from "./postings/postings.module.ts";
 import { createRealmModule } from "./realm/realm.module.ts";
 
 /** Every module, in mount order. The one file that knows them all. */
@@ -18,6 +19,11 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     createEventsModule({
       events: await container.getAsync("events"),
       realmContext: http.realmContext,
+    }),
+    createPostingsModule({
+      postings: await container.getAsync("postings"),
+      realmContext: http.realmContext,
+      authorizer: container.get("authorizer"),
     }),
     createCommentsModule({
       comments: await container.getAsync("comments"),
