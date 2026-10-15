@@ -9,3 +9,4 @@ export * from "./postings.ts";
 export * from "./governance.ts";
 export * from "./room.ts";
 export * from "./upload.ts";
+export * from "./admin.ts";

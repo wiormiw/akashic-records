@@ -1,4 +1,5 @@
 import type { AppContainer } from "@/container.ts";
+import { createAdminModule } from "./admin/admin.module.ts";
 import { createCommentsModule } from "./comments/comments.module.ts";
 import { createEventsModule } from "./events/events.module.ts";
 import { createGovernanceModule } from "./governance/governance.module.ts";
@@ -47,6 +48,7 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
       trustProxy: http.trustProxy,
       logger: http.logger,
     }),
+    createAdminModule({ admin: await container.getAsync("admin"), sessions: http.sessions }),
     createMailModule({ mailer: container.get("mailer") }),
   ];
 }
