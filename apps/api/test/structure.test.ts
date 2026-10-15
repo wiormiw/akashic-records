@@ -6,14 +6,22 @@ const api = `${import.meta.dir}/..`;
 const repo = `${api}/../..`;
 const self = "apps/api/test/structure.test.ts";
 
-/** Repo-relative paths of every .ts file under the given repo-relative globs. */
+/**
+ * Repo-relative paths of every .ts file under the given repo-relative globs. Each glob must find
+ * at least one file: a rule over nothing passes whatever the code does, so a broken glob fails.
+ */
 const scan = (...patterns: string[]) => {
   const out = new Set<string>();
   for (const p of patterns) {
+    let found = 0;
     for (const f of new Glob(p).scanSync({ cwd: repo })) {
       const rel = f.replaceAll("\\", "/");
-      if (!rel.includes("node_modules/") && rel !== self) out.add(rel);
+      if (!rel.includes("node_modules/") && rel !== self) {
+        out.add(rel);
+        found++;
+      }
     }
+    expect(found, `"${p}" matched no files`).toBeGreaterThan(0);
   }
   return [...out].sort();
 };
@@ -35,6 +43,11 @@ const importers = async (pattern: RegExp) => {
 };
 
 describe("structure", () => {
+  test("a glob that matches nothing fails the rule instead of passing it", () => {
+    expect(() => scan("apps/api/src/no-such-dir/**/*.ts")).toThrow("matched no files");
+    expect(scan("apps/api/src/*.ts").length).toBeGreaterThan(0);
+  });
+
   test("only container.ts imports InferDI's container", async () => {
     expect(await importers(/^@inferdi\/inferdi(\/|$)/)).toEqual(["apps/api/src/container.ts"]);
   });

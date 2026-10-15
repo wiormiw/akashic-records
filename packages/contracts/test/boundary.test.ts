@@ -40,6 +40,10 @@ describe("contracts boundary", () => {
     expect(imports).toEqual([]);
   });
 
+  test("a glob that matches nothing fails instead of passing vacuously", () => {
+    expect(() => scan("packages/contracts/no-such-dir/**/*.ts")).toThrow("matched no files");
+  });
+
   test("the specifier scan sees every import form", () => {
     const src = [
       `import a from "one";`,
