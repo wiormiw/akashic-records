@@ -2,9 +2,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { type EventDetail, type EventSummary, realmEvents } from "@akashic/contracts";
 import { eventRsvps, events, type Executor, inTransaction, publish } from "@akashic/db";
 import { RsvpStatus } from "@akashic/lib/enums";
+import { rowInstant } from "@akashic/db/sql";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate, isBefore, toDate } from "@akashic/lib/time";
+import { isBefore, toDate } from "@akashic/lib/time";
 import type {
   EventsDeps,
   GoingTally,
@@ -39,7 +40,7 @@ interface DetailRow extends SummaryRow {
 const summaryOf = (row: SummaryRow): EventSummary => ({
   id: row.id,
   title: row.title,
-  startsAt: fromDate(new Date(row.starts_at)),
+  startsAt: rowInstant(row.starts_at),
   capacity: row.capacity,
   imageUrl: row.image_url,
   goingCount: Number(row.going),
@@ -87,7 +88,7 @@ export async function findEvent(
   return {
     ...summaryOf(row),
     description: row.description,
-    endsAt: row.ends_at ? fromDate(new Date(row.ends_at)) : null,
+    endsAt: row.ends_at ? rowInstant(row.ends_at) : null,
     location: row.location,
     authorId: row.author_id,
     authorName: row.author_name,

@@ -21,6 +21,7 @@ import {
 } from "@akashic/db";
 import { containing } from "@akashic/db/sql";
 import { AuditAction, RealmRole } from "@akashic/lib/enums";
+import { rowInstant } from "@akashic/db/sql";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { fromDate, toDate } from "@akashic/lib/time";
@@ -28,7 +29,7 @@ import type { AccountRef, AdminDeps, BanRequest, BanResult, Reviewed, Row } from
 
 // ---- Row readers -----------------------------------------------------------------------------
 
-const instant = (value: unknown) => fromDate(new Date(String(value)));
+const instant = (value: unknown) => rowInstant(value as Date | string);
 const maybeInstant = (value: unknown) => (value ? instant(value) : null);
 const int = (value: unknown) => Number(value ?? 0);
 const person = (id: unknown, name: unknown, email: unknown) =>

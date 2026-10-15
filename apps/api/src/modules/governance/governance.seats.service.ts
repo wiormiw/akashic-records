@@ -10,9 +10,9 @@ import {
   type Tx,
 } from "@akashic/db";
 import { AuditAction, narrow, RealmRole } from "@akashic/lib/enums";
+import { rowInstant } from "@akashic/db/sql";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
 import type {
   GovernanceDeps,
   RealmSize,
@@ -108,7 +108,7 @@ async function standingsOf(db: Executor, realmId: string, limit: number): Promis
     role: Number(row.role),
     upvotes: Number(row.upvotes),
     seated: Number(row.role) === RealmRole.moderator,
-    joinedAt: fromDate(new Date(row.joined_at)),
+    joinedAt: rowInstant(row.joined_at),
   }));
 }
 

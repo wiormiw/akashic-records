@@ -9,9 +9,10 @@ import {
   takedownVotes,
 } from "@akashic/db";
 import { AuditAction, narrow, TakedownStatus } from "@akashic/lib/enums";
+import { rowInstant } from "@akashic/db/sql";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate, toDate } from "@akashic/lib/time";
+import { toDate } from "@akashic/lib/time";
 import { cannotCarry, majority, sizeOf } from "./governance.seats.service.ts";
 import type {
   GovernanceDeps,
@@ -41,7 +42,7 @@ const toTakedown = (row: Row): Takedown => ({
   proposedBy: row.proposer_id
     ? { id: String(row.proposer_id), name: String(row.proposer_name ?? "") }
     : null,
-  createdAt: fromDate(new Date(String(row.created_at))),
+  createdAt: rowInstant(row.created_at as Date | string),
 });
 
 const selectTakedowns = (where: SQL, tail: SQL = sql``) => sql`

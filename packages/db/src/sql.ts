@@ -21,5 +21,20 @@ export const centroidFrom = (
   samples: row?.samples ?? 0,
 });
 
+/**
+ * A timestamp column from a raw `execute` row, which the driver hands back as a Date or as
+ * Postgres text ("2026-10-15 12:34:56.789123+00"). Kept to the millisecond, like every other
+ * instant read through a Date: `new Date(String(date))` goes through Date's text form, which
+ * drops the milliseconds.
+ */
+export function rowInstant(value: Date | string): Temporal.Instant {
+  if (value instanceof Date) return Temporal.Instant.fromEpochMilliseconds(value.getTime());
+  const iso = value
+    .trim()
+    .replace(" ", "T")
+    .replace(/([+-]\d{2})$/, "$1:00");
+  return Temporal.Instant.fromEpochMilliseconds(Temporal.Instant.from(iso).epochMilliseconds);
+}
+
 /** An ILIKE pattern matching `text` anywhere, with its wildcards escaped. */
 export const containing = (text: string): string => `%${text.replaceAll(/[\\%_]/g, "\\$&")}%`;

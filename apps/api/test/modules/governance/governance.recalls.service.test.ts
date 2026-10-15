@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { createDb, type Tx } from "@akashic/db";
+import { eq } from "drizzle-orm";
+import { createDb, recalls, type Tx } from "@akashic/db";
 import { withRollback } from "@akashic/db/testing";
 import { RealmRole, RecallKind, RecallStatus } from "@akashic/lib/enums";
 import { ErrorCode } from "@akashic/lib/errors";
@@ -78,6 +79,18 @@ describe.skipIf(!live)("proposing a recall", () => {
         agrees: 1,
         refusals: 0,
       });
+    }));
+
+  test("a recall's createdAt keeps its milliseconds", () =>
+    inWorld(async (w, tx) => {
+      const { id, recall } = await openRecall(w);
+      const at = "2026-10-15T12:34:56.789Z";
+      await tx
+        .update(recalls)
+        .set({ createdAt: new Date(at) })
+        .where(eq(recalls.id, recall.id));
+      const [listed] = await w.recalls.openRecalls(id, 50);
+      expect(listed?.createdAt.toString()).toBe(at);
     }));
 
   test("the moderators' electorate is everyone who moderates, at eighty percent", () =>

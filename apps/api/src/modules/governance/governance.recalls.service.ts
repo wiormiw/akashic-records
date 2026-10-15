@@ -2,9 +2,10 @@ import { and, eq, type SQL, sql } from "drizzle-orm";
 import type { NamedUser, Recall, Votes } from "@akashic/contracts";
 import { type Executor, inTransaction, recalls, recallVotes } from "@akashic/db";
 import { narrow, RealmRole, RecallKind, RecallStatus } from "@akashic/lib/enums";
+import { rowInstant } from "@akashic/db/sql";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate, toDate } from "@akashic/lib/time";
+import { toDate } from "@akashic/lib/time";
 import { cannotCarry, majority, roleOf, sizeOf } from "./governance.seats.service.ts";
 import type { NewRecall, RecallDeps, RecallOpened, RecallTally } from "./governance.types.ts";
 
@@ -46,7 +47,7 @@ const toRecall = (row: Row): Recall => ({
   refusals: Number(row.refusals),
   subject: person(row.subject_id, row.subject_name),
   proposedBy: person(row.proposer_id, row.proposer_name),
-  createdAt: fromDate(new Date(String(row.created_at))),
+  createdAt: rowInstant(row.created_at as Date | string),
 });
 
 const selectRecalls = (where: SQL, tail: SQL = sql``) => sql`
