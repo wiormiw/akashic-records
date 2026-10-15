@@ -6,11 +6,15 @@ import { posix } from "node:path";
 // lib subpaths that themselves import nothing.
 const repo = `${import.meta.dir}/../../..`;
 
-const scan = (pattern: string) =>
-  [...new Glob(pattern).scanSync({ cwd: repo })]
+// Must find something: a rule over no files passes whatever the code does.
+const scan = (pattern: string) => {
+  const files = [...new Glob(pattern).scanSync({ cwd: repo })]
     .map((f) => f.replaceAll("\\", "/"))
     .filter((f) => !f.includes("node_modules/"))
     .sort();
+  expect(files.length, `"${pattern}" matched no files`).toBeGreaterThan(0);
+  return files;
+};
 
 // Static `from`, side-effect `import "x"` and dynamic `import("x")`, either quote style.
 const specifiers = (src: string) =>
