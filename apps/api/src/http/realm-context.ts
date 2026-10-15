@@ -1,5 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
+import { matchedRoutes } from "hono/route";
 import { FgaType, Relation, type Authorizer } from "@akashic/authz";
 import { realmMembers, realmModules, realms, type Executor } from "@akashic/db";
 import { narrow, RealmModule, RealmRole } from "@akashic/lib/enums";
@@ -48,6 +50,21 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 const FORBIDDEN = "You are not allowed to do that here.";
 
 /**
+ * The pattern of the route that will answer, such as `/realms/:slug/jobs`. Applied per route, the
+ * middleware's own entry is that route; `use`d on a prefix, its entry is the prefix's `*`, so the
+ * next method route matched is the one.
+ */
+function handlerPattern(c: Context): string {
+  const routes = matchedRoutes(c);
+  const own = routes[c.req.routeIndex];
+  const route =
+    own && own.method !== "ALL"
+      ? own
+      : routes.slice(c.req.routeIndex).find((r) => r.method !== "ALL");
+  return route?.path ?? "";
+}
+
+/**
  * Resolves `/realms/:slug` to the realm, the caller's role in it, and their permissions. An
  * archived realm stays readable, and only its administrators may act (to restore it).
  */
@@ -61,8 +78,9 @@ export function realmContext(options: { db: Executor; authorizer: Authorizer }) 
     const realm = await findBySlug(db, slug);
     if (!realm) throw fail.notFound(ErrorCode.realm.notFound, `No realm called "${slug}".`);
 
-    // The realm root stays writable so an administrator can restore it.
-    const atRoot = c.req.path.replace(/\/$/, "").toLowerCase().endsWith(`/${slug.toLowerCase()}`);
+    // The realm root stays writable so an administrator can restore it. Judged on the route's
+    // pattern, not the path: `/realms/join/join` ends with its slug but is the join route.
+    const atRoot = /\/:slug\/?$/.test(handlerPattern(c));
     if (realm.archivedAt && !SAFE_METHODS.has(c.req.method) && !atRoot) {
       throw fail.conflict(
         ErrorCode.realm.archived,

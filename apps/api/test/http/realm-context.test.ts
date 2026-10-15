@@ -101,7 +101,14 @@ async function inWorld(run: (world: World) => Promise<void>) {
       .post("/market", requireModule(RealmModule.market), (c) => c.text("listed"))
       .post("/moderate", requirePermission("moderate"), (c) => c.text("moderated"))
       .post("/jobs/:id/settle", settle, (c) => c.text("settled"))
-      .post("/settle", settle, (c) => c.text("settled"));
+      .post("/settle", settle, (c) => c.text("settled"))
+      // Any action, so a path can end in the realm's own slug: /realms/<slug>/<slug>.
+      .post("/:action", (c) => c.text("acted"));
+
+    // As the modules apply it: on the route itself, not `use`d on a prefix.
+    const perRoute = new Hono<RealmEnv>()
+      .post("/", realmContext({ db: tx, authorizer }), (c) => c.text("restored"))
+      .post("/:action", realmContext({ db: tx, authorizer }), (c) => c.text("acted"));
 
     const app = new Hono<AppEnv>()
       .use(async (c, next) => {
@@ -113,7 +120,8 @@ async function inWorld(run: (world: World) => Promise<void>) {
         c.set("user", as ? { id: ids[as], email: `${as}@example.test` } : null);
         await next();
       })
-      .route("/realms/:slug", realm);
+      .route("/realms/:slug", realm)
+      .route("/per-route/:slug", perRoute);
     app.onError(problemHandler(silentLogger()));
 
     await run({
@@ -172,6 +180,21 @@ describe.skipIf(!live)("realm context", () => {
       expect(refused.body.code).toBe("realm.archived");
       expect((await call("POST", `/realms/${slugs.retired}`, "admin")).body).toBe("restored");
       expect((await call("POST", `/realms/${slugs.live}/jobs`, "member")).body).toBe("posted");
+    }));
+
+  test("a path that merely ends in the slug is not the realm root", () =>
+    inWorld(async ({ call, slugs }) => {
+      for (const prefix of ["/realms", "/per-route"]) {
+        const base = `${prefix}/${slugs.retired}`;
+        // `/realms/join/join` for a realm called "join": the join route, not the root.
+        const refused = await call("POST", `${base}/${slugs.retired}`, "admin");
+        expect(refused.status).toBe(409);
+        expect(refused.body.code).toBe("realm.archived");
+        expect((await call("POST", base, "admin")).body).toBe("restored");
+      }
+      expect((await call("POST", `/per-route/${slugs.live}/${slugs.live}`, "member")).body).toBe(
+        "acted",
+      );
     }));
 
   test("a module the realm doesn't run is a 404", () =>
