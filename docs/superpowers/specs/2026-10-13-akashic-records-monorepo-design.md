@@ -83,6 +83,31 @@ akashic-records/
 
 Module names stay as today: realm, events, postings, comments, governance, room, upload, admin.
 
+### Inside a module (agreed 2026-10-15)
+
+A module folder holds role files only, named `<module>.<role>.ts`:
+
+| Role | Holds |
+| --- | --- |
+| `module` | The wiring: what the module needs, the services it builds, what it exposes |
+| `service` | Business logic, the Drizzle queries it runs, and its pure rules (exported, so they keep unit tests) |
+| `routes` | The HTTP transport |
+| `consumer` | The broker transport |
+| `types` | The module's named types: service inputs and results, dependency bags |
+| `grpc`, `graphql` | Further transports, when they exist |
+
+- A service that grows past what one file holds well splits by area, not by kind:
+  `<module>.<area>.service.ts` (`realm.proposals.service.ts`, `postings.fit.service.ts`). There
+  are no `queries`, `rules` or helper files.
+- Transports never hold business logic; they call services. A gRPC transport implements a service
+  defined in `packages/proto` (`.proto` plus generated types, served with Connect); a GraphQL
+  transport is resolvers over a schema in `contracts`, served by GraphQL Yoga as one Hono route.
+  `Module` gains optional `grpc` and `graphql` fields, mounted by `start()` like `routes`.
+- Types are named. An exported function's parameters and result use named types from
+  `<module>.types.ts` (or `contracts` for wire shapes); an inline object type is allowed only for
+  a one-off, non-exported, local shape. A structure test catches exported signatures written as
+  inline object literals.
+
 ### What earns a package
 
 A package exists when a second consumer needs it or a hard boundary is worth having:
