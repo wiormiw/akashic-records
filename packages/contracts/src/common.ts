@@ -16,7 +16,7 @@ export const Created = v.object({ id: v.string() });
 export const IdParam = v.object({ id: Uuid });
 
 /** An integer from a query string (or a number, from a typed client), with bounds and a default. */
-const queryInt = (min: number, max: number, fallback: number) =>
+export const queryInt = (min: number, max: number, fallback: number) =>
   v.pipe(
     v.optional(v.union([v.string(), v.number()]), fallback),
     v.transform(Number),

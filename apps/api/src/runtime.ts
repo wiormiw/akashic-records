@@ -6,6 +6,7 @@ import { realmContext } from "@/http/realm-context.ts";
 import { parseOrigins } from "@/http/security.ts";
 import { sessions } from "@/http/session.ts";
 import { buildModules } from "@/modules/index.ts";
+import type { Relay } from "@/integrations/relay.ts";
 import type { HttpKit } from "@/modules/module.ts";
 
 /**
@@ -49,7 +50,7 @@ export async function start(container: AppContainer, build = buildModules) {
     const mailer = container.get("mailer");
     const auth = await container.getAsync("auth");
     const limiter = await container.getAsync("rateLimiter");
-    await container.getAsync("relay");
+    const relay = await container.getAsync("relay");
     // Last of the graph: it starts publishing, and is the first thing the container releases.
     await container.getAsync("outbox");
 
@@ -61,6 +62,8 @@ export async function start(container: AppContainer, build = buildModules) {
       logger,
     };
     const modules = await build(container, http);
+    // After the room services it sweeps with, so disposal clears its timer before they go.
+    await container.getAsync("retentionSweep");
     // A signal while the modules were built has begun shutdown, whose `stop` can't see consumers
     // started from here on: start none, and release what was built.
     if (lifecycle.signal.aborted) throw new Error("shutdown began during startup");
@@ -114,7 +117,7 @@ export async function start(container: AppContainer, build = buildModules) {
       },
       modules: modules.map((module) => module.routes),
     });
-    return { app, env, logger, lifecycle, consumers: releaseAll(started) };
+    return { app, env, logger, lifecycle, relay, consumers: releaseAll(started) };
   } catch (error) {
     try {
       await releaseAll(started)[Symbol.asyncDispose]();
@@ -125,23 +128,39 @@ export async function start(container: AppContainer, build = buildModules) {
   }
 }
 
+/** What `listen` needs of the server: topic publishing for the relay, and stopping. */
+export interface Served {
+  publish(topic: string, payload: string): unknown;
+  stop(closeActive?: boolean): Promise<void>;
+}
+
 /**
- * Starts the server. If it can't listen (the port is taken), what `start` built is released
- * before the error propagates, so the consumers, the outbox loop and the pools don't die
+ * Starts the server, then the relay, so room messages published on other instances reach sockets
+ * here. If either fails (the port is taken, Redis refuses the subscription), what `start` built is
+ * released before the error propagates, so the consumers, the outbox loop and the pools don't die
  * mid-flight.
  */
-export async function listen<S>(options: {
+export async function listen<S extends Served>(options: {
   serve: () => S;
+  relay: Pick<Relay, "start">;
   consumers: AsyncDisposable;
   container: Pick<AppContainer, "dispose">;
   lifecycle: Pick<Lifecycle, "abort">;
 }): Promise<S> {
+  let server: S | undefined;
   try {
-    return options.serve();
+    const served = options.serve();
+    server = served;
+    await options.relay.start((topic, payload) => void served.publish(topic, payload));
+    return served;
   } catch (error) {
     options.lifecycle.abort("could not listen");
     try {
-      await options.consumers[Symbol.asyncDispose]();
+      try {
+        await server?.stop(true);
+      } finally {
+        await options.consumers[Symbol.asyncDispose]();
+      }
     } finally {
       await options.container.dispose();
     }

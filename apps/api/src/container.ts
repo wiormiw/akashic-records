@@ -33,6 +33,10 @@ import { createEventService } from "@/modules/events/events.service.ts";
 import { createGovernanceServices } from "@/modules/governance/governance.module.ts";
 import { createPostingServices } from "@/modules/postings/postings.module.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
+import { createRoomServices } from "@/modules/room/room.module.ts";
+import type { RoomServices } from "@/modules/room/room.types.ts";
+
+const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 
 /**
  * The composition root: the only place that constructs things, and the only file that imports
@@ -212,6 +216,30 @@ export function buildContainer(env: Env) {
         async (database: Database, clock: Clock) =>
           createGovernanceServices({ db: database.db, clock }),
         ["database", "clock"] as const,
+      )
+      .registerAsyncFactory(
+        "rooms",
+        async (database: Database, clock: Clock) =>
+          createRoomServices({ db: database.db, clock, ticketSecret: env.BETTER_AUTH_SECRET }),
+        ["database", "clock"] as const,
+      )
+      // Hourly, deletes messages past a retention both people agreed to. Owned, so disposal
+      // clears the timer; unref'd, so it never holds the process open on its own.
+      .registerAsyncFactory(
+        "retentionSweep",
+        async (rooms: RoomServices, logger: Logger) => {
+          const sweep = () =>
+            rooms.moderation
+              .sweepExpired()
+              .then((removed) => {
+                if (removed > 0) logger.info({ removed }, "swept messages past their retention");
+              })
+              .catch((error: unknown) => logger.error({ err: error }, "retention sweep failed"));
+          const timer = setInterval(sweep, RETENTION_SWEEP_MS);
+          timer.unref();
+          return owned({ sweep }, () => clearInterval(timer));
+        },
+        ["rooms", "logger"] as const,
       )
       .registerAsyncFactory(
         "outbox",

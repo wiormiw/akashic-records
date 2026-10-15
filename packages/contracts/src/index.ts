@@ -7,3 +7,4 @@ export * from "./events-api.ts";
 export * from "./comments.ts";
 export * from "./postings.ts";
 export * from "./governance.ts";
+export * from "./room.ts";

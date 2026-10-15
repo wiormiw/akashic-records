@@ -62,30 +62,67 @@ test("the lifecycle is marked stopped even when release fails", async () => {
   expect(steps).toEqual(["stopped"]);
 });
 
+/** A served server that records what it publishes and whether it was stopped. */
+const served = (steps: string[]) => ({
+  published: [] as [string, string][],
+  publish(topic: string, payload: string) {
+    this.published.push([topic, payload]);
+  },
+  stop: async (force?: boolean) => void steps.push(force ? "server-closed" : "server-stopping"),
+});
+
+const relayTo = (steps: string[], fails = false) => ({
+  deliver: undefined as ((topic: string, payload: string) => void) | undefined,
+  async start(deliver: (topic: string, payload: string) => void) {
+    steps.push("relay");
+    if (fails) throw new Error("redis refused the subscription");
+    this.deliver = deliver;
+  },
+});
+
 test("a server that cannot listen stops the consumers and releases the graph before the error propagates", async () => {
   const steps: string[] = [];
   const failed = listen({
-    serve: () => {
+    serve: (): ReturnType<typeof served> => {
       throw new Error("EADDRINUSE");
     },
+    relay: relayTo(steps),
     consumers: consumers(steps),
     container: { dispose: async () => void steps.push("dispose") },
     lifecycle: { abort: () => steps.push("abort") },
   });
   await expect(failed).rejects.toThrow("EADDRINUSE");
+  // The relay never starts for a server that isn't there.
   expect(steps).toEqual(["abort", "consumers", "dispose"]);
 });
 
-test("a server that listens is handed back, and nothing is released", async () => {
+test("a server that listens is handed back, and the relay delivers to its sockets", async () => {
   const steps: string[] = [];
+  const relay = relayTo(steps);
   const server = await listen({
-    serve: () => "server",
+    serve: () => served(steps),
+    relay,
     consumers: consumers(steps),
     container: { dispose: async () => void steps.push("dispose") },
     lifecycle: { abort: () => steps.push("abort") },
   });
-  expect(server).toBe("server");
-  expect(steps).toEqual([]);
+  expect(steps).toEqual(["relay"]);
+  // What another instance published reaches this server's subscribers.
+  relay.deliver?.("room:r1", "hello");
+  expect(server.published).toEqual([["room:r1", "hello"]]);
+});
+
+test("a relay that cannot start closes the server and releases the graph before the error propagates", async () => {
+  const steps: string[] = [];
+  const failed = listen({
+    serve: () => served(steps),
+    relay: relayTo(steps, true),
+    consumers: consumers(steps),
+    container: { dispose: async () => void steps.push("dispose") },
+    lifecycle: { abort: () => steps.push("abort") },
+  });
+  await expect(failed).rejects.toThrow("redis refused the subscription");
+  expect(steps).toEqual(["relay", "abort", "server-closed", "consumers", "dispose"]);
 });
 
 test("the container is released even when stopping a consumer fails", async () => {

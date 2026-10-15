@@ -47,4 +47,35 @@ describe("container", () => {
     await c.dispose();
     expect(order).toEqual(["counters", "redis"]);
   });
+
+  test("the retention sweep runs hourly over the room services, and disposal clears its timer", async () => {
+    let swept = 0;
+    const rooms = { moderation: { sweepExpired: async () => ++swept } };
+    const c = buildContainer(testEnv()).override("rooms", rooms as never);
+    const started: unknown[] = [];
+    const cleared: unknown[] = [];
+    const { setInterval: realSet, clearInterval: realClear } = globalThis;
+    globalThis.setInterval = ((fn: () => void, ms: number) => {
+      const timer = realSet(fn, ms);
+      started.push([timer, ms]);
+      return timer;
+    }) as typeof setInterval;
+    globalThis.clearInterval = ((timer: Timer) => {
+      cleared.push(timer);
+      realClear(timer);
+    }) as typeof clearInterval;
+    try {
+      const sweep = await c.getAsync("retentionSweep");
+      expect(started).toHaveLength(1);
+      const [timer, ms] = started[0] as [Timer, number];
+      expect(ms).toBe(60 * 60 * 1000);
+      await sweep.sweep();
+      expect(swept).toBe(1);
+      await c.dispose();
+      expect(cleared).toContain(timer);
+    } finally {
+      globalThis.setInterval = realSet;
+      globalThis.clearInterval = realClear;
+    }
+  });
 });

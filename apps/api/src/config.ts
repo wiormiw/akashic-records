@@ -1,4 +1,5 @@
 import * as v from "valibot";
+import { RoomFrameLimits } from "@akashic/contracts";
 import { baseEnv, bool, int, oneOfEnv, optionalUrl, str, url } from "@akashic/lib/config";
 
 /** Deployment settings: what legitimately differs between a laptop and production. */
@@ -89,8 +90,8 @@ export const policy = {
     ticketTtlSeconds: 60,
     roomsPerDay: 20,
     messagesPerMinute: 30,
-    maxMessageBytes: 8192,
-    maxDevicesPerMessage: 24,
+    // The socket frame schema enforces these; they live with it so both sides agree.
+    ...RoomFrameLimits,
   },
   uploads: {
     imageTypes: ["image/jpeg", "image/png", "image/webp"] as const,

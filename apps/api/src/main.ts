@@ -1,5 +1,6 @@
 import { assertNestedBudget, loadEnv } from "@akashic/lib/config";
 import { handleSignals } from "@akashic/lib/lifecycle";
+import { websocket } from "hono/bun";
 import { Env } from "@/config.ts";
 import { buildContainer } from "@/container.ts";
 import { listen, start, stop } from "@/runtime.ts";
@@ -33,7 +34,9 @@ try {
   const started = await start(container);
   consumers = started.consumers;
   server = await listen({
-    serve: () => Bun.serve({ port: env.PORT, fetch: started.app.fetch }),
+    // Hono's socket handler, so upgraded room sockets get their events.
+    serve: () => Bun.serve({ port: env.PORT, fetch: started.app.fetch, websocket }),
+    relay: started.relay,
     consumers,
     container,
     lifecycle,
