@@ -39,6 +39,13 @@ export interface ResendMailerOptions {
   client?: Pick<Resend, "emails">;
 }
 
+/**
+ * Who a message was for, as the logs keep it: the first 12 hex characters of the address's
+ * SHA-256. Enough to match a complaint to its log lines, without storing the address.
+ */
+export const recipientHash = (to: string): string =>
+  new Bun.CryptoHasher("sha256").update(to.trim().toLowerCase()).digest("hex").slice(0, 12);
+
 // How long one failure keeps mail reported as unhealthy: long enough to span a retry, short
 // enough that one rejected address doesn't flag the deployment for the rest of its life.
 const FAILURE_TTL = Temporal.Duration.from({ minutes: 15 });
@@ -74,11 +81,12 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
     { to, subject, html, link }: MailMessage,
     idempotencyKey: string | undefined,
   ) {
+    // Development only (logLinks): the address is what the developer needs to see here.
     if (options.logLinks && link) log.info({ to, subject, link }, "link that would be emailed");
 
     if (!resend) {
       note("No mail provider is configured on this deployment.");
-      log.warn({ to, subject }, "RESEND_API_KEY unset, mail not sent");
+      log.warn({ recipient: recipientHash(to), subject }, "RESEND_API_KEY unset, mail not sent");
       return;
     }
 
@@ -99,14 +107,17 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
 
       if (error) {
         note(String((error as { message?: string }).message ?? error));
-        log.error({ to, subject, err: error }, "resend rejected the message");
+        log.error(
+          { recipient: recipientHash(to), subject, err: error },
+          "resend rejected the message",
+        );
         throw failed(error);
       }
       note(null);
     } catch (error) {
       if (error instanceof AppError) throw error;
       note(error instanceof Error ? error.message : String(error));
-      log.error({ to, subject, err: error }, "mail delivery failed");
+      log.error({ recipient: recipientHash(to), subject, err: error }, "mail delivery failed");
       throw failed(error);
     }
   }
