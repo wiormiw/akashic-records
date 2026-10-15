@@ -30,6 +30,7 @@ import { createLocalRelay, createRedisRelay, type Relay } from "@/integrations/r
 import { createS3ImageStore } from "@/integrations/storage.ts";
 import { createCommentService } from "@/modules/comments/comments.service.ts";
 import { createEventService } from "@/modules/events/events.service.ts";
+import { createGovernanceServices } from "@/modules/governance/governance.module.ts";
 import { createPostingServices } from "@/modules/postings/postings.module.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
 
@@ -204,6 +205,12 @@ export function buildContainer(env: Env) {
         "comments",
         async (database: Database, clock: Clock) =>
           createCommentService({ db: database.db, clock }),
+        ["database", "clock"] as const,
+      )
+      .registerAsyncFactory(
+        "governance",
+        async (database: Database, clock: Clock) =>
+          createGovernanceServices({ db: database.db, clock }),
         ["database", "clock"] as const,
       )
       .registerAsyncFactory(

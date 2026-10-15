@@ -1,6 +1,7 @@
 import type { AppContainer } from "@/container.ts";
 import { createCommentsModule } from "./comments/comments.module.ts";
 import { createEventsModule } from "./events/events.module.ts";
+import { createGovernanceModule } from "./governance/governance.module.ts";
 import { createMailModule } from "./mail/mail.module.ts";
 import type { HttpKit, Module } from "./module.ts";
 import { createPostingsModule } from "./postings/postings.module.ts";
@@ -27,6 +28,10 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     }),
     createCommentsModule({
       comments: await container.getAsync("comments"),
+      realmContext: http.realmContext,
+    }),
+    createGovernanceModule({
+      governance: await container.getAsync("governance"),
       realmContext: http.realmContext,
     }),
     createMailModule({ mailer: container.get("mailer") }),
