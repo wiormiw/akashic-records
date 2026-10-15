@@ -62,8 +62,9 @@ akashic-records/
                             rate limit, session, realm context; reply() and respond()
         integrations/       api-only third parties: mail (Resend), storage (S3), embedder,
                             Redis counters
-        modules/<name>/     <name>.routes.ts, <name>.service.ts, plus domain rules such as
-                            governance.rules.ts, room.tickets.ts, postings.fit.ts
+        modules/<name>/     role files only: <name>.module.ts, <name>[.<area>].service.ts,
+                            <name>.routes.ts, <name>.consumer.ts, <name>.types.ts
+                            (see "Inside a module")
       scripts/              import.meta.main jobs: migrate, authz push and backfill, admin
                             grant, realm centroids, events replay
       test/
