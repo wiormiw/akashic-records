@@ -7,8 +7,27 @@ import { ErrorCode } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
 import type { Embedder } from "@/integrations/embedder.ts";
+import { grantable, outranks } from "@/modules/realm/realm.service.ts";
 import { databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
 import { world } from "./fixtures.ts";
+
+describe("role rules", () => {
+  test("only a higher rank outranks; someone outside the realm outranks nobody", () => {
+    expect(outranks(RealmRole.admin, RealmRole.moderator)).toBe(true);
+    expect(outranks(RealmRole.moderator, RealmRole.moderator)).toBe(false);
+    expect(outranks(RealmRole.moderator, RealmRole.admin)).toBe(false);
+    expect(outranks(null, RealmRole.member)).toBe(false);
+  });
+
+  test("an admin grants any role; anyone else only below their own and below moderator", () => {
+    expect(grantable(RealmRole.admin, RealmRole.admin)).toBe(true);
+    expect(grantable(RealmRole.moderator, RealmRole.verified)).toBe(true);
+    expect(grantable(RealmRole.moderator, RealmRole.moderator)).toBe(false);
+    expect(grantable(RealmRole.verified, RealmRole.verified)).toBe(false);
+    expect(grantable(RealmRole.verified, RealmRole.member)).toBe(true);
+    expect(grantable(null, RealmRole.member)).toBe(false);
+  });
+});
 
 // The realm service on the real database, each test in a transaction that is rolled back.
 // Skips when nothing answers at DATABASE_URL.
@@ -227,5 +246,69 @@ describe.skipIf(!live)("roles", () => {
         await w.realms.changeRole(id, asAdmin, Bun.randomUUIDv7(), RealmRole.verified),
         ErrorCode.realm.notMember,
       );
+    }));
+
+  test("a moderator can't demote an admin or a fellow moderator; an admin can demote a moderator", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm([], 3);
+      const [mod, peer, member] = people as [string, string, string];
+      const asAdmin = { id: admin, role: RealmRole.admin };
+      expectOk(await w.realms.changeRole(id, asAdmin, mod, RealmRole.moderator));
+      expectOk(await w.realms.changeRole(id, asAdmin, peer, RealmRole.moderator));
+      expectOk(await w.realms.changeRole(id, asAdmin, member, RealmRole.verified));
+
+      const asMod = { id: mod, role: RealmRole.moderator };
+      expectErr(
+        await w.realms.changeRole(id, asMod, admin, RealmRole.member),
+        ErrorCode.realm.forbidden,
+      );
+      expectErr(
+        await w.realms.changeRole(id, asMod, peer, RealmRole.member),
+        ErrorCode.realm.forbidden,
+      );
+      expect(await w.roleOf(id, admin)).toBe(RealmRole.admin);
+      expect(await w.roleOf(id, peer)).toBe(RealmRole.moderator);
+      // Below them is still theirs to change.
+      expectOk(await w.realms.changeRole(id, asMod, member, RealmRole.member));
+
+      expectOk(await w.realms.changeRole(id, asAdmin, peer, RealmRole.member));
+      expect(await w.roleOf(id, peer)).toBe(RealmRole.member);
+
+      // Someone verified can't hand out verified: only a role below their own.
+      const asVerified = { id: member, role: RealmRole.verified };
+      expectErr(
+        await w.realms.changeRole(id, asVerified, peer, RealmRole.verified),
+        ErrorCode.realm.forbidden,
+      );
+    }));
+
+  test("the sole admin can't be demoted, so a realm never ends up without one", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm([], 1);
+      const [mod] = people as [string];
+      expectOk(
+        await w.realms.changeRole(
+          id,
+          { id: admin, role: RealmRole.admin },
+          mod,
+          RealmRole.moderator,
+        ),
+      );
+      for (const role of [RealmRole.member, RealmRole.verified, RealmRole.moderator]) {
+        expectErr(
+          await w.realms.changeRole(id, { id: mod, role: RealmRole.moderator }, admin, role),
+          ErrorCode.realm.forbidden,
+        );
+      }
+      expectErr(
+        await w.realms.changeRole(
+          id,
+          { id: admin, role: RealmRole.admin },
+          admin,
+          RealmRole.member,
+        ),
+        ErrorCode.realm.forbidden,
+      );
+      expect(await w.roleOf(id, admin)).toBe(RealmRole.admin);
     }));
 });

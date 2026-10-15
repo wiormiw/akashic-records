@@ -72,6 +72,17 @@ export async function liveSummaries(db: Executor, rest: SQL): Promise<RealmSumma
 export const ofMember = (realmId: string, userId: string) =>
   and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId));
 
+/** Whether `actor` ranks above `target`. Someone not in the realm outranks nobody. */
+export const outranks = (actor: RealmRole | null, target: RealmRole): boolean =>
+  actor !== null && actor > target;
+
+/**
+ * Whether `actor` may hand out `role`: an admin any role, anyone else only a role below their own
+ * and below moderator (staff roles are an admin's to give).
+ */
+export const grantable = (actor: RealmRole | null, role: RealmRole): boolean =>
+  actor === RealmRole.admin || (actor !== null && role < actor && role < RealmRole.moderator);
+
 export function createRealmService(deps: RealmDeps) {
   const { db, embedder, clock } = deps;
 
@@ -212,26 +223,42 @@ export function createRealmService(deps: RealmDeps) {
           err(fail.forbidden(ErrorCode.realm.forbidden, "You cannot change your own role.")),
         );
       }
-      // Vouching makes someone verified; only an admin hands out staff roles.
-      if (role >= RealmRole.moderator && actor.role !== RealmRole.admin) {
+      // Vouching makes someone verified; only an admin hands out staff roles. Below admin, nobody
+      // grants a role as high as their own.
+      if (!grantable(actor.role, role)) {
         return Promise.resolve(
           err(
             fail.forbidden(
               ErrorCode.realm.forbidden,
-              "Only an admin can grant moderator or admin.",
+              role >= RealmRole.moderator
+                ? "Only an admin can grant moderator or admin."
+                : "You can only grant a role below your own.",
             ),
           ),
         );
       }
       return inTransaction(db, async (tx) => {
-        const updated = await tx
-          .update(realmMembers)
-          .set({ role })
+        // Locked, so the rank compared is the rank changed.
+        const [target] = await tx
+          .select({ role: realmMembers.role })
+          .from(realmMembers)
           .where(ofMember(realmId, targetId))
-          .returning({ userId: realmMembers.userId });
-        if (updated.length === 0) {
+          .for("update");
+        if (!target) {
           return err(fail.notFound(ErrorCode.realm.notMember, "That person is not in this realm."));
         }
+        // Only someone above them changes their role: a moderator can't demote a fellow moderator
+        // or an admin (a recall exists for that). Since nobody outranks an admin, no change here
+        // can take a realm's last admin away.
+        if (!outranks(actor.role, narrow(RealmRole, target.role))) {
+          return err(
+            fail.forbidden(
+              ErrorCode.realm.forbidden,
+              "You can only change the role of someone below you.",
+            ),
+          );
+        }
+        await tx.update(realmMembers).set({ role }).where(ofMember(realmId, targetId));
         await publish(tx, [realmEvents.memberChanged(realmId, targetId, role)], clock.now());
         await audit(tx, {
           actorId: actor.id,

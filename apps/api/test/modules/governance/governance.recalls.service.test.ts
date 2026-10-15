@@ -5,7 +5,7 @@ import { RealmRole, RecallKind, RecallStatus } from "@akashic/lib/enums";
 import { ErrorCode } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
-import { recallThreshold } from "@/modules/governance/governance.recalls.service.ts";
+import { mayTakePart, recallThreshold } from "@/modules/governance/governance.recalls.service.ts";
 import { databaseUrl } from "../../support/fixtures.ts";
 import { world, type World } from "./fixtures.ts";
 
@@ -14,6 +14,17 @@ describe("recall threshold", () => {
     expect(recallThreshold(RecallKind.members, 10)).toBe(6);
     expect(recallThreshold(RecallKind.moderators, 10)).toBe(8);
     expect(recallThreshold(RecallKind.moderators, 0)).toBe(1);
+  });
+});
+
+describe("who takes part in a recall", () => {
+  test("anyone in a members' recall; only moderators and admins in a moderators' one", () => {
+    expect(mayTakePart(RecallKind.members, RealmRole.member)).toBe(true);
+    expect(mayTakePart(RecallKind.moderators, RealmRole.member)).toBe(false);
+    expect(mayTakePart(RecallKind.moderators, RealmRole.verified)).toBe(false);
+    expect(mayTakePart(RecallKind.moderators, null)).toBe(false);
+    expect(mayTakePart(RecallKind.moderators, RealmRole.moderator)).toBe(true);
+    expect(mayTakePart(RecallKind.moderators, RealmRole.admin)).toBe(true);
   });
 });
 
@@ -97,6 +108,34 @@ describe.skipIf(!live)("proposing a recall", () => {
         ErrorCode.realm.notMember,
       );
       expect(await w.recalls.openRecalls(id, 50)).toHaveLength(1);
+    }));
+});
+
+describe.skipIf(!live)("a moderators' recall", () => {
+  test("a member can neither propose one nor vote on one; a moderator can", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm(3);
+      const [subject, colleague, member] = people as [string, string, string];
+      await w.setRole(id, subject, RealmRole.moderator);
+      await w.setRole(id, colleague, RealmRole.moderator);
+
+      expectErr(
+        await w.recalls.proposeRecall(id, subject, RecallKind.moderators, REASON, member),
+        ErrorCode.realm.forbidden,
+      );
+      expect(await w.recalls.openRecalls(id, 50)).toEqual([]);
+
+      const recall = expectOk(
+        await w.recalls.proposeRecall(id, subject, RecallKind.moderators, REASON, admin),
+      );
+      expectErr(
+        await w.recalls.voteOnRecall(id, recall.id, member, true),
+        ErrorCode.realm.forbidden,
+      );
+      expect((await w.recalls.openRecalls(id, 50))[0]).toMatchObject({ agrees: 1, refusals: 0 });
+      expect(expectOk(await w.recalls.voteOnRecall(id, recall.id, colleague, false))).toMatchObject(
+        { refusals: 1 },
+      );
     }));
 });
 

@@ -1,11 +1,11 @@
 import { and, eq, type SQL, sql } from "drizzle-orm";
 import type { NamedUser, Recall, Votes } from "@akashic/contracts";
 import { type Executor, inTransaction, recalls, recallVotes } from "@akashic/db";
-import { narrow, RecallKind, RecallStatus } from "@akashic/lib/enums";
+import { narrow, RealmRole, RecallKind, RecallStatus } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { fromDate, toDate } from "@akashic/lib/time";
-import { cannotCarry, majority, sizeOf } from "./governance.seats.service.ts";
+import { cannotCarry, majority, roleOf, sizeOf } from "./governance.seats.service.ts";
 import type { NewRecall, RecallDeps, RecallOpened, RecallTally } from "./governance.types.ts";
 
 // ---- Rules -----------------------------------------------------------------------------------
@@ -16,6 +16,18 @@ import type { NewRecall, RecallDeps, RecallOpened, RecallTally } from "./governa
  */
 export const recallThreshold = (kind: RecallKind, electorate: number): number =>
   kind === RecallKind.members ? majority(electorate) : Math.max(1, Math.ceil(electorate * 0.8));
+
+/** Whether someone with `role` takes part in a recall of `kind`: a moderators' recall is theirs alone. */
+export const mayTakePart = (kind: RecallKind, role: RealmRole | null): boolean =>
+  kind === RecallKind.members || (role !== null && role >= RealmRole.moderator);
+
+const notTheirs = () =>
+  err(
+    fail.forbidden(
+      ErrorCode.realm.forbidden,
+      "Only moderators propose or vote on a moderators' recall.",
+    ),
+  );
 
 // ---- Queries ---------------------------------------------------------------------------------
 
@@ -119,6 +131,8 @@ export function createRecallService(deps: RecallDeps) {
       reason: string,
       proposerId: string,
     ): Promise<Result<RecallOpened>> {
+      // The electorate is the moderators; anyone else proposing would cast a vote they don't hold.
+      if (!mayTakePart(kind, await roleOf(db, realmId, proposerId))) return notTheirs();
       const seat = await seats.requireSeatHolder(
         realmId,
         subjectId,
@@ -161,6 +175,7 @@ export function createRecallService(deps: RecallDeps) {
       if (recall.status !== RecallStatus.open) {
         return err(fail.conflict(ErrorCode.realm.alreadyMember, "That recall is already settled."));
       }
+      if (!mayTakePart(recall.kind, await roleOf(db, realmId, voterId))) return notTheirs();
 
       return inTransaction<RecallTally>(db, async (tx) => {
         const size = await sizeOf(tx, realmId);
