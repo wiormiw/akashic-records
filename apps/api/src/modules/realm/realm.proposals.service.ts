@@ -1,41 +1,116 @@
 import { and, asc, desc, eq, type SQL } from "drizzle-orm";
 import type { Proposal } from "@akashic/contracts";
+import { realmEvents } from "@akashic/contracts";
 import {
   audit,
-  type Executor,
   inTransaction,
+  publish,
+  realmMembers,
+  realmModules,
   realmProposals,
   realms,
   type Tx,
   user,
 } from "@akashic/db";
-import { AuditAction, ProposalStatus } from "@akashic/lib/enums";
+import { AuditAction, ProposalStatus, RealmModule, RealmRole } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { type Clock, toDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
-import { foundIn } from "./realm.queries.ts";
-import { toProposal } from "./realm.rules.ts";
+import type {
+  ApprovedRealm,
+  FoundRealm,
+  NewProposal,
+  ProposalDeps,
+  ProposalRef,
+  ProposalRow,
+} from "./realm.types.ts";
 
-export interface NewProposal {
-  slug: string;
-  name: string;
-  description?: string | undefined;
-  category?: string | undefined;
-  modules: readonly number[];
-  rationale: string;
-  proposedBy: string;
+// Proposals are part of the realm service: approving founds a realm with the same writes as
+// founding directly, so foundIn and the module rules live here and realm.service.ts uses them.
+
+const MODULES = new Set<number>(Object.values(RealmModule));
+
+/** The modules the code knows, each once, in the order given. */
+export const knownModules = (modules: readonly number[]): RealmModule[] => [
+  ...new Set(modules.filter((module): module is RealmModule => MODULES.has(module))),
+];
+
+export const toProposal = ({
+  proposerId,
+  proposerName,
+  proposerEmail,
+  ...row
+}: ProposalRow): Proposal => ({
+  ...row,
+  decidedAt: row.decidedAt && fromDate(row.decidedAt),
+  createdAt: fromDate(row.createdAt),
+  proposedBy: { id: proposerId, name: proposerName, email: proposerEmail },
+});
+
+export async function insertModules(
+  tx: Tx,
+  realmId: string,
+  modules: readonly number[],
+): Promise<void> {
+  if (modules.length === 0) return;
+  await tx.insert(realmModules).values(modules.map((module) => ({ realmId, module })));
+}
+
+/**
+ * The writes that found a realm, in the caller's transaction: the realm, its modules, the founder
+ * as admin, and both facts announced. A taken slug is a conflict and writes nothing.
+ */
+export async function foundIn(
+  tx: Tx,
+  founderId: string,
+  realm: FoundRealm,
+  now: Temporal.Instant,
+): Promise<Result<string>> {
+  const [created] = await tx
+    .insert(realms)
+    .values({
+      slug: realm.slug,
+      name: realm.name,
+      description: realm.description ?? null,
+      category: realm.category ?? null,
+      createdBy: founderId,
+    })
+    .onConflictDoNothing()
+    .returning({ id: realms.id });
+  if (!created) {
+    return err(fail.conflict(ErrorCode.realm.duplicateSlug, `The slug "${realm.slug}" is taken.`));
+  }
+  await insertModules(tx, created.id, knownModules(realm.modules));
+  await tx.insert(realmMembers).values({
+    realmId: created.id,
+    userId: founderId,
+    role: RealmRole.admin,
+  });
+  await publish(
+    tx,
+    [
+      realmEvents.created(created.id),
+      realmEvents.memberChanged(created.id, founderId, RealmRole.admin),
+    ],
+    now,
+  );
+  return ok(created.id);
+}
+
+/** How a proposal was decided. */
+interface Verdict {
+  status: ProposalStatus;
+  decidedBy: string;
+  note?: string;
+  realmId?: string;
 }
 
 /**
  * Realms anyone may propose and a platform administrator approves or rejects. Part of the realm
  * service: approving founds the realm with the same writes as founding directly.
  */
-export function createProposals(deps: {
-  db: Executor;
-  clock: Clock;
-  seedCentroid: (realmId: string, name: string, description: string | null) => Promise<boolean>;
-}) {
+export function createProposals(deps: ProposalDeps) {
   const { db, clock, seedCentroid } = deps;
 
   const select = (where: SQL | undefined) =>
@@ -62,11 +137,7 @@ export function createProposals(deps: {
       .where(where);
 
   /** Only a pending proposal is decided; false otherwise. */
-  async function decide(
-    tx: Tx,
-    id: string,
-    verdict: { status: ProposalStatus; decidedBy: string; note?: string; realmId?: string },
-  ): Promise<boolean> {
+  async function decide(tx: Tx, id: string, verdict: Verdict): Promise<boolean> {
     const updated = await tx
       .update(realmProposals)
       .set({
@@ -82,7 +153,7 @@ export function createProposals(deps: {
   }
 
   return {
-    async propose(proposal: NewProposal): Promise<Result<{ id: string }>> {
+    async propose(proposal: NewProposal): Promise<Result<ProposalRef>> {
       const [pending] = await db
         .select({ id: realmProposals.id })
         .from(realmProposals)
@@ -140,7 +211,7 @@ export function createProposals(deps: {
      * Founds the proposed realm with the proposer as its admin, and decides the proposal, in one
      * transaction: a crash between the two can't leave a realm whose proposal is still pending.
      */
-    async approve(proposalId: string, actorId: string): Promise<Result<{ realmId: string }>> {
+    async approve(proposalId: string, actorId: string): Promise<Result<ApprovedRealm>> {
       const approved = await inTransaction(db, async (tx) => {
         // Locked, so a second approval waits for this one and then finds it decided.
         const [proposal] = await tx
@@ -187,7 +258,7 @@ export function createProposals(deps: {
       return ok({ realmId });
     },
 
-    reject(proposalId: string, actorId: string, note: string): Promise<Result<{ id: string }>> {
+    reject(proposalId: string, actorId: string, note: string): Promise<Result<ProposalRef>> {
       return inTransaction(db, async (tx) => {
         if (
           !(await decide(tx, proposalId, {

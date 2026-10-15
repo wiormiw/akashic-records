@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import * as v from "valibot";
 import {
   CommentBody,
@@ -16,12 +16,9 @@ import { type RealmEnv, requirePermission } from "@/http/realm-context.ts";
 import { respond } from "@/http/reply.ts";
 import { validate } from "@/http/validate.ts";
 import type { ModuleRoutes } from "../module.ts";
-import type { CommentService } from "./comments.service.ts";
+import type { CommentsRoutesDeps } from "./comments.types.ts";
 
-export function createCommentsRoutes(deps: {
-  comments: CommentService;
-  realmContext: MiddlewareHandler<RealmEnv>;
-}): ModuleRoutes {
+export function createCommentsRoutes(deps: CommentsRoutesDeps): ModuleRoutes {
   const { comments, realmContext } = deps;
 
   // Guards sit on each route, after its validation, never `use`d on a shared prefix.

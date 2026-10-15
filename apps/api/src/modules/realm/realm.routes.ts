@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import * as v from "valibot";
 import {
   ApprovedView,
@@ -32,20 +32,15 @@ import { mapOk } from "@akashic/lib/result";
 import { type AppEnv, callerOf } from "@/http/env.ts";
 import { type RealmEnv, requirePermission } from "@/http/realm-context.ts";
 import { reply, respond } from "@/http/reply.ts";
-import type { Sessions } from "@/http/session.ts";
 import { validate } from "@/http/validate.ts";
 import type { ModuleRoutes } from "../module.ts";
-import type { RealmService } from "./realm.service.ts";
+import type { RealmRoutesDeps } from "./realm.types.ts";
 
 const Realms = v.array(RealmSummaryView);
 const Members = v.array(MemberView);
 const Proposals = v.array(ProposalView);
 
-export function createRealmRoutes(deps: {
-  realms: RealmService;
-  sessions: Sessions;
-  realmContext: MiddlewareHandler<RealmEnv>;
-}): ModuleRoutes {
+export function createRealmRoutes(deps: RealmRoutesDeps): ModuleRoutes {
   const { realms, sessions, realmContext } = deps;
 
   const publicRoutes = new Hono<AppEnv>()

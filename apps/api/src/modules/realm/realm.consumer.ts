@@ -1,8 +1,8 @@
 import * as v from "valibot";
-import { FgaType, PLATFORM_ID, RANK_RELATION, type Authorizer, type Tuple } from "@akashic/authz";
+import { FgaType, PLATFORM_ID, RANK_RELATION, type Tuple } from "@akashic/authz";
 import type { EventHandler } from "@akashic/broker";
 import { type PostingKind, RealmEvent, RealmEventPayload } from "@akashic/contracts";
-import type { Logger } from "@akashic/lib/log";
+import type { RealmConsumerDeps } from "./realm.types.ts";
 
 const POSTING_TYPE: Record<PostingKind, FgaType> = {
   job: FgaType.job,
@@ -27,10 +27,7 @@ function parse<E extends keyof typeof RealmEventPayload>(event: E, payload: unkn
  * Keeps OpenFGA in step with Postgres. Each handler writes the complete answer for its event,
  * so a redelivery changes nothing.
  */
-export function createRealmConsumer(deps: {
-  authorizer: Authorizer;
-  logger: Logger;
-}): Record<string, EventHandler> {
+export function createRealmConsumer(deps: RealmConsumerDeps): Record<string, EventHandler> {
   const { authorizer } = deps;
   const log = deps.logger.child({ component: "authz-sync" });
 

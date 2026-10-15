@@ -28,6 +28,14 @@ bun run db:migrate / authz:push / authz:backfill / events:replay
   response (`x.json(`, `.body(`, `new Response(`). Only `main.ts` calls `Bun.serve` or
   `handleSignals` (also checked in `scripts` and `packages/*/src`).
   `apps/api/test/structure.test.ts` enforces all of this.
+- **A module folder holds role files only**: `<m>.module.ts`, `<m>.service.ts` (or
+  `<m>.<area>.service.ts` when one passes ~350 lines), `<m>.routes.ts`, `<m>.consumer.ts`,
+  `<m>.types.ts`, and later `<m>.grpc.ts` / `<m>.graphql.ts` for other transports. Queries and pure
+  rules live in the service that uses them, exported, tested in its test file. Every exported
+  function names its parameter and result types (in `<m>.types.ts`, or `@akashic/contracts` for
+  wire shapes); inline object types only for local, unexported shapes. Tests mirror the files.
+  `structure.test.ts` enforces the file names and the named types (a text heuristic). Spec:
+  "Inside a module" in `docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md`.
 - **One error funnel.** Services return `err(...)` Results; routes hand them to `reply` (success,
   through a view) or `respond`, and `http/problem.ts` renders errors.
   `throw` is for bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it

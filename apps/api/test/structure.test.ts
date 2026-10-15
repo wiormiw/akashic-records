@@ -113,6 +113,53 @@ describe("structure", () => {
     expect(raw).toEqual([]);
   });
 
+  // A module folder holds role files only (spec, "Inside a module"): <m>.module.ts, <m>.service.ts
+  // or <m>.<area>.service.ts, <m>.routes.ts, <m>.consumer.ts, <m>.types.ts, and the future
+  // transports <m>.grpc.ts and <m>.graphql.ts. No queries, rules or helper files.
+  test("a module folder holds role files only", () => {
+    const stray: string[] = [];
+    for (const f of scan("apps/api/src/modules/*/*.ts")) {
+      const [, name, file] = /^apps\/api\/src\/modules\/([^/]+)\/(.+)$/.exec(f)!;
+      const role = new RegExp(
+        `^${name}(\\.[a-z][a-z0-9-]*\\.service|\\.(module|service|routes|consumer|types|grpc|graphql))\\.ts$`,
+      );
+      if (!role.test(file!)) stray.push(f);
+    }
+    expect(stray).toEqual([]);
+  });
+
+  // An exported function names the types of its parameters and result; an inline object type
+  // is for a local, unexported shape. A heuristic over the source text, not the type checker:
+  // it reads each `export function` / `export const x = (...) =>` parameter list (balanced
+  // parentheses) and flags a parameter typed `: {` and a return annotation that opens with
+  // `{`, `Promise<{`, `Result<{` and the like. It does not look inside the body, at methods of
+  // a returned object, at `Promise<A | { ... }>`, or at `Record<string, { ... }>`.
+  test("exported functions use named types, not inline object types", async () => {
+    const inline: string[] = [];
+    const files = scan("apps/api/src/modules/**/*.ts", "packages/contracts/src/**/*.ts");
+    const head =
+      /export\s+(?:async\s+)?(?:function\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s+)?)(?:<[^>(]*>)?\(/g;
+    for (const f of files) {
+      const src = await read(f);
+      for (const m of src.matchAll(head)) {
+        let depth = 1;
+        let i = m.index + m[0].length;
+        const start = i;
+        while (i < src.length && depth > 0) {
+          const ch = src[i++];
+          if (ch === "(") depth++;
+          else if (ch === ")") depth--;
+        }
+        const params = src.slice(start, i - 1);
+        const result = src.slice(i, i + 80);
+        if (/:\s*\{/.test(params) || /^\s*:\s*(?:[\w.]+<)*\{/.test(result)) {
+          inline.push(`${f}: ${m[1] ?? m[2]}`);
+        }
+      }
+    }
+    expect(inline).toEqual([]);
+  });
+
   test("nothing but main.ts starts the process", async () => {
     const starting: string[] = [];
     // lifecycle.ts defines handleSignals; main.ts is the one place that calls it.

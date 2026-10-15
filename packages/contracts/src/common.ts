@@ -32,8 +32,13 @@ export const ListLimit = queryInt(1, 100, 20);
 export const oneOf = <const E extends Record<string, string | number>>(members: E) =>
   v.picklist(Object.values(members) as E[keyof E][]);
 
+export interface TrimmedBounds {
+  minLength?: number;
+  maxLength?: number;
+}
+
 /** A string trimmed before the handler sees it, with its bounds measured after trimming. */
-export const trimmed = (options: { minLength?: number; maxLength?: number }) =>
+export const trimmed = (options: TrimmedBounds) =>
   v.pipe(
     v.string(),
     v.trim(),
@@ -41,12 +46,17 @@ export const trimmed = (options: { minLength?: number; maxLength?: number }) =>
     v.maxLength(options.maxLength ?? Number.MAX_SAFE_INTEGER),
   );
 
+export interface TrimmedAsSentBounds {
+  minLength?: number;
+  maxLength: number;
+}
+
 /**
  * A string trimmed before the handler sees it, measured as the old API measured: `maxLength` on
  * the text as sent, `minLength` after trimming (so whitespace alone never meets a minimum). Use
  * it for every field the old API declared with `trimmed`, so the same inputs pass.
  */
-export const trimmedAsSent = (options: { minLength?: number; maxLength: number }) =>
+export const trimmedAsSent = (options: TrimmedAsSentBounds) =>
   v.pipe(v.string(), v.maxLength(options.maxLength), v.trim(), v.minLength(options.minLength ?? 0));
 
 /** A realm's URL name: lowercase words separated by single dashes. */
@@ -74,8 +84,13 @@ export const SubjectParam = v.object({
   id: Uuid,
 });
 
+export interface SubjectPath {
+  kind: keyof typeof SUBJECT_BY_SEGMENT;
+  id: string;
+}
+
 /** The posting a SubjectParam path names. */
-export const subjectOf = (params: { kind: keyof typeof SUBJECT_BY_SEGMENT; id: string }) => ({
+export const subjectOf = (params: SubjectPath) => ({
   kind: SUBJECT_BY_SEGMENT[params.kind],
   id: params.id,
 });

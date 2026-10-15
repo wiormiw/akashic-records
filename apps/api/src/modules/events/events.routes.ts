@@ -1,4 +1,4 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import * as v from "valibot";
 import {
   ClearedView,
@@ -20,14 +20,11 @@ import { type RealmEnv, requireModule, requirePermission } from "@/http/realm-co
 import { reply, respond } from "@/http/reply.ts";
 import { validate } from "@/http/validate.ts";
 import type { ModuleRoutes } from "../module.ts";
-import type { EventService } from "./events.service.ts";
+import type { EventsRoutesDeps } from "./events.types.ts";
 
 const eventsModule = requireModule(RealmModule.events);
 
-export function createEventsRoutes(deps: {
-  events: EventService;
-  realmContext: MiddlewareHandler<RealmEnv>;
-}): ModuleRoutes {
+export function createEventsRoutes(deps: EventsRoutesDeps): ModuleRoutes {
   const { events, realmContext } = deps;
 
   // Guards sit on each route, after its validation, never `use`d on a shared prefix.

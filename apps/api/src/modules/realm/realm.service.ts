@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
 import { type Member, type RealmEdit, realmEvents, type RealmSummary } from "@akashic/contracts";
 import {
   audit,
@@ -14,24 +14,63 @@ import { pgVector } from "@akashic/db/sql";
 import { AuditAction, RealmRole } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { type Clock, fromDate, toDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
-import type { Embedder } from "@/integrations/embedder.ts";
-import { createProposals } from "./realm.proposals.ts";
 import {
-  type FoundRealm,
+  createProposals,
   foundIn,
   insertModules,
-  liveSummaries,
-  ofMember,
-} from "./realm.queries.ts";
-import { knownModules } from "./realm.rules.ts";
+  knownModules,
+} from "./realm.proposals.service.ts";
+import type {
+  Actor,
+  Archived,
+  Edited,
+  FoundedRealm,
+  FoundRealm,
+  Joined,
+  Left,
+  RealmDeps,
+  RoleChange,
+} from "./realm.types.ts";
 
-export interface RealmDeps {
-  db: Executor;
-  embedder: Embedder;
-  clock: Clock;
+type SummaryRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  category: string | null;
+  member_count: number;
+  modules: number[] | null;
+};
+
+const toSummary = (row: SummaryRow): RealmSummary => ({
+  id: row.id,
+  slug: row.slug,
+  name: row.name,
+  description: row.description,
+  category: row.category,
+  memberCount: Number(row.member_count),
+  modules: row.modules ?? [],
+});
+
+/** Live realms with their member counts and modules; `rest` filters further, orders and limits. */
+export async function liveSummaries(db: Executor, rest: SQL): Promise<RealmSummary[]> {
+  const rows = (await db.execute(sql`
+    SELECT
+      r.id, r.slug, r.name, r.description, r.category,
+      (SELECT count(*)::int FROM realm_member m WHERE m.realm_id = r.id) AS member_count,
+      (SELECT coalesce(array_agg(rm.module ORDER BY rm.module), '{}')
+         FROM realm_module rm WHERE rm.realm_id = r.id) AS modules
+    FROM realm r
+    WHERE r.archived_at IS NULL
+    ${rest}
+  `)) as unknown as SummaryRow[];
+  return rows.map(toSummary);
 }
+
+export const ofMember = (realmId: string, userId: string) =>
+  and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId));
 
 export function createRealmService(deps: RealmDeps) {
   const { db, embedder, clock } = deps;
@@ -55,10 +94,7 @@ export function createRealmService(deps: RealmDeps) {
     return true;
   }
 
-  async function found(
-    founderId: string,
-    realm: FoundRealm,
-  ): Promise<Result<{ id: string; slug: string }>> {
+  async function found(founderId: string, realm: FoundRealm): Promise<Result<FoundedRealm>> {
     const id = await inTransaction(db, (tx) => foundIn(tx, founderId, realm, clock.now()));
     if (!id.ok) return id;
     // After the commit: the model call is slow, optional, and no reason to hold a transaction.
@@ -86,7 +122,7 @@ export function createRealmService(deps: RealmDeps) {
 
     found,
 
-    join(realmId: string, userId: string): Promise<Result<{ joined: true }>> {
+    join(realmId: string, userId: string): Promise<Result<Joined>> {
       return inTransaction(db, async (tx) => {
         // A second join, even one racing this, finds the row and inserts nothing.
         const inserted = await tx
@@ -108,11 +144,7 @@ export function createRealmService(deps: RealmDeps) {
       });
     },
 
-    leave(
-      realmId: string,
-      userId: string,
-      role: RealmRole | null,
-    ): Promise<Result<{ left: true }>> {
+    leave(realmId: string, userId: string, role: RealmRole | null): Promise<Result<Left>> {
       return inTransaction(db, async (tx) => {
         if (role === RealmRole.admin) {
           // Locked, so two admins leaving at once can't both see the other still there.
@@ -162,10 +194,10 @@ export function createRealmService(deps: RealmDeps) {
 
     changeRole(
       realmId: string,
-      actor: { id: string; role: RealmRole | null },
+      actor: Actor,
       targetId: string,
       role: RealmRole,
-    ): Promise<Result<{ userId: string; role: RealmRole }>> {
+    ): Promise<Result<RoleChange>> {
       if (targetId === actor.id) {
         return Promise.resolve(
           err(fail.forbidden(ErrorCode.realm.forbidden, "You cannot change your own role.")),
@@ -203,11 +235,7 @@ export function createRealmService(deps: RealmDeps) {
       });
     },
 
-    async edit(
-      realmId: string,
-      actorId: string,
-      edit: RealmEdit,
-    ): Promise<Result<{ changed: string[] }>> {
+    async edit(realmId: string, actorId: string, edit: RealmEdit): Promise<Result<Edited>> {
       const { modules, ...values } = edit;
       const changed = Object.keys(edit).filter((key) => edit[key as keyof RealmEdit] !== undefined);
       if (changed.length === 0) return ok({ changed });
@@ -236,11 +264,7 @@ export function createRealmService(deps: RealmDeps) {
       });
     },
 
-    archive(
-      realmId: string,
-      actorId: string,
-      archived: boolean,
-    ): Promise<Result<{ archived: boolean }>> {
+    archive(realmId: string, actorId: string, archived: boolean): Promise<Result<Archived>> {
       const now = clock.now();
       return inTransaction(db, async (tx) => {
         const updated = await tx
