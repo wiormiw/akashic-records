@@ -3,7 +3,7 @@ import { handleSignals } from "@akashic/lib/lifecycle";
 import { websocket } from "hono/bun";
 import { Env } from "@/config.ts";
 import { buildContainer } from "@/container.ts";
-import { listen, start, stop } from "@/runtime.ts";
+import { listen, MAX_REQUEST_BODY_BYTES, start, stop } from "@/runtime.ts";
 
 const env = loadEnv(Env, Bun.env);
 assertNestedBudget("AI_TIMEOUT_MS", env.AI_TIMEOUT_MS, env.REQUEST_TIMEOUT_MS);
@@ -35,7 +35,13 @@ try {
   consumers = started.consumers;
   server = await listen({
     // Hono's socket handler, so upgraded room sockets get their events.
-    serve: () => Bun.serve({ port: env.PORT, fetch: started.app.fetch, websocket }),
+    serve: () =>
+      Bun.serve({
+        port: env.PORT,
+        fetch: started.app.fetch,
+        websocket,
+        maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
+      }),
     relay: started.relay,
     consumers,
     container,

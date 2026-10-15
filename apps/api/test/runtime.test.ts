@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { listen, releaseAll, stop } from "@/runtime.ts";
+import { policy } from "@/config.ts";
+import { listen, MAX_REQUEST_BODY_BYTES, releaseAll, stop } from "@/runtime.ts";
 
 const consumers = (steps: string[]): AsyncDisposable => ({
   async [Symbol.asyncDispose]() {
@@ -178,4 +179,32 @@ test("several failures to release are reported together", async () => {
     "a would not close",
   ]);
   expect(steps).toEqual(["b", "a"]);
+});
+
+test("the server's body ceiling is an upload plus a multipart margin, and holds for chunked bodies", async () => {
+  expect(MAX_REQUEST_BODY_BYTES).toBeGreaterThan(policy.uploads.maxBytes);
+  expect(MAX_REQUEST_BODY_BYTES - policy.uploads.maxBytes).toBeLessThanOrEqual(64 * 1024);
+
+  // A small ceiling stands in for the real one: a chunked body declares no length, so only the
+  // server's own count can stop it.
+  const server = Bun.serve({
+    port: 0,
+    maxRequestBodySize: 1024,
+    fetch: async (request) => new Response(String((await request.arrayBuffer()).byteLength)),
+  });
+  try {
+    const chunked = (size: number) =>
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(size));
+          controller.close();
+        },
+      });
+    const small = await fetch(server.url, { method: "POST", body: chunked(512) });
+    expect(await small.text()).toBe("512");
+    const large = await fetch(server.url, { method: "POST", body: chunked(4096) });
+    expect(large.status).toBe(413);
+  } finally {
+    await server.stop(true);
+  }
 });
