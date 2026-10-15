@@ -12,8 +12,8 @@ import { createLogger } from "@akashic/lib/log";
 //   bun run events:replay --apply    replay all of it
 
 const LIMIT = 1000;
-// Every queue a module consumes from; two today.
-const QUEUES = [Queues.authzSync, Queues.mail];
+/** Every queue a module consumes from: all of `Queues`, so a new consumer is included. */
+export const QUEUES: readonly string[] = Object.values(Queues);
 
 if (import.meta.main) {
   const env = loadEnv(v.object({ DATABASE_URL: url(), RABBITMQ_URL: url() }), Bun.env);
