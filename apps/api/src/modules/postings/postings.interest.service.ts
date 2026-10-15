@@ -4,7 +4,7 @@ import { type Executor, jobs, listings, postingInterests, realmMembers, user } f
 import { CommentSubject, InterestStatus } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import type { InterestDeps, Posted, Subject, Withdrawn } from "./postings.types.ts";
 
 const ofSubject = (subject: Subject) =>
@@ -68,7 +68,7 @@ export async function requireMember(
 
 /** Hands up for a job or a listing: showing, withdrawing, and who the owner sees. */
 export function createInterestService(deps: InterestDeps) {
-  const { db } = deps;
+  const { db, clock } = deps;
 
   /**
    * The author of a job or the seller of a listing. Undefined when the realm has no such
@@ -123,7 +123,7 @@ export function createInterestService(deps: InterestDeps) {
             postingInterests.subjectId,
             postingInterests.userId,
           ],
-          set: { status: InterestStatus.open, note: note ?? null, createdAt: new Date() },
+          set: { status: InterestStatus.open, note: note ?? null, createdAt: toDate(clock.now()) },
         })
         .returning({ id: postingInterests.id });
       if (!row) throw new Error("interest upsert returned no row");

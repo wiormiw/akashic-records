@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import type { Authorizer } from "@akashic/authz";
 import type { Executor, Tx } from "@akashic/db";
 import type { CommentSubject, JobStatus, JobType, ListingStatus } from "@akashic/lib/enums";
+import type { Logger } from "@akashic/lib/log";
 import type { Clock } from "@akashic/lib/time";
 import type { RealmEnv } from "@/http/realm-context.ts";
 import type { Embedder } from "@/integrations/embedder.ts";
@@ -17,16 +18,20 @@ export interface PostingsDeps {
   db: Executor;
   embedder: Embedder;
   clock: Clock;
+  /** For a follow-up after a posting is stored, which fails without failing the posting. */
+  logger: Logger;
 }
 
-/** Interest needs only the database. */
+/** Interest needs the database and the time. */
 export interface InterestDeps {
   db: Executor;
+  clock: Clock;
 }
 
 /** The jobs and listings services also post through the fit check. */
 export interface PostingAreaDeps {
   db: Executor;
+  clock: Clock;
   fit: FitService;
 }
 

@@ -4,7 +4,8 @@ import { withRollback } from "@akashic/db/testing";
 import { eq } from "drizzle-orm";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
-import { databaseUrl } from "../../support/fixtures.ts";
+import { toDate } from "@akashic/lib/time";
+import { clock, databaseUrl } from "../../support/fixtures.ts";
 
 const database = createDb({
   url: databaseUrl,
@@ -119,7 +120,8 @@ describe.skipIf(!live)("removing a comment", () => {
       const { id } = expectOk(await w.service.add(realmId, event, people[0]!, "Oops"));
 
       expect(expectOk(await w.service.remove(realmId, id))).toEqual({ removed: true });
-      expect((await w.row(id))?.removedAt).not.toBeNull();
+      // Stamped by the injected clock.
+      expect((await w.row(id))?.removedAt).toEqual(toDate(clock.now()));
       expectErr(await w.service.remove(realmId, Bun.randomUUIDv7()), "event.not_found");
     }));
 

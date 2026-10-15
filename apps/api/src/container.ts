@@ -204,9 +204,9 @@ export function buildContainer(env: Env) {
       )
       .registerAsyncFactory(
         "postings",
-        async (database: Database, embedder: Embedder, clock: Clock) =>
-          createPostingServices({ db: database.db, embedder, clock }),
-        ["database", "embedder", "clock"] as const,
+        async (database: Database, embedder: Embedder, clock: Clock, logger: Logger) =>
+          createPostingServices({ db: database.db, embedder, clock, logger }),
+        ["database", "embedder", "clock", "logger"] as const,
       )
       .registerAsyncFactory(
         "comments",

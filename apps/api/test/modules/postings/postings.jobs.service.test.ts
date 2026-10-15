@@ -5,7 +5,8 @@ import { withRollback } from "@akashic/db/testing";
 import { InterestStatus, JobStatus, JobType } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
-import { databaseUrl } from "../../support/fixtures.ts";
+import { toDate } from "@akashic/lib/time";
+import { clock, databaseUrl } from "../../support/fixtures.ts";
 import { world } from "./fixtures.ts";
 
 // The jobs service on the real database, each test in a transaction that is rolled back.
@@ -94,6 +95,8 @@ describe.skipIf(!live)("hiring", () => {
       expect(await w.job(job.id)).toMatchObject({
         status: JobStatus.filled,
         hiredUserId: chosen,
+        hiredAt: toDate(clock.now()),
+        updatedAt: toDate(clock.now()),
       });
       expect(await w.interestOf(job.id, chosen)).toBe(InterestStatus.accepted);
       expect(await w.interestOf(job.id, other)).toBe(InterestStatus.declined);

@@ -5,7 +5,8 @@ import { withRollback } from "@akashic/db/testing";
 import { CommentSubject, InterestStatus, ListingStatus } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
-import { databaseUrl } from "../../support/fixtures.ts";
+import { toDate } from "@akashic/lib/time";
+import { clock, databaseUrl } from "../../support/fixtures.ts";
 import { world } from "./fixtures.ts";
 
 // The listings service on the real database, each test in a transaction that is rolled back.
@@ -132,6 +133,8 @@ describe.skipIf(!live)("deals", () => {
       expect(await w.listing(listingId)).toMatchObject({
         status: ListingStatus.sold,
         buyerId: buyer,
+        soldAt: toDate(clock.now()),
+        updatedAt: toDate(clock.now()),
       });
       expect(await w.interestOf(listingId, buyer)).toBe(InterestStatus.accepted);
       expect(await w.interestOf(listingId, other)).toBe(InterestStatus.declined);

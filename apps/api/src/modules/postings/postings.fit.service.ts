@@ -14,7 +14,7 @@ import { centroidFrom, parseVector, pgVector } from "@akashic/db/sql";
 import { CommentSubject, JobStatus, ListingStatus } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import { policy } from "@/config.ts";
 import type {
   AfterStored,
@@ -87,13 +87,18 @@ async function centroidOf(db: Executor, realmId: string, lock = false): Promise<
   return centroidFrom((await (lock ? query.for("update") : query))[0]);
 }
 
-async function setCentroid(db: Executor, realmId: string, centroid: Vector): Promise<void> {
+async function setCentroid(
+  db: Executor,
+  realmId: string,
+  centroid: Vector,
+  now: Date,
+): Promise<void> {
   await db
     .update(realms)
     .set({
       centroid: sql`${pgVector(centroid)}::vector`,
       centroidSamples: sql`${realms.centroidSamples} + 1`,
-      updatedAt: new Date(),
+      updatedAt: now,
     })
     .where(eq(realms.id, realmId));
 }
@@ -123,10 +128,11 @@ async function decideReview(
   entryId: string,
   moderatorId: string,
   kept: boolean,
+  now: Date,
 ): Promise<DecidedEntry | undefined> {
   const [row] = await db
     .update(realmFitQueue)
-    .set({ kept, keptBy: moderatorId, decidedAt: new Date() })
+    .set({ kept, keptBy: moderatorId, decidedAt: now })
     .where(
       and(
         eq(realmFitQueue.id, entryId),
@@ -143,25 +149,27 @@ async function decideReview(
 }
 
 // What rejecting a posting does to it; kinds without an entry have nothing to take down.
-const takeDown: Partial<Record<number, (tx: Tx, realmId: string, id: string) => Promise<unknown>>> =
-  {
-    [CommentSubject.job]: (tx, realmId, id) =>
-      tx
-        .update(jobs)
-        .set({ status: JobStatus.closed, updatedAt: new Date() })
-        .where(and(eq(jobs.id, id), eq(jobs.realmId, realmId))),
-    [CommentSubject.listing]: (tx, realmId, id) =>
-      tx
-        .update(listings)
-        .set({ status: ListingStatus.removed, updatedAt: new Date() })
-        .where(and(eq(listings.id, id), eq(listings.realmId, realmId))),
-  };
+const takeDown: Partial<
+  Record<number, (tx: Tx, realmId: string, id: string, now: Date) => Promise<unknown>>
+> = {
+  [CommentSubject.job]: (tx, realmId, id, now) =>
+    tx
+      .update(jobs)
+      .set({ status: JobStatus.closed, updatedAt: now })
+      .where(and(eq(jobs.id, id), eq(jobs.realmId, realmId))),
+  [CommentSubject.listing]: (tx, realmId, id, now) =>
+    tx
+      .update(listings)
+      .set({ status: ListingStatus.removed, updatedAt: now })
+      .where(and(eq(listings.id, id), eq(listings.realmId, realmId))),
+};
 
 // ---- Service ---------------------------------------------------------------------------------
 
 /** Whether a posting fits its realm, the moderators' queue for those in between, and learning. */
 export function createFitService(deps: PostingsDeps) {
   const { db, embedder, clock } = deps;
+  const log = deps.logger.child({ component: "postings" });
 
   /**
    * Refuses a posting that clearly doesn't belong, and returns what to do once it is stored:
@@ -188,7 +196,9 @@ export function createFitService(deps: PostingsDeps) {
     if (stillLearning(samples)) {
       // Unlocked, as before: a young realm's nudge is a best-effort follow-up after the commit,
       // and the slow model call above must not hold the realm row.
-      return ok(async () => setCentroid(db, realmId, nudge(centroid, embedding)));
+      return ok(async () =>
+        setCentroid(db, realmId, nudge(centroid, embedding), toDate(clock.now())),
+      );
     }
     if (fit === "uncertain") {
       return ok((id: string) => queueForReview(db, realmId, { kind, id }, distance, embedding));
@@ -200,7 +210,7 @@ export function createFitService(deps: PostingsDeps) {
   async function learn(tx: Tx, realmId: string, embedding: Vector | null) {
     if (!embedding) return;
     const { centroid } = await centroidOf(tx, realmId, true);
-    if (centroid) await setCentroid(tx, realmId, nudge(centroid, embedding));
+    if (centroid) await setCentroid(tx, realmId, nudge(centroid, embedding), toDate(clock.now()));
   }
 
   return {
@@ -219,8 +229,14 @@ export function createFitService(deps: PostingsDeps) {
         return ok(created);
       });
       if (!id.ok) return id;
-      // After the commit: learning or queueing is a follow-up, not part of the posting.
-      await fit.value(id.value);
+      // After the commit: learning or queueing is a follow-up, not part of the posting. The
+      // posting is stored either way, so a failure here is logged, not answered: a 500 would make
+      // the client retry and post it twice.
+      try {
+        await fit.value(id.value);
+      } catch (error) {
+        log.error({ err: error, postingId: id.value, realmId }, "posting follow-up failed");
+      }
       return ok({ id: id.value });
     },
 
@@ -250,7 +266,8 @@ export function createFitService(deps: PostingsDeps) {
     ): Promise<Result<FitDecision>> {
       // One transaction, so a decision never stands without what it does to the posting.
       return inTransaction(db, async (tx) => {
-        const decided = await decideReview(tx, realmId, entryId, moderatorId, kept);
+        const now = toDate(clock.now());
+        const decided = await decideReview(tx, realmId, entryId, moderatorId, kept, now);
         if (!decided) {
           return err(
             fail.notFound(
@@ -260,7 +277,7 @@ export function createFitService(deps: PostingsDeps) {
           );
         }
         if (kept) await learn(tx, realmId, decided.embedding);
-        else await takeDown[decided.subjectKind]?.(tx, realmId, decided.subjectId);
+        else await takeDown[decided.subjectKind]?.(tx, realmId, decided.subjectId, now);
         return ok({ kept });
       });
     },

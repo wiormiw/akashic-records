@@ -209,7 +209,7 @@ export function createEventService(deps: EventsDeps) {
           .values({ eventId, userId, status })
           .onConflictDoUpdate({
             target: [eventRsvps.eventId, eventRsvps.userId],
-            set: { status, respondedAt: new Date() },
+            set: { status, respondedAt: toDate(clock.now()) },
           });
         return ok({ status });
       });

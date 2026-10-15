@@ -13,6 +13,7 @@ import {
 } from "@akashic/db";
 import { centroidFrom, pgVector } from "@akashic/db/sql";
 import { CommentSubject, RealmModule, RealmRole } from "@akashic/lib/enums";
+import { type Logger, silentLogger } from "@akashic/lib/log";
 import { EMBEDDING_DIMENSIONS, type Embedder } from "@/integrations/embedder.ts";
 import { createPostingServices } from "@/modules/postings/postings.module.ts";
 import { clock, outbox, person, uniqueSlug } from "../../support/fixtures.ts";
@@ -41,8 +42,8 @@ export function closeTo(actual: number[] | null, expected: number[]): boolean {
 }
 
 /** The postings services on `tx`, and the rows the scenarios start from. */
-export function world(tx: Tx, embedder: Embedder = embedderOf()) {
-  const services = createPostingServices({ db: tx, embedder, clock });
+export function world(tx: Tx, embedder: Embedder = embedderOf(), logger: Logger = silentLogger()) {
+  const services = createPostingServices({ db: tx, embedder, clock, logger });
 
   async function realm(options: { members?: number; centroid?: number[]; samples?: number } = {}) {
     const admin = await person(tx, "Founder");

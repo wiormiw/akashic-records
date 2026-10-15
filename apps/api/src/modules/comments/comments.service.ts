@@ -13,7 +13,7 @@ import {
 import { CommentSubject } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import type { CommentsDeps, PostedComment, RemovedComment, Subject } from "./comments.types.ts";
 
 const THREAD_LIMIT = 200;
@@ -114,7 +114,7 @@ export function createCommentService(deps: CommentsDeps) {
     async remove(realmId: string, commentId: string): Promise<Result<RemovedComment>> {
       const removed = await db
         .update(comments)
-        .set({ removedAt: new Date() })
+        .set({ removedAt: toDate(clock.now()) })
         .where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
         .returning({ id: comments.id });
       if (removed.length === 0) {

@@ -4,7 +4,7 @@ import { type Executor, inTransaction, jobs, user } from "@akashic/db";
 import { CommentSubject, JobStatus } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import { hasOpenInterest, requireMember, settleInterest } from "./postings.interest.service.ts";
 import type {
   Hired,
@@ -46,7 +46,7 @@ async function findJob(db: Executor, realmId: string, jobId: string): Promise<Jo
 
 /** Jobs: the board, a posting, its status, and hiring. */
 export function createJobService(deps: PostingAreaDeps) {
-  const { db, fit } = deps;
+  const { db, clock, fit } = deps;
 
   return {
     /** A realm's jobs, newest first. */
@@ -91,7 +91,7 @@ export function createJobService(deps: PostingAreaDeps) {
     ): Promise<Result<JobStatusSet>> {
       const updated = await db
         .update(jobs)
-        .set({ status, updatedAt: new Date() })
+        .set({ status, updatedAt: toDate(clock.now()) })
         .where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
         .returning({ id: jobs.id });
       return updated.length > 0 ? ok({ status }) : err(noJob());
@@ -132,8 +132,8 @@ export function createJobService(deps: PostingAreaDeps) {
           .set({
             status: JobStatus.filled,
             hiredUserId,
-            hiredAt: new Date(),
-            updatedAt: new Date(),
+            hiredAt: toDate(clock.now()),
+            updatedAt: toDate(clock.now()),
           })
           .where(
             and(eq(jobs.id, jobId), eq(jobs.realmId, realmId), eq(jobs.status, JobStatus.open)),

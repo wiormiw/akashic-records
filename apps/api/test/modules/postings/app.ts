@@ -1,4 +1,5 @@
 import type { Executor } from "@akashic/db";
+import { silentLogger } from "@akashic/lib/log";
 import type { Embedder } from "@/integrations/embedder.ts";
 import { createPostingsRoutes } from "@/modules/postings/postings.routes.ts";
 import { createPostingServices } from "@/modules/postings/postings.module.ts";
@@ -11,7 +12,7 @@ export const postingsApp = (db: Executor, embedder: Embedder = embedderOf()) =>
   testApp(db, {
     routes: ({ realmContext, authorizer }) =>
       createPostingsRoutes({
-        postings: createPostingServices({ db, embedder, clock }),
+        postings: createPostingServices({ db, embedder, clock, logger: silentLogger() }),
         realmContext,
         authorizer,
       }),

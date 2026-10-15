@@ -4,7 +4,7 @@ import { type Executor, inTransaction, listings, user } from "@akashic/db";
 import { CommentSubject, ListingStatus } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate } from "@akashic/lib/time";
+import { fromDate, toDate } from "@akashic/lib/time";
 import { hasOpenInterest, requireMember, settleInterest } from "./postings.interest.service.ts";
 import type {
   Dealt,
@@ -49,7 +49,7 @@ async function findListing(
 
 /** The marketplace: listings, their status, and deals. */
 export function createListingService(deps: PostingAreaDeps) {
-  const { db, fit } = deps;
+  const { db, clock, fit } = deps;
 
   return {
     /** A realm's listings, newest first. */
@@ -113,7 +113,7 @@ export function createListingService(deps: PostingAreaDeps) {
       }
       const updated = await db
         .update(listings)
-        .set({ status, updatedAt: new Date() })
+        .set({ status, updatedAt: toDate(clock.now()) })
         .where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
         .returning({ id: listings.id });
       return updated.length > 0 ? ok({ status }) : err(noListing());
@@ -149,7 +149,12 @@ export function createListingService(deps: PostingAreaDeps) {
         // settles nothing.
         const sold = await tx
           .update(listings)
-          .set({ status: ListingStatus.sold, buyerId, soldAt: new Date(), updatedAt: new Date() })
+          .set({
+            status: ListingStatus.sold,
+            buyerId,
+            soldAt: toDate(clock.now()),
+            updatedAt: toDate(clock.now()),
+          })
           .where(
             and(
               eq(listings.id, listingId),

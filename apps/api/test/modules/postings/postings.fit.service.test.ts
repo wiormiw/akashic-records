@@ -2,8 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { createDb } from "@akashic/db";
 import { withRollback } from "@akashic/db/testing";
 import { JobStatus, JobType, ListingStatus } from "@akashic/lib/enums";
-import { silentLogger } from "@akashic/lib/log";
-import { expectErr, expectOk } from "@akashic/lib/testing";
+import { type Logger, silentLogger } from "@akashic/lib/log";
+import { captureLogger, expectErr, expectOk } from "@akashic/lib/testing";
+import { toDate } from "@akashic/lib/time";
 import type { Embedder } from "@/integrations/embedder.ts";
 import {
   cosineDistance,
@@ -12,7 +13,7 @@ import {
   stillLearning,
 } from "@/modules/postings/postings.fit.service.ts";
 import type { NewJob } from "@/modules/postings/postings.types.ts";
-import { databaseUrl } from "../../support/fixtures.ts";
+import { clock, databaseUrl } from "../../support/fixtures.ts";
 import { BELONGS, CENTROID, closeTo, embedderOf, FAR, UNCERTAIN, vec, world } from "./fixtures.ts";
 
 // The fit rules alone, then the fit service on the real database in a rolled-back transaction:
@@ -28,8 +29,11 @@ const database = createDb({
 const live = await database.ping();
 afterAll(() => database[Symbol.asyncDispose]());
 
-const inWorld = (run: (w: ReturnType<typeof world>) => Promise<void>, embedder?: Embedder) =>
-  withRollback(database.db, (tx) => run(world(tx, embedder)));
+const inWorld = (
+  run: (w: ReturnType<typeof world>) => Promise<void>,
+  embedder?: Embedder,
+  logger?: Logger,
+) => withRollback(database.db, (tx) => run(world(tx, embedder, logger)));
 
 describe("realm fit rules", () => {
   test("distance is 0 for the same direction, 1 at right angles, 2 for a zero vector", () => {
@@ -120,6 +124,23 @@ describe.skipIf(!live)("posting, judged for fit", () => {
       expect((await w.queue(realm.id)).map((entry) => entry.subjectId)).toContain(listing.id);
     }, embedderOf(UNCERTAIN)));
 
+  test("a follow-up that fails after the commit is logged, and the posting still succeeds", () => {
+    const { logger, lines } = captureLogger();
+    // One number too many: the distance is uncertain, but the queue's vector column refuses it.
+    return inWorld(
+      async (w) => {
+        const realm = await w.realm({ centroid: CENTROID, samples: 30 });
+        const { id } = expectOk(await w.jobs.post(job(realm.id, realm.admin)));
+        expect(id).toBeString();
+        const line = lines.find((l) => l["msg"] === "posting follow-up failed");
+        expect(line).toMatchObject({ level: 50, postingId: id, realmId: realm.id });
+        // The failed statement aborted the test's transaction; it rolls back, so nothing more.
+      },
+      embedderOf([...UNCERTAIN, 0]),
+      logger,
+    );
+  });
+
   test("a posting that clearly belongs is stored and neither queued nor taught", () =>
     inWorld(async (w) => {
       const realm = await w.realm({ centroid: CENTROID, samples: 30 });
@@ -203,7 +224,14 @@ describe.skipIf(!live)("fit review", () => {
 
       const forJob = await w.queued(realm.id, job, POSTING);
       expectOk(await w.fit.decide(realm.id, forJob, realm.admin, false));
-      expect((await w.job(job.id))?.status).toBe(JobStatus.closed);
+      // Stamped by the injected clock, not the machine's.
+      expect(await w.job(job.id)).toMatchObject({
+        status: JobStatus.closed,
+        updatedAt: toDate(clock.now()),
+      });
+      expect((await w.queue(realm.id)).find((entry) => entry.id === forJob)?.decidedAt).toEqual(
+        toDate(clock.now()),
+      );
 
       const forListing = await w.queued(realm.id, listing, null);
       expectOk(await w.fit.decide(realm.id, forListing, realm.admin, false));

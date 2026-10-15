@@ -11,9 +11,9 @@ export function createPostingServices(deps: PostingsDeps): PostingServices {
   const fit = createFitService(deps);
   return {
     fit,
-    interest: createInterestService({ db: deps.db }),
-    jobs: createJobService({ db: deps.db, fit }),
-    listings: createListingService({ db: deps.db, fit }),
+    interest: createInterestService({ db: deps.db, clock: deps.clock }),
+    jobs: createJobService({ db: deps.db, clock: deps.clock, fit }),
+    listings: createListingService({ db: deps.db, clock: deps.clock, fit }),
   };
 }
 
