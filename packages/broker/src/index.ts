@@ -14,7 +14,16 @@ export {
   createOutbox,
   type Outbox,
   type OutboxOptions,
+  type OutboxStartOptions,
   type OutboxTransport,
 } from "./dispatcher.ts";
 export { replayDead, deadCount } from "./replay.ts";
 export { observeOutbox } from "./metrics.ts";
+export {
+  declareTopology,
+  deadQueueOf,
+  retryQueueOf,
+  sideQueues,
+  type ConsumerTopology,
+  type QueueDeclaration,
+} from "./topology.ts";

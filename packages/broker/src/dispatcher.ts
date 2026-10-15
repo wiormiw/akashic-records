@@ -63,11 +63,19 @@ export interface OutboxOptions {
   retentionDays: number;
 }
 
+export interface OutboxStartOptions {
+  /**
+   * Runs before the first poll and is retried until it succeeds: the consumer topology, so no
+   * event is published before the queue it routes to exists.
+   */
+  prepare?: () => Promise<void>;
+}
+
 export interface Outbox {
   /** Claims and processes one batch. Returns how many were claimed. */
   drainBatch(): Promise<number>;
   /** Polls until the lifecycle aborts. Disposing the outbox then waits for the loop to stop. */
-  start(): void;
+  start(options?: OutboxStartOptions): void;
 }
 
 export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
@@ -176,9 +184,11 @@ export function createOutbox(options: OutboxOptions): Outbox & AsyncDisposable {
       );
     },
 
-    start() {
+    start(startOptions) {
       stopped = runDispatcher({
         drain: () => outbox.drainBatch(),
+        prepare: startOptions?.prepare,
+        retentionDays: options.retentionDays,
         sleep,
         signal,
         batchSize: options.batchSize,
@@ -204,10 +214,32 @@ export async function runDispatcher(options: {
   signal: AbortSignal;
   batchSize: number;
   pollMs: number;
+  /** Retried, backing off, until it succeeds; nothing is drained before. */
+  prepare?: () => Promise<void>;
+  /** Logged at start, so the retention in force is on record. */
+  retentionDays?: number;
   log: Logger;
 }): Promise<void> {
   const { drain, sleep, signal, log } = options;
-  log.info({ batchSize: options.batchSize, pollMs: options.pollMs }, "dispatcher started");
+  log.info(
+    {
+      batchSize: options.batchSize,
+      pollMs: options.pollMs,
+      retentionDays: options.retentionDays,
+    },
+    "dispatcher started",
+  );
+
+  while (options.prepare && !signal.aborted) {
+    try {
+      await options.prepare();
+      break;
+    } catch (error) {
+      if (signal.aborted) break;
+      log.warn({ err: error }, "could not prepare to publish yet, retrying");
+      await sleep(Math.min(options.pollMs * 5, 10_000));
+    }
+  }
 
   while (!signal.aborted) {
     try {

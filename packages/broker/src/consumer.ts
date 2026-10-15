@@ -5,6 +5,7 @@ import type { Logger } from "@akashic/lib/log";
 import { withConsumerSpan } from "@akashic/lib/tracing";
 import type { Broker } from "./connection.ts";
 import { consumerMetrics } from "./metrics.ts";
+import { deadQueueOf, retryQueueOf, sideQueues } from "./topology.ts";
 
 /** Delivery is at-least-once, so handlers must be idempotent: derive the outcome, don't apply a delta. */
 export type EventHandler = (
@@ -159,38 +160,23 @@ export function createEventConsumer(
 ): EventConsumer & AsyncDisposable {
   const { broker, exchange, queue, lifecycle } = options;
   const log = options.logger.child({ component: "event-consumer", queue });
-  const retryQueue = `${queue}.retry`;
-  const deadQueue = `${queue}.dead`;
+  const retryQueue = retryQueueOf(queue);
+  const deadQueue = deadQueueOf(queue);
 
   let release: () => Promise<void> = async () => {};
 
   const consumer: EventConsumer = {
     start() {
-      const sideQueues = [
-        {
-          queue: retryQueue,
-          durable: true,
-          // A fixed delay: a TTL'd message leaves only from the head, so mixed delays would
-          // hold each other up. Expired, it goes back to the work queue.
-          arguments: {
-            "x-message-ttl": options.retryDelayMs,
-            "x-dead-letter-exchange": "",
-            "x-dead-letter-routing-key": queue,
-          },
-        },
-        { queue: deadQueue, durable: true },
-      ];
+      const sides = sideQueues(queue, options.retryDelayMs);
       // The publisher declares these only before its first send, which is the first failure;
       // declared now, the dead queue is there to watch before anything lands in it.
-      Promise.all(
-        sideQueues.map((declaration) => broker.connection.queueDeclare(declaration)),
-      ).catch((err: unknown) =>
-        log.warn({ err }, "could not declare the retry and dead queues yet"),
+      Promise.all(sides.map((declaration) => broker.connection.queueDeclare(declaration))).catch(
+        (err: unknown) => log.warn({ err }, "could not declare the retry and dead queues yet"),
       );
       const republisher = broker.connection.createPublisher({
         confirm: true,
         maxAttempts: 2,
-        queues: sideQueues,
+        queues: sides,
       });
 
       const handle = createDeliveryHandler({

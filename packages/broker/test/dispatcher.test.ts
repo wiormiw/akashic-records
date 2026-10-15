@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { silentLogger } from "@akashic/lib/log";
+import { captureLogger } from "@akashic/lib/testing";
 import { createLifecycle } from "@akashic/lib/lifecycle";
 import { systemClock } from "@akashic/lib/time";
 import { abortableSleep, createOutbox, runDispatcher } from "../src/dispatcher.ts";
@@ -49,6 +50,56 @@ describe("outbox dispatcher", () => {
       drained: 1,
       slept: [],
     });
+  });
+});
+
+describe("outbox dispatcher start", () => {
+  test("retries prepare, backing off, and drains only once it succeeds", async () => {
+    const controller = new AbortController();
+    const order: string[] = [];
+    let attempts = 0;
+    await runDispatcher({
+      prepare: async () => {
+        attempts++;
+        order.push(`prepare ${attempts}`);
+        if (attempts < 3) throw new Error("broker not there yet");
+      },
+      drain: async () => {
+        order.push("drain");
+        controller.abort();
+        return 0;
+      },
+      sleep: async (ms) => void order.push(`sleep ${ms}`),
+      signal: controller.signal,
+      batchSize: 10,
+      pollMs: 1000,
+      log: silentLogger(),
+    });
+    expect(order).toEqual([
+      "prepare 1",
+      "sleep 5000",
+      "prepare 2",
+      "sleep 5000",
+      "prepare 3",
+      "drain",
+      "sleep 1000",
+    ]);
+  });
+
+  test("logs the retention in force once, at info, when it starts", async () => {
+    const { logger, lines } = captureLogger();
+    await runDispatcher({
+      drain: async () => 0,
+      sleep: async () => {},
+      signal: AbortSignal.abort(),
+      batchSize: 10,
+      pollMs: 1000,
+      retentionDays: 7,
+      log: logger,
+    });
+    const started = lines.filter((line) => line["msg"] === "dispatcher started");
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ level: 30, retentionDays: 7 });
   });
 });
 

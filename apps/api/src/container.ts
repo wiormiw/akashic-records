@@ -283,7 +283,7 @@ export function buildContainer(env: Env) {
             sendTimeoutMs: env.OUTBOX_HANDLER_TIMEOUT_MS,
             retentionDays: env.OUTBOX_RETENTION_DAYS,
           });
-          if (env.OUTBOX_DISPATCHER_ENABLED) outbox.start();
+          // Started by `start` in runtime.ts, once it knows every consumer's queue to declare first.
           // `owned` runs the outbox's own disposal (stop the loop, wait for it) before these, so
           // nothing is mid-publish when the publisher closes.
           return owned(outbox, async () => {

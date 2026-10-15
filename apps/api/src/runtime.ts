@@ -1,4 +1,4 @@
-import { createEventConsumer, EVENTS_EXCHANGE } from "@akashic/broker";
+import { createEventConsumer, declareTopology, EVENTS_EXCHANGE } from "@akashic/broker";
 import { owned, type Lifecycle } from "@akashic/lib/lifecycle";
 import { createApp } from "@/app.ts";
 import type { AppContainer } from "@/container.ts";
@@ -29,7 +29,8 @@ export const releaseAll = (disposables: AsyncDisposable[]) =>
 
 /**
  * Builds the graph in startup order: config, telemetry, logger, database, redis, broker, the rest,
- * the outbox, the modules, then their consumers. Disposal releases in reverse, so telemetry
+ * the outbox, the modules, then starts the outbox (after declaring the consumers' topology) and
+ * the consumers. Disposal releases in reverse, so telemetry
  * flushes last. If any step fails, everything already built is released before the error
  * propagates. The consumers live outside the container: `stop` releases them before it.
  */
@@ -51,8 +52,9 @@ export async function start(container: AppContainer, build = buildModules) {
     const auth = await container.getAsync("auth");
     const limiter = await container.getAsync("rateLimiter");
     const relay = await container.getAsync("relay");
-    // Last of the graph: it starts publishing, and is the first thing the container releases.
-    await container.getAsync("outbox");
+    // Last of the graph, so it is the first thing the container releases. It starts publishing
+    // only below, once the modules' queues are known.
+    const outbox = await container.getAsync("outbox");
 
     const db = database.db;
     const http: HttpKit = {
@@ -68,6 +70,24 @@ export async function start(container: AppContainer, build = buildModules) {
     // A signal while the modules were built has begun shutdown, whose `stop` can't see consumers
     // started from here on: start none, and release what was built.
     if (lifecycle.signal.aborted) throw new Error("shutdown began during startup");
+
+    // Every consumer's queue, bindings, retry and dead queues are declared before the first
+    // publish: on a fresh broker, an event sent before its queue is bound is confirmed and lost.
+    const topology = modules.flatMap(({ consumer }) =>
+      consumer
+        ? [
+            {
+              exchange: EVENTS_EXCHANGE,
+              queue: consumer.queue,
+              routingKeys: Object.keys(consumer.handlers),
+              retryDelayMs: env.RABBITMQ_RETRY_DELAY_MS,
+            },
+          ]
+        : [],
+    );
+    if (env.OUTBOX_DISPATCHER_ENABLED) {
+      outbox.start({ prepare: () => declareTopology(broker, topology) });
+    }
 
     for (const { consumer } of modules) {
       if (!consumer) continue;

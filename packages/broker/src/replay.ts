@@ -1,6 +1,5 @@
 import type { Broker } from "./connection.ts";
-
-const deadQueueOf = (queue: string) => `${queue}.dead`;
+import { deadQueueOf } from "./topology.ts";
 
 /** How many messages wait in a consumer's dead queue; zero when it doesn't exist yet. */
 export async function deadCount(broker: Broker, queue: string): Promise<number> {
