@@ -28,7 +28,7 @@ function parse<E extends keyof typeof RealmEventPayload>(event: E, payload: unkn
  * so a redelivery changes nothing.
  */
 export function createRealmConsumer(deps: RealmConsumerDeps): Record<string, EventHandler> {
-  const { authorizer } = deps;
+  const { authorizer, realms } = deps;
   const log = deps.logger.child({ component: "authz-sync" });
 
   return {
@@ -50,7 +50,10 @@ export function createRealmConsumer(deps: RealmConsumerDeps): Record<string, Eve
     },
 
     async [RealmEvent.memberChanged](payload, signal) {
-      const { realmId, userId, role } = parse(RealmEvent.memberChanged, payload);
+      const { realmId, userId } = parse(RealmEvent.memberChanged, payload);
+      // The row now, not the payload's role: deliveries can arrive out of order (prefetch,
+      // retries), and a stale join replayed after a leave would grant the rank again.
+      const role = await realms.memberRole(realmId, userId);
 
       const relation = role === null ? undefined : RANK_RELATION[role];
       if (role !== null && !relation) {

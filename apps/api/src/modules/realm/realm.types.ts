@@ -111,11 +111,12 @@ export interface RealmRoutesDeps {
   realmContext: MiddlewareHandler<RealmEnv>;
 }
 
-/** What keeps OpenFGA in step with membership. */
+/** What keeps OpenFGA in step with membership: the current role is read from Postgres. */
 export interface RealmConsumerDeps {
+  realms: Pick<RealmService, "memberRole">;
   authorizer: Authorizer;
   logger: Logger;
 }
 
 /** The routes' needs plus the consumer's. */
-export interface RealmModuleDeps extends RealmRoutesDeps, RealmConsumerDeps {}
+export interface RealmModuleDeps extends RealmRoutesDeps, Omit<RealmConsumerDeps, "realms"> {}

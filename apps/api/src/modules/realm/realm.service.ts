@@ -11,7 +11,7 @@ import {
   user,
 } from "@akashic/db";
 import { pgVector } from "@akashic/db/sql";
-import { AuditAction, RealmRole } from "@akashic/lib/enums";
+import { AuditAction, narrow, RealmRole } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { fromDate, toDate } from "@akashic/lib/time";
@@ -172,6 +172,15 @@ export function createRealmService(deps: RealmDeps) {
         await publish(tx, [realmEvents.memberChanged(realmId, userId, null)], clock.now());
         return ok({ left: true as const });
       });
+    },
+
+    /** The role `userId` holds in the realm now, or null when they aren't in it. */
+    async memberRole(realmId: string, userId: string): Promise<RealmRole | null> {
+      const [row] = await db
+        .select({ role: realmMembers.role })
+        .from(realmMembers)
+        .where(ofMember(realmId, userId));
+      return row ? narrow(RealmRole, row.role) : null;
     },
 
     async roster(realmId: string): Promise<Member[]> {

@@ -47,6 +47,16 @@ describe.skipIf(!live)("realms", () => {
       });
     }));
 
+  test("memberRole reads the row as it is now: the role, or null once gone", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm([], 1);
+      const [member] = people as [string];
+      expect(await w.realms.memberRole(id, admin)).toBe(RealmRole.admin);
+      expect(await w.realms.memberRole(id, member)).toBe(RealmRole.member);
+      expectOk(await w.realms.leave(id, member, RealmRole.member));
+      expect(await w.realms.memberRole(id, member)).toBeNull();
+    }));
+
   test("a taken slug is a conflict, and writes nothing", () =>
     inWorld(async (w) => {
       const founder = await w.person();

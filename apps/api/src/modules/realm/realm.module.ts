@@ -11,7 +11,11 @@ export function createRealmModule(deps: RealmModuleDeps): Module {
     routes: createRealmRoutes(deps),
     consumer: {
       queue: Queues.authzSync,
-      handlers: createRealmConsumer({ authorizer: deps.authorizer, logger: deps.logger }),
+      handlers: createRealmConsumer({
+        realms: deps.realms,
+        authorizer: deps.authorizer,
+        logger: deps.logger,
+      }),
     },
   };
 }

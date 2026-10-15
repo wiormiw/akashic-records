@@ -27,13 +27,26 @@ function memoryAuthorizer() {
   return { authorizer, tuples, signals };
 }
 
+/** The realm_member rows the consumer reads: `${realmId} ${userId}` to role. */
+function memberRows(initial: Record<string, RealmRole> = {}) {
+  const rows = new Map<string, RealmRole>(Object.entries(initial));
+  const realms = {
+    memberRole: async (realmId: string, userId: string) => rows.get(`${realmId} ${userId}`) ?? null,
+  };
+  return { realms, rows };
+}
+
+/** A consumer over the given authorizer and member rows (none by default). */
+const consumer = (authorizer: Authorizer, realms = memberRows().realms) =>
+  createRealmConsumer({ realms, authorizer, logger: silentLogger() });
+
 const signal = new AbortController().signal;
 const meta = { messageId: "evt-1", attempt: 1 };
 
 describe("realm consumer", () => {
   test("the module consumes akashic.authz-sync for the three realm events", () => {
     const module = createRealmModule({
-      realms: {} as never,
+      realms: memberRows().realms as never,
       sessions: {} as never,
       realmContext: (async () => {}) as never,
       authorizer: memoryAuthorizer().authorizer,
@@ -49,7 +62,7 @@ describe("realm consumer", () => {
 
   test("a new realm belongs to the platform", async () => {
     const { authorizer, tuples } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     const event = realmEvents.created("r1");
     await handlers[event.type]?.(event.payload, signal, meta);
     expect([...tuples]).toEqual(["platform:akashic platform realm:r1"]);
@@ -57,22 +70,51 @@ describe("realm consumer", () => {
 
   test("a membership change leaves exactly the current rank, however often it runs", async () => {
     const { authorizer, tuples } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const { realms, rows } = memberRows();
+    const handlers = consumer(authorizer, realms);
     const deliver = (event: ReturnType<typeof realmEvents.memberChanged>) =>
       handlers[event.type]?.(event.payload, signal, meta);
 
+    rows.set("r1 u1", RealmRole.member);
     await deliver(realmEvents.memberChanged("r1", "u1", RealmRole.member));
+    rows.set("r1 u1", RealmRole.moderator);
     await deliver(realmEvents.memberChanged("r1", "u1", RealmRole.moderator));
     await deliver(realmEvents.memberChanged("r1", "u1", RealmRole.moderator));
     expect([...tuples]).toEqual(["user:u1 moderator realm:r1"]);
 
+    rows.delete("r1 u1");
     await deliver(realmEvents.memberChanged("r1", "u1", null));
     expect(tuples.size).toBe(0);
   });
 
+  test("a stale member_changed writes the row as it is now, not the payload's role", async () => {
+    const writes: Tuple[] = [];
+    const deletes: Tuple[] = [];
+    const recording: Authorizer = {
+      ...memoryAuthorizer().authorizer,
+      async write(change) {
+        writes.push(...(change.writes ?? []));
+        deletes.push(...(change.deletes ?? []));
+      },
+    };
+    // The join's event, retried after the leave already removed the row.
+    const handlers = consumer(recording, memberRows().realms);
+    const stale = realmEvents.memberChanged("r1", "u1", RealmRole.member);
+    await handlers[stale.type]?.(stale.payload, signal, meta);
+    expect(writes).toEqual([]);
+    expect(deletes.map((t) => t.relation)).toContain("member");
+
+    // And a stale demotion can't undo a newer promotion.
+    writes.length = 0;
+    const promoted = consumer(recording, memberRows({ "r1 u1": RealmRole.moderator }).realms);
+    const demotion = realmEvents.memberChanged("r1", "u1", RealmRole.member);
+    await promoted[demotion.type]?.(demotion.payload, signal, meta);
+    expect(writes.map((t) => t.relation)).toEqual(["moderator"]);
+  });
+
   test("a posting is linked to its author and its realm", async () => {
     const { authorizer, tuples } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     const event = realmEvents.postingCreated("job", {
       postingId: "j1",
       realmId: "r1",
@@ -85,7 +127,7 @@ describe("realm consumer", () => {
 
   test("every write carries the handler's signal, so its deadline reaches OpenFGA", async () => {
     const { authorizer, signals } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     for (const event of [
       realmEvents.created("r1"),
       realmEvents.memberChanged("r1", "u1", RealmRole.member),
@@ -98,7 +140,7 @@ describe("realm consumer", () => {
 
   test("a malformed payload fails loudly, so the outbox retries and then parks it", async () => {
     const { authorizer } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     await expect(
       handlers["realm.member_changed"]!({ realmId: "r1" }, signal, meta),
     ).rejects.toThrow("malformed");
@@ -106,7 +148,7 @@ describe("realm consumer", () => {
 
   test("every event a publisher can build passes the schema its consumer checks", async () => {
     const { authorizer } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     for (const event of [
       realmEvents.created("r1"),
       realmEvents.memberChanged("r1", "u1", RealmRole.moderator),
@@ -119,7 +161,7 @@ describe("realm consumer", () => {
 
   test("a payload off its contract is refused, naming what is wrong", async () => {
     const { authorizer, signals } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer);
     await expect(handlers["realm.created"]!({ realmId: "" }, signal, meta)).rejects.toThrow(
       "(realmId:",
     );
@@ -143,7 +185,7 @@ describe("realm consumer", () => {
 
   test("a rank the model doesn't know is refused", async () => {
     const { authorizer, signals } = memoryAuthorizer();
-    const handlers = createRealmConsumer({ authorizer, logger: silentLogger() });
+    const handlers = consumer(authorizer, memberRows({ "r1 u1": 9 as RealmRole }).realms);
     await expect(
       handlers["realm.member_changed"]!({ realmId: "r1", userId: "u1", role: 9 }, signal, meta),
     ).rejects.toThrow("no relation");
