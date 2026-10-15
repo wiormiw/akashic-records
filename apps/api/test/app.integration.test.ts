@@ -17,6 +17,8 @@ const env = testEnv({
   OUTBOX_DISPATCHER_ENABLED: "false",
 });
 
+const noSweep = { sweep: async () => {}, async [Symbol.asyncDispose]() {} };
+
 const database = createDb({
   url: env.DATABASE_URL,
   poolMax: 2,
@@ -58,7 +60,9 @@ describe.skipIf(!(postgres && rabbitmq && openfga))("the started app", () => {
   test("starts, serves, refuses a suspended account, and stops", async () => {
     const container = buildContainer(env)
       // Telemetry registers process-wide providers, which other test files' span capture needs.
-      .override("telemetry", { async [Symbol.asyncDispose]() {} });
+      .override("telemetry", { async [Symbol.asyncDispose]() {} })
+      // The sweep runs at startup, and would delete the dev database's expired messages.
+      .override("retentionSweep", noSweep);
     const probeRoute = new Hono<AppEnv>().get("/probe", (c) => c.text("ok"));
     const { app, lifecycle, consumers } = await start(container, async () => [
       { name: "probe", routes: { private: probeRoute } },

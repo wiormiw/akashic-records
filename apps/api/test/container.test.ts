@@ -48,7 +48,7 @@ describe("container", () => {
     expect(order).toEqual(["counters", "redis"]);
   });
 
-  test("the retention sweep runs hourly over the room services, and disposal clears its timer", async () => {
+  test("the retention sweep runs at startup and hourly over the room services, and disposal clears its timer", async () => {
     let swept = 0;
     const rooms = { moderation: { sweepExpired: async () => ++swept } };
     const c = buildContainer(testEnv()).override("rooms", rooms as never);
@@ -69,8 +69,10 @@ describe("container", () => {
       expect(started).toHaveLength(1);
       const [timer, ms] = started[0] as [Timer, number];
       expect(ms).toBe(60 * 60 * 1000);
-      await sweep.sweep();
+      // Once already, without waiting the hour.
       expect(swept).toBe(1);
+      await sweep.sweep();
+      expect(swept).toBe(2);
       await c.dispose();
       expect(cleared).toContain(timer);
     } finally {

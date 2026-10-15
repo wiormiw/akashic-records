@@ -231,21 +231,27 @@ export function buildContainer(env: Env) {
           createRoomServices({ db: database.db, clock, ticketSecret: env.BETTER_AUTH_SECRET }),
         ["database", "clock"] as const,
       )
-      // Hourly, deletes messages past a retention both people agreed to. Owned, so disposal
-      // clears the timer; unref'd, so it never holds the process open on its own.
+      // At startup and then hourly, deletes messages past a retention both people agreed to, so a
+      // restart doesn't put the next sweep off an hour. Owned, so disposal clears the timer and
+      // waits for a sweep in flight; unref'd, so it never holds the process open on its own.
       .registerAsyncFactory(
         "retentionSweep",
         async (rooms: RoomServices, logger: Logger) => {
+          let running: Promise<void> = Promise.resolve();
           const sweep = () =>
-            rooms.moderation
+            (running = rooms.moderation
               .sweepExpired()
               .then((removed) => {
                 if (removed > 0) logger.info({ removed }, "swept messages past their retention");
               })
-              .catch((error: unknown) => logger.error({ err: error }, "retention sweep failed"));
+              .catch((error: unknown) => logger.error({ err: error }, "retention sweep failed")));
           const timer = setInterval(sweep, RETENTION_SWEEP_MS);
           timer.unref();
-          return owned({ sweep }, () => clearInterval(timer));
+          void sweep();
+          return owned({ sweep }, async () => {
+            clearInterval(timer);
+            await running;
+          });
         },
         ["rooms", "logger"] as const,
       )

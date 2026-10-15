@@ -19,6 +19,8 @@ const env = testEnv({
   RABBITMQ_RETRY_DELAY_MS: "1000",
 });
 
+const noSweep = { sweep: async () => {}, async [Symbol.asyncDispose]() {} };
+
 const database = createDb({
   url: env.DATABASE_URL,
   poolMax: 1,
@@ -87,7 +89,9 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
       // Telemetry registers process-wide providers, which other test files' span capture needs.
       .override("telemetry", { async [Symbol.asyncDispose]() {} })
       // Signed in when the request says so; the ban lookup finds no row for a fresh id.
-      .override("auth", signedInWhenAsked as never);
+      .override("auth", signedInWhenAsked as never)
+      // The sweep runs at startup, and would delete the dev database's expired messages.
+      .override("retentionSweep", noSweep);
     const { app, lifecycle, consumers } = await start(container, async (_container, http) => {
       built = { http };
       return [fake];
@@ -167,9 +171,9 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
 
   test("a shutdown that begins while the modules are built starts no consumer", async () => {
     const lateQueue = `${queue}.late`;
-    const container = buildContainer(env).override("telemetry", {
-      async [Symbol.asyncDispose]() {},
-    });
+    const container = buildContainer(env)
+      .override("telemetry", { async [Symbol.asyncDispose]() {} })
+      .override("retentionSweep", noSweep);
     let disposed = false;
     const original = container.dispose.bind(container);
     container.dispose = async () => {
