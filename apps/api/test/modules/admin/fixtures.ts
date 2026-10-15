@@ -58,6 +58,9 @@ export function world(tx: Tx) {
         accusedId: accused,
         reason: "Rude.",
         disclosedText: "what they said",
+        // Open reports list oldest first: backdated, this one is always on the first page
+        // however many open reports the database already holds.
+        createdAt: new Date(0),
       })
       .returning({ id: roomReports.id });
     return row!.id;

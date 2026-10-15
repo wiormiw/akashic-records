@@ -24,7 +24,7 @@ import { AuditAction, RealmRole } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { fromDate, toDate } from "@akashic/lib/time";
-import type { AccountRef, AdminDeps, BanRequest, Row } from "./admin.types.ts";
+import type { AccountRef, AdminDeps, BanRequest, BanResult, Reviewed, Row } from "./admin.types.ts";
 
 // ---- Row readers -----------------------------------------------------------------------------
 
@@ -186,7 +186,7 @@ export function createAdminService(deps: AdminDeps) {
     reports,
     accounts,
 
-    async reviewReport(reportId: string, actorId: string): Promise<Result<{ id: string }>> {
+    async reviewReport(reportId: string, actorId: string): Promise<Result<Reviewed>> {
       return inTransaction(db, async (tx) => {
         // Only an unreviewed report: a second review finds nothing waiting.
         const reviewed = await tx
@@ -255,11 +255,7 @@ export function createAdminService(deps: AdminDeps) {
       });
     },
 
-    async setBan(
-      userId: string,
-      actorId: string,
-      ban: BanRequest,
-    ): Promise<Result<{ banned: boolean }>> {
+    async setBan(userId: string, actorId: string, ban: BanRequest): Promise<Result<BanResult>> {
       if (userId === actorId) {
         return err(
           fail.validation(

@@ -29,10 +29,14 @@ export interface BanRequest {
 /** The raw row a raw SQL query returns: columns arrive untyped. */
 export type Row = Record<string, unknown>;
 
-/** The realm a grant names. */
-export interface RealmRef {
+/** What reviewing a report answers. */
+export interface Reviewed {
   id: string;
-  slug: string;
+}
+
+/** What a suspension answers: whether the account is now banned. */
+export interface BanResult {
+  banned: boolean;
 }
 
 /** The account a grant names. */

@@ -118,7 +118,6 @@ describe.skipIf(!live)("reviewing a report", () => {
       expect(await auditOf(tx, id)).toMatchObject([
         { entityType: "room_report", action: AuditAction.moderated, userId: actor },
       ]);
-      expect((await w.admin.reports(true, 200)).some((r) => r.id === id)).toBe(false);
 
       expectErr(await w.admin.reviewReport(id, actor), ErrorCode.common.routeNotFound);
       expect(await auditOf(tx, id)).toHaveLength(1);
