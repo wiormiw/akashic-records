@@ -7,6 +7,7 @@ import type { HttpKit, Module } from "./module.ts";
 import { createPostingsModule } from "./postings/postings.module.ts";
 import { createRealmModule } from "./realm/realm.module.ts";
 import { createRoomModule } from "./room/room.module.ts";
+import { createUploadModule } from "./upload/upload.module.ts";
 
 /** Every module, in mount order. The one file that knows them all. */
 export async function buildModules(container: AppContainer, http: HttpKit): Promise<Module[]> {
@@ -38,6 +39,12 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     createRoomModule({
       services: await container.getAsync("rooms"),
       relay: await container.getAsync("relay"),
+      logger: http.logger,
+    }),
+    createUploadModule({
+      uploads: container.get("uploads"),
+      limiter: http.limiter,
+      trustProxy: http.trustProxy,
       logger: http.logger,
     }),
     createMailModule({ mailer: container.get("mailer") }),

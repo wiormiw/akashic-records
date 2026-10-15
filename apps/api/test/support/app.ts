@@ -80,15 +80,16 @@ export function testApp(
   async function call(
     method: string,
     path: string,
-    options: { as?: string; body?: unknown } = {},
+    options: { as?: string; body?: unknown; form?: FormData } = {},
   ): Promise<{ status: number; body: any }> {
     const headers: Record<string, string> = {};
     if (options.as) headers["x-user"] = options.as;
     if (options.body !== undefined) headers["content-type"] = "application/json";
+    // A form carries its own multipart content type, boundary included.
     const response = await app.request(path, {
       method,
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.form ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
     });
     return { status: response.status, body: await response.json() };
   }

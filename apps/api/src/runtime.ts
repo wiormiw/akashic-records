@@ -59,6 +59,7 @@ export async function start(container: AppContainer, build = buildModules) {
       sessions: sessions({ auth, db, authorizer }),
       realmContext: realmContext({ db, authorizer }),
       limiter,
+      trustProxy: env.TRUST_PROXY,
       logger,
     };
     const modules = await build(container, http);

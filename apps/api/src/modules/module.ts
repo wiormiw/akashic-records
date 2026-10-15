@@ -31,5 +31,6 @@ export interface HttpKit {
   sessions: Sessions;
   realmContext: MiddlewareHandler<RealmEnv>;
   limiter: RateLimiter;
+  trustProxy: boolean;
   logger: Logger;
 }

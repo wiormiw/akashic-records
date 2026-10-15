@@ -98,6 +98,7 @@ describe.skipIf(!(postgres && rabbitmq))("modules", () => {
         "logger",
         "realmContext",
         "sessions",
+        "trustProxy",
       ]);
 
       // Private routes sit behind the session; signed in, the mounted path answers and only it.

@@ -35,6 +35,7 @@ import { createPostingServices } from "@/modules/postings/postings.module.ts";
 import { createRealmService } from "@/modules/realm/realm.service.ts";
 import { createRoomServices } from "@/modules/room/room.module.ts";
 import type { RoomServices } from "@/modules/room/room.types.ts";
+import { createUploadService } from "@/modules/upload/upload.service.ts";
 
 const RETENTION_SWEEP_MS = 60 * 60 * 1000;
 
@@ -137,6 +138,7 @@ export function buildContainer(env: Env) {
           logger: c.get("logger"),
         }),
       )
+      .registerFactory("uploads", (c) => createUploadService({ store: c.get("storage") }))
       .registerFactory("mailer", (c) =>
         createResendMailer({
           apiKey: env.RESEND_API_KEY,
