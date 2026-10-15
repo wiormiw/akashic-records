@@ -75,6 +75,17 @@ const exported = (span: ReturnType<typeof recorder.spans>[number] | undefined) =
 
 const serverSpan = (path: string) => recorder.spans().find((s) => s.name.includes(path));
 
+describe("server span url", () => {
+  test("keeps the origin and path, never the query", async () => {
+    await build().request("/x?ticket=secret&q=a@b.c");
+    const span = serverSpan("/x");
+    expect(span).toBeDefined();
+    expect(span?.attributes["url.full"]).toBe("http://localhost/x");
+    const all = exported(span) + span?.name;
+    for (const leak of ["ticket=", "secret", "a@b.c"]) expect(all).not.toContain(leak);
+  });
+});
+
 describe("server span errors", () => {
   test("an unexpected error's message and stack stay out of the server span", async () => {
     const { logger, lines } = captureLogger();

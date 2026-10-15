@@ -1,5 +1,5 @@
 import { httpInstrumentationMiddleware } from "@hono/otel";
-import { trace } from "@opentelemetry/api";
+import { trace, type Span } from "@opentelemetry/api";
 import { createMiddleware } from "hono/factory";
 import type { Lifecycle } from "@akashic/lib/lifecycle";
 import type { Logger } from "@akashic/lib/log";
@@ -10,8 +10,26 @@ import { problemResponse } from "./problem.ts";
 
 export const REQUEST_ID_HEADER = "x-request-id";
 
+// Semantic-convention names, as @hono/otel sets them.
+const ATTR_URL_FULL = "url.full";
+const ATTR_URL_QUERY = "url.query";
+
 // Probed every few seconds by the orchestrator; a trace each would bury the real traffic.
 const UNTRACED_PATHS = new Set(["/livez", "/readyz"]);
+
+/**
+ * @hono/otel records `url.full` as the request URL, query and all; a query can carry a room
+ * ticket or a searched email. The span keeps the origin and path only.
+ */
+function scrubUrl(span: Span | undefined, url: string) {
+  if (!span) return;
+  const { origin, pathname } = new URL(url);
+  span.setAttribute(ATTR_URL_FULL, origin + pathname);
+  // A span can't drop an attribute, so a query someone set is overwritten.
+  // The SDK's span exposes what it holds; the API's interface doesn't say so.
+  const attributes = (span as { attributes?: Record<string, unknown> }).attributes;
+  if (attributes && ATTR_URL_QUERY in attributes) span.setAttribute(ATTR_URL_QUERY, "REDACTED");
+}
 
 /** A server span, a request id, a deadline signal, and one access-log line per response. */
 export function requestContext(options: {
@@ -59,6 +77,7 @@ export function requestContext(options: {
     UNTRACED_PATHS.has(c.req.path)
       ? context(c, next)
       : traced(c, async () => {
+          scrubUrl(trace.getActiveSpan(), c.req.url);
           await context(c, next);
           // @hono/otel records `c.error` as is, message and stack, when it ends the server span;
           // a driver's message can carry row values. Record it scrubbed here and leave it nothing.
