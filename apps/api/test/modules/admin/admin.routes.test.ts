@@ -226,17 +226,38 @@ describe.skipIf(!live)("refusals", () => {
       }
     }));
 
-  test("validation runs before the platform check, as it always did", () =>
+  test("to anyone else a malformed request is the same 404 as an unknown path (R15)", () =>
     scenario(async ({ call, w }) => {
       const someone = await w.person();
+      const unknown = await call("GET", `${A}/nowhere`, { as: someone });
+      expect(unknown.status).toBe(404);
+      // The router's body, but for the path asked.
+      const asUnknown = (path: string) =>
+        JSON.parse(JSON.stringify(unknown.body).replaceAll(`${A}/nowhere`, path));
+
+      for (const [method, path, body] of [
+        ["POST", `${A}/realms/some-realm/admins`, { email: "nope" }],
+        ["GET", `${A}/realms?limit=0`, undefined],
+        ["GET", `${A}/accounts?limit=-1`, undefined],
+        ["GET", `${A}/reports?state=nope`, undefined],
+        ["POST", `${A}/reports/not-a-uuid/review`, undefined],
+        ["POST", `${A}/accounts/${Bun.randomUUIDv7()}/ban`, { banned: "yes" }],
+      ] as const) {
+        const refused = await call(method, path, { as: someone, body });
+        expect(refused).toEqual({ status: 404, body: asUnknown(path.split("?")[0]!) });
+      }
+    }));
+
+  test("a platform admin's malformed request is still a 400", () =>
+    scenario(async ({ call, grants, w }) => {
+      const boss = await w.person();
+      grants.platform.add(boss);
       const bad = await call("POST", `${A}/realms/some-realm/admins`, {
-        as: someone,
+        as: boss,
         body: { email: "nope" },
       });
       expect(bad.status).toBe(400);
-      expect((await call("GET", `${A}/realms?limit=0`, { as: someone })).status).toBe(400);
-      expect((await call("POST", `${A}/reports/not-a-uuid/review`, { as: someone })).status).toBe(
-        400,
-      );
+      expect((await call("GET", `${A}/realms?limit=0`, { as: boss })).status).toBe(400);
+      expect((await call("POST", `${A}/reports/not-a-uuid/review`, { as: boss })).status).toBe(400);
     }));
 });

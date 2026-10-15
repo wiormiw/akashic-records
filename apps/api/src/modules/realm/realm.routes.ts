@@ -118,18 +118,20 @@ export function createRealmRoutes(deps: RealmRoutesDeps): ModuleRoutes {
       },
     );
 
+  // The platform check comes first here, before validation: the admin surface is a 404 to
+  // everyone else, malformed request or not (R15).
   const review = new Hono<AppEnv>()
     .get("/", sessions.platformAdmin, async (c) =>
       reply(c, Proposals, (await realms.pendingProposals()).map(presentProposal)),
     )
-    .post("/:id/approve", validate("param", IdParam), sessions.platformAdmin, async (c) =>
+    .post("/:id/approve", sessions.platformAdmin, validate("param", IdParam), async (c) =>
       respond(c, await realms.approve(c.req.valid("param").id, callerOf(c).id), ApprovedView, 201),
     )
     .post(
       "/:id/reject",
+      sessions.platformAdmin,
       validate("param", IdParam),
       validate("json", RejectProposalBody),
-      sessions.platformAdmin,
       async (c) =>
         respond(
           c,

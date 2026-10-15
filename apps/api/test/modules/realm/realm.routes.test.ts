@@ -281,4 +281,21 @@ describe.skipIf(!live)("platform administration routes", () => {
         expect(refused.body.code).toBe("common.route.not_found");
       }
     }));
+
+  test("to anyone else a malformed review is the same 404 as an unknown path (R15)", () =>
+    scenario(async ({ call, w }) => {
+      const someone = await w.person();
+      const unknown = await call("GET", "/api/v1/admin/nowhere", { as: someone });
+      expect(unknown.status).toBe(404);
+      for (const [path, body] of [
+        ["/api/v1/admin/proposals/not-a-uuid/approve", undefined],
+        [`/api/v1/admin/proposals/${Bun.randomUUIDv7()}/reject`, { note: 42 }],
+      ] as const) {
+        const refused = await call("POST", path, { as: someone, body });
+        expect(refused).toEqual({
+          status: 404,
+          body: JSON.parse(JSON.stringify(unknown.body).replaceAll("/api/v1/admin/nowhere", path)),
+        });
+      }
+    }));
 });

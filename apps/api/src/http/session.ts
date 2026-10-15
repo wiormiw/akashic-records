@@ -46,7 +46,10 @@ export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }
       },
       signal,
     );
-    if (!allowed) throw fail.notFound(ErrorCode.common.routeNotFound, "No route for that path.");
+    // Word for word the router's own 404 (http/problem.ts), so the two can't be told apart.
+    if (!allowed) {
+      throw fail.notFound(ErrorCode.common.routeNotFound, `No route for ${c.req.path}.`);
+    }
     c.set("user", user);
     await next();
   });

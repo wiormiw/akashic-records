@@ -32,13 +32,13 @@ import type { AdminRoutesDeps } from "./admin.types.ts";
 /** `/admin`: answers 404 to anyone without platform authority. */
 export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
   const { admin, sessions } = deps;
-  // On each route after its validation, as the old app ordered them: a bad request is a 400
-  // before the platform check, which is the same for everyone.
+  // First on each route, before validation: to anyone without platform authority every admin
+  // path is a 404 like an unknown one, malformed request or not (R15).
   const only = sessions.platformAdmin;
 
   const privateRoutes = new Hono<AppEnv>()
     .get("/admin", only, async (c) => reply(c, CountsView, presentCounts(await admin.overview())))
-    .get("/admin/realms", validate("query", ListQuery), only, async (c) =>
+    .get("/admin/realms", only, validate("query", ListQuery), async (c) =>
       reply(
         c,
         v.array(PlatformRealmView),
@@ -47,9 +47,9 @@ export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
     )
     .post(
       "/admin/realms/:slug/admins",
+      only,
       validate("param", AdminSlugParam),
       validate("json", GrantBody),
-      only,
       async (c) =>
         respond(
           c,
@@ -62,7 +62,7 @@ export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
           201,
         ),
     )
-    .get("/admin/accounts", validate("query", AccountsQuery), only, async (c) => {
+    .get("/admin/accounts", only, validate("query", AccountsQuery), async (c) => {
       const { q, limit } = c.req.valid("query");
       return reply(
         c,
@@ -72,9 +72,9 @@ export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
     })
     .post(
       "/admin/accounts/:id/ban",
+      only,
       validate("param", IdParam),
       validate("json", BanBody),
-      only,
       async (c) => {
         const { until, ...ban } = c.req.valid("json");
         return respond(
@@ -87,11 +87,11 @@ export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
         );
       },
     )
-    .get("/admin/audit", validate("query", AuditQuery), only, async (c) => {
+    .get("/admin/audit", only, validate("query", AuditQuery), async (c) => {
       const { limit, entityType } = c.req.valid("query");
       return reply(c, v.array(AuditView), (await admin.audit(limit, entityType)).map(presentAudit));
     })
-    .get("/admin/reports", validate("query", ReportsQuery), only, async (c) => {
+    .get("/admin/reports", only, validate("query", ReportsQuery), async (c) => {
       const { state, limit } = c.req.valid("query");
       return reply(
         c,
@@ -99,7 +99,7 @@ export function createAdminRoutes(deps: AdminRoutesDeps): ModuleRoutes {
         (await admin.reports(state === "open", limit)).map(presentReport),
       );
     })
-    .post("/admin/reports/:id/review", validate("param", IdParam), only, async (c) =>
+    .post("/admin/reports/:id/review", only, validate("param", IdParam), async (c) =>
       respond(c, await admin.reviewReport(c.req.valid("param").id, callerOf(c).id), ReviewedView),
     );
 

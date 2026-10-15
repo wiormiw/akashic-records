@@ -4,7 +4,7 @@ import type { Db, Executor } from "@akashic/db";
 import { silentLogger } from "@akashic/lib/log";
 import type { Auth } from "@/auth/auth.ts";
 import type { AppEnv } from "@/http/env.ts";
-import { problemHandler } from "@/http/problem.ts";
+import { notFound, problemHandler } from "@/http/problem.ts";
 import { type RealmEnv, realmContext } from "@/http/realm-context.ts";
 import { type Sessions, sessions } from "@/http/session.ts";
 import type { ModuleRoutes } from "@/modules/module.ts";
@@ -75,6 +75,7 @@ export function testApp(
   if (routes.private) {
     app.route("/api/v1", new Hono<AppEnv>().use(kit.session).route("/", routes.private));
   }
+  app.notFound(notFound);
   app.onError(problemHandler(silentLogger()));
 
   async function call(
