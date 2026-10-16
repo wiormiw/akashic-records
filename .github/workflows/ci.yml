@@ -46,8 +46,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-      # A service container can't be given a command, and OpenFGA needs `run`.
-      - run: docker run -d -p 8080:8080 openfga/openfga:latest run
+      # A service container can't be given a command, and OpenFGA needs `run`. The image is
+      # pinned as compose.yaml pins it; bump both together.
+      - run: docker run -d -p 8080:8080 openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55 run
       # Wait for it: tests against an OpenFGA that isn't up yet skip rather than fail.
       - run: timeout 60 sh -c 'until curl -sf http://localhost:8080/healthz; do sleep 1; done'
       - run: bun install --frozen-lockfile

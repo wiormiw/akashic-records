@@ -56,8 +56,9 @@ services:
   # A separate migration container: replicas racing to migrate on boot is how a schema gets
   # corrupted. It runs to completion
   # and exits, and the server waits on that exit rather than on a port being open.
+  # Pinned, tag and digest, to the version dev runs; CI runs the same. Bump both together.
   openfga-migrate:
-    image: openfga/openfga:latest
+    image: openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55
     command: migrate
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
@@ -68,7 +69,7 @@ services:
     restart: on-failure
 
   openfga:
-    image: openfga/openfga:latest
+    image: openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55
     command: run
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
