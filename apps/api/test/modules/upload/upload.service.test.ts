@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { UploadPurpose } from '@akashic/contracts';
+import { ContentTooLarge, StorageNotConfigured, ValidationFailed } from '@akashic/lib/errors';
+import { isError } from '@akashic/lib/result';
 import { createUploadService } from '@/modules/upload/upload.service.ts';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import type { AcceptImageError } from '@/modules/upload/upload.types.ts';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { JPEG, memoryStore, PNG, WEBP } from './fixtures.ts';
 
 describe('upload service', () => {
@@ -27,7 +30,7 @@ describe('upload service', () => {
 
 	test("refuses what isn't an image, an empty file, and one over the limit", async () => {
 		const uploads = createUploadService({ store: memoryStore().store });
-		const refuse = async (file: File, code: string) =>
+		const refuse = async (file: File, code: AcceptImageError['code']) =>
 			expectErr(await uploads.acceptImage(file, UploadPurpose.listing), code);
 
 		await refuse(new File(['GIF89a...'], 'x.gif'), 'common.request.validation_failed');
@@ -43,5 +46,24 @@ describe('upload service', () => {
 			await uploads.acceptImage(new File([PNG], 'x.png'), 'listings'),
 			'external.storage.not_configured',
 		);
+	});
+
+	test('narrows a refusal to one error, leaving the rest', async () => {
+		const uploads = createUploadService({ store: memoryStore(false).store });
+		const unstored = await uploads.acceptImage(new File([PNG], 'x.png'), UploadPurpose.listing);
+		if (!isError(unstored, StorageNotConfigured)) throw new Error('expected StorageNotConfigured');
+		expect(expectType<StorageNotConfigured>(unstored.error)).toBeInstanceOf(StorageNotConfigured);
+		// @ts-expect-error the branch holds only StorageNotConfigured
+		expectType<ValidationFailed>(unstored.error);
+
+		const stored = createUploadService({ store: memoryStore().store });
+		const empty = await stored.acceptImage(new File([], 'x.png'), UploadPurpose.listing);
+		if (empty.ok || isError(empty, StorageNotConfigured)) throw new Error('expected a refusal');
+		// StorageNotConfigured is ruled out; the size and content refusals remain.
+		expect(expectType<ContentTooLarge | ValidationFailed>(empty.error)).toBeInstanceOf(
+			ValidationFailed,
+		);
+		// @ts-expect-error StorageNotConfigured was narrowed away
+		expectType<StorageNotConfigured>(empty.error);
 	});
 });

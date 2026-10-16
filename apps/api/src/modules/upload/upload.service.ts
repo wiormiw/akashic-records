@@ -1,9 +1,9 @@
 import type { Uploaded, UploadPurpose } from '@akashic/contracts';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ContentTooLarge, StorageNotConfigured, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { policy } from '@/config.ts';
 import type { ImageType } from '@/integrations/storage.ts';
-import type { UploadDeps, UploadLimits } from './upload.types.ts';
+import type { AcceptImageError, UploadDeps, UploadLimits } from './upload.types.ts';
 
 const { maxBytes } = policy.uploads;
 
@@ -34,32 +34,26 @@ export function createUploadService(deps: UploadDeps) {
 			maxBytes,
 		}),
 
-		async acceptImage(file: File, purpose: UploadPurpose): Promise<Result<Uploaded>> {
+		async acceptImage(
+			file: File,
+			purpose: UploadPurpose,
+		): Promise<Result<Uploaded, AcceptImageError>> {
 			if (!store.configured) {
 				return err(
-					fail.external(
-						ErrorCode.external.storageNotConfigured,
+					new StorageNotConfigured(
 						'This deployment stores no uploads. Paste an image URL instead.',
 					),
 				);
 			}
 			if (file.size > maxBytes) {
-				return err(
-					fail.validation(
-						ErrorCode.common.payloadTooLarge,
-						`That file is larger than ${maxBytes / 1024 / 1024} MB.`,
-					),
-				);
+				return err(new ContentTooLarge(`That file is larger than ${maxBytes / 1024 / 1024} MB.`));
 			}
-			if (file.size === 0)
-				return err(fail.validation(ErrorCode.common.validation, 'That file is empty.'));
+			if (file.size === 0) return err(new ValidationFailed('That file is empty.'));
 
 			const bytes = new Uint8Array(await file.arrayBuffer());
 			const type = sniff(bytes);
 			if (!type) {
-				return err(
-					fail.validation(ErrorCode.common.validation, 'That is not a JPEG, PNG or WebP image.'),
-				);
+				return err(new ValidationFailed('That is not a JPEG, PNG or WebP image.'));
 			}
 
 			return ok({ url: await store.put(bytes, type, purpose) });

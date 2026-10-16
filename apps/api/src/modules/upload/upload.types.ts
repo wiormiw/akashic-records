@@ -1,4 +1,5 @@
 import type { Limits } from '@akashic/contracts';
+import type { ContentTooLarge, StorageNotConfigured, ValidationFailed } from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import type { RateLimiter } from '@/integrations/rate-limit.ts';
 import type { ImageStore } from '@/integrations/storage.ts';
@@ -21,3 +22,6 @@ export type UploadModuleDeps = UploadRoutesDeps;
 
 /** What the service answers about the deployment. */
 export type UploadLimits = Limits;
+
+/** What accepting an image can fail with. */
+export type AcceptImageError = StorageNotConfigured | ContentTooLarge | ValidationFailed;
