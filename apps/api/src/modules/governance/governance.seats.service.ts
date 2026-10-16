@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { realmEvents, type SeatStanding } from '@akashic/contracts';
 import {
 	audit,
@@ -152,6 +152,28 @@ async function seatCandidates(
 const ofCandidate = (realmId: string, candidateId: string) =>
 	and(eq(realmEndorsements.realmId, realmId), eq(realmEndorsements.candidateId, candidateId));
 
+/**
+ * Locks the rows of `userIds` (or, without them, every non-admin member: everyone a seat change
+ * can touch). One global lock order on realm_member, by user_id, so seat changes, role changes
+ * and leaving can't deadlock one another.
+ */
+async function lockMembers(tx: Tx, realmId: string, userIds?: readonly string[]): Promise<void> {
+	if (userIds?.length === 0) return;
+	await tx
+		.select({ userId: realmMembers.userId })
+		.from(realmMembers)
+		.where(
+			and(
+				eq(realmMembers.realmId, realmId),
+				userIds
+					? inArray(realmMembers.userId, [...userIds])
+					: ne(realmMembers.role, RealmRole.admin),
+			),
+		)
+		.orderBy(asc(realmMembers.userId))
+		.for('update');
+}
+
 // ---- Service ---------------------------------------------------------------------------------
 
 export function createSeatService(deps: GovernanceDeps) {
@@ -165,6 +187,7 @@ export function createSeatService(deps: GovernanceDeps) {
 		role: RealmRole,
 	): Promise<string[]> {
 		if (userIds.length === 0) return [];
+		await lockMembers(tx, realmId, userIds);
 		const changed = await tx
 			.update(realmMembers)
 			.set({ role })
@@ -188,18 +211,12 @@ export function createSeatService(deps: GovernanceDeps) {
 			seats(size.members),
 			MIN_UPVOTES,
 		);
-		const seated = await setRoles(
-			tx,
-			realmId,
-			shouldHold.filter((id) => !currentlyHold.includes(id)),
-			RealmRole.moderator,
-		);
-		const unseated = await setRoles(
-			tx,
-			realmId,
-			currentlyHold.filter((id) => !shouldHold.includes(id)),
-			RealmRole.member,
-		);
+		const toSeat = shouldHold.filter((id) => !currentlyHold.includes(id));
+		const toUnseat = currentlyHold.filter((id) => !shouldHold.includes(id));
+		// Both sets at once, so the two updates below take no lock out of order.
+		await lockMembers(tx, realmId, [...toSeat, ...toUnseat]);
+		const seated = await setRoles(tx, realmId, toSeat, RealmRole.moderator);
+		const unseated = await setRoles(tx, realmId, toUnseat, RealmRole.member);
 
 		// An election result has no actor: the realm made it.
 		const byElection = (role: RealmRole) => (userId: string) => ({
@@ -225,6 +242,9 @@ export function createSeatService(deps: GovernanceDeps) {
 		unseating: Unseating,
 	): Promise<void> {
 		const size = await sizeOf(tx, realmId);
+		// Unseating then refilling touches rows in no set order, so everyone a seat change can
+		// touch is locked first, in user_id order. Rare (a carried recall, an admin's removal).
+		await lockMembers(tx, realmId);
 		await tx.delete(realmEndorsements).where(ofCandidate(realmId, userId));
 		await setRoles(tx, realmId, [userId], RealmRole.member);
 		await audit(tx, {

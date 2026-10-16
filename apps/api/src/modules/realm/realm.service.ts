@@ -169,11 +169,14 @@ export function createRealmService(deps: RealmDeps) {
 		leave(realmId: string, userId: string, role: RealmRole | null): Promise<Result<Left>> {
 			return inTransaction(db, async (tx) => {
 				if (role === RealmRole.admin) {
-					// Locked, so two admins leaving at once can't both see the other still there.
+					// Locked, so two admins leaving at once can't both see the other still there. One
+					// global lock order on realm_member, by user_id, so this can't deadlock with a
+					// role change.
 					const admins = await tx
 						.select({ userId: realmMembers.userId })
 						.from(realmMembers)
 						.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.role, RealmRole.admin)))
+						.orderBy(asc(realmMembers.userId))
 						.for('update');
 					if (admins.length === 1) {
 						return err(
