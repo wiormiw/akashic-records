@@ -16,7 +16,6 @@ import { policy } from '@/config.ts';
 import { participant } from './room.service.ts';
 import type {
 	Appended,
-	AppendError,
 	OutgoingMessage,
 	RoomAreaDeps,
 	SendError,
@@ -100,33 +99,35 @@ async function fingerprintsOf(db: Executor, userIds: readonly string[]): Promise
 }
 
 /** The message, its keys and the room's recency land together or not at all. */
-function append(
+async function append(
 	db: Executor,
 	roomId: string,
 	senderId: string,
 	message: OutgoingMessage,
-): Promise<Result<Appended, AppendError>> {
+): Promise<Appended> {
 	const { keys, body, iv, signature } = message;
-	return inTransaction(db, async (tx) => {
-		const [stored] = await tx
-			.insert(roomMessages)
-			.values({ roomId, senderId, body, iv, signature })
-			.returning({ id: roomMessages.id, createdAt: roomMessages.createdAt });
-		if (!stored) throw new Error('message insert returned no row');
+	return value(
+		await inTransaction(db, async (tx) => {
+			const [stored] = await tx
+				.insert(roomMessages)
+				.values({ roomId, senderId, body, iv, signature })
+				.returning({ id: roomMessages.id, createdAt: roomMessages.createdAt });
+			if (!stored) throw new Error('message insert returned no row');
 
-		if (keys.length > 0) {
-			await tx.insert(roomMessageKeys).values(
-				keys.map((key) => ({
-					messageId: stored.id,
-					fingerprint: key.fingerprint,
-					wrappedKey: key.wrappedKey,
-					iv: key.iv,
-				})),
-			);
-		}
-		await tx.update(rooms).set({ lastMessageAt: stored.createdAt }).where(eq(rooms.id, roomId));
-		return ok({ id: stored.id, createdAt: fromDate(stored.createdAt) });
-	});
+			if (keys.length > 0) {
+				await tx.insert(roomMessageKeys).values(
+					keys.map((key) => ({
+						messageId: stored.id,
+						fingerprint: key.fingerprint,
+						wrappedKey: key.wrappedKey,
+						iv: key.iv,
+					})),
+				);
+			}
+			await tx.update(rooms).set({ lastMessageAt: stored.createdAt }).where(eq(rooms.id, roomId));
+			return ok({ id: stored.id, createdAt: fromDate(stored.createdAt) });
+		}),
+	);
 }
 
 // ---- Service ---------------------------------------------------------------------------------
@@ -173,7 +174,7 @@ export function createMessageService(deps: RoomAreaDeps) {
 				return ok({ staleDevices: devices });
 			}
 
-			const stored = value(await append(db, roomId, senderId, message));
+			const stored = await append(db, roomId, senderId, message);
 			const { body, iv, signature, keys } = message;
 			return ok({ sent: { body, iv, signature, keys, ...stored, senderId } });
 		},

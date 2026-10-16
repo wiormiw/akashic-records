@@ -12,7 +12,6 @@ import { err, ok, type Result, value } from '@akashic/lib/result';
 import { participant } from './room.service.ts';
 import type {
 	Agreement,
-	AgreeRetentionError,
 	Blocked,
 	BlockError,
 	MessageReport,
@@ -52,34 +51,36 @@ async function senderOf(
 }
 
 /** Records the user's agreement to `days`; true once both participants agree. */
-function agreeRetention(
+async function agreeRetention(
 	db: Executor,
 	roomId: string,
 	userId: string,
 	days: number | null,
-): Promise<Result<boolean, AgreeRetentionError>> {
-	return inTransaction(db, async (tx) => {
-		// Locked, so two people agreeing at once don't each overwrite the other's agreement.
-		const [room] = await tx
-			.select({
-				days: rooms.retentionDays,
-				agreedBy: rooms.retentionAgreedBy,
-				low: rooms.lowUserId,
-				high: rooms.highUserId,
-			})
-			.from(rooms)
-			.where(eq(rooms.id, roomId))
-			.for('update')
-			.limit(1);
-		if (!room) return ok(false);
+): Promise<boolean> {
+	return value(
+		await inTransaction(db, async (tx) => {
+			// Locked, so two people agreeing at once don't each overwrite the other's agreement.
+			const [room] = await tx
+				.select({
+					days: rooms.retentionDays,
+					agreedBy: rooms.retentionAgreedBy,
+					low: rooms.lowUserId,
+					high: rooms.highUserId,
+				})
+				.from(rooms)
+				.where(eq(rooms.id, roomId))
+				.for('update')
+				.limit(1);
+			if (!room) return ok(false);
 
-		const { agreedBy, inForce } = agreeOn(room, days, userId);
-		await tx
-			.update(rooms)
-			.set({ retentionDays: days, retentionAgreedBy: agreedBy })
-			.where(eq(rooms.id, roomId));
-		return ok(inForce);
-	});
+			const { agreedBy, inForce } = agreeOn(room, days, userId);
+			await tx
+				.update(rooms)
+				.set({ retentionDays: days, retentionAgreedBy: agreedBy })
+				.where(eq(rooms.id, roomId));
+			return ok(inForce);
+		}),
+	);
 }
 
 // ---- Service ---------------------------------------------------------------------------------
@@ -143,7 +144,7 @@ export function createModerationService(deps: RoomAreaDeps) {
 		): Promise<Result<Retention, RetentionError>> {
 			const room = await participant(db, roomId, userId);
 			if (!room.ok) return room;
-			const inForce = value(await agreeRetention(db, roomId, userId, days));
+			const inForce = await agreeRetention(db, roomId, userId, days);
 			return ok({ days, inForce });
 		},
 

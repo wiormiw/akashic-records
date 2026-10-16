@@ -252,7 +252,7 @@ export function createRoomService(deps: RoomAccessDeps) {
 				.where(eq(userKeys.userId, userId))
 				.orderBy(asc(userKeys.createdAt));
 			if (keys.length === 0) {
-				// A 404 for someone with no keys: they have not set up encryption, wherever they are a member.
+				// realm.not_member is already on the wire here: a 404, as they have no keys yet.
 				return err(
 					new MemberNotFound(
 						'That person has not set up encryption yet, so there is no key to send to.',

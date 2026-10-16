@@ -201,9 +201,7 @@ export type StartError =
 	| RateLimited;
 export type TicketError = ParticipantError;
 export type TranscriptError = ParticipantError;
-export type AppendError = never;
-export type SendError = ParticipantError | RealmForbidden | RateLimited | AppendError;
-export type AgreeRetentionError = never;
+export type SendError = ParticipantError | RealmForbidden | RateLimited;
 export type BlockError = ParticipantError;
 export type ReportError = ParticipantError | ValidationFailed;
-export type RetentionError = ParticipantError | AgreeRetentionError;
+export type RetentionError = ParticipantError;
