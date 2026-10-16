@@ -11,7 +11,7 @@ import { expect } from 'bun:test';
 import { pino } from 'pino';
 import type { AppError } from './errors.ts';
 import type { Logger } from './log.ts';
-import type { Result } from './result.ts';
+import type { ErrorOf, Result } from './result.ts';
 
 // OpenTelemetry ignores a second global registration, and `bun test` runs every file in one
 // process, so the provider is registered once and every caller shares its exporter.
@@ -48,10 +48,29 @@ export function expectOk<T>(result: Result<T>): T {
 	return result.value;
 }
 
-/** The AppError of a Result that must have failed with `code`. */
-export function expectErr<T>(result: Result<T>, code: string): AppError {
+type Ctor<T> = abstract new (...args: never[]) => T;
+// The errors whose code can be K; an untyped AppError's code is any string, so it stays.
+type WithCode<E, K> = E extends { code: infer C } ? (K extends C ? E : never) : never;
+
+/**
+ * The error of a Result that must have failed with `expected`: a class, which narrows the error
+ * to it, or a code. Either must be one the result's type can hold.
+ */
+export function expectErr<R extends Result<unknown, AppError>, C extends ErrorOf<R>>(
+	result: R,
+	expected: Ctor<C>,
+): C;
+export function expectErr<R extends Result<unknown, AppError>, K extends ErrorOf<R>['code']>(
+	result: R,
+	expected: K,
+): WithCode<ErrorOf<R>, K>;
+export function expectErr(
+	result: Result<unknown, AppError>,
+	expected: string | Ctor<AppError>,
+): AppError {
 	expect(result.ok).toBe(false);
 	if (result.ok) throw new Error('unreachable');
-	expect(result.error.code).toBe(code);
+	if (typeof expected === 'string') expect(result.error.code).toBe(expected);
+	else expect(result.error).toBeInstanceOf(expected);
 	return result.error;
 }

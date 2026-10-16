@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import * as v from 'valibot';
+import type { AppError } from '@akashic/lib/errors';
 import type { Result } from '@akashic/lib/result';
 import type { AppEnv } from './env.ts';
 import { problemResponse } from './problem.ts';
@@ -19,9 +20,13 @@ export function reply<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
 }
 
 /** A service's Result as the answer: the value through `view`, or the problem a throw would be. */
-export function respond<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
+export function respond<
+	S extends v.GenericSchema,
+	F extends AppError = AppError,
+	E extends AppEnv = AppEnv,
+>(
 	c: Context<E>,
-	result: Result<v.InferInput<S>>,
+	result: Result<v.InferInput<S>, F>,
 	view: S,
 	status: ContentfulStatusCode = 200,
 ): Response {

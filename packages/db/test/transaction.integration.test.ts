@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { AuditAction } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { DuplicateSlug, ErrorCode, RealmNotFound, fail } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { err, ok } from '@akashic/lib/result';
+import { err, ok, type Result } from '@akashic/lib/result';
 import { audit, auditEntries, createDb, inTransaction, outboxMessages, publish } from '@akashic/db';
 
 const url = Bun.env.DATABASE_URL ?? 'postgres://akashic:akashic@localhost:5432/akashic';
@@ -37,6 +37,16 @@ describe.skipIf(!live)('inTransaction', () => {
 		expect(events.filter((e) => (e.payload as { entityId: string }).entityId === entityId)).toEqual(
 			[],
 		);
+	});
+
+	test('a returned error class comes back as itself, its union intact', async () => {
+		const refuse = async (): Promise<Result<string, DuplicateSlug | RealmNotFound>> =>
+			err(new DuplicateSlug('Taken.'));
+		const result: Result<string, DuplicateSlug | RealmNotFound> = await inTransaction(
+			database.db,
+			refuse,
+		);
+		expect(!result.ok && result.error).toBeInstanceOf(DuplicateSlug);
 	});
 
 	test('an ok commits, and jsonb is stored as an object, not a string', async () => {

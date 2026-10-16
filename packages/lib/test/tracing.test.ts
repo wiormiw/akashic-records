@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { ErrorCode, fail } from '@akashic/lib/errors';
-import { err, ok } from '@akashic/lib/result';
+import { DuplicateSlug, ErrorCode, RealmNotFound, fail } from '@akashic/lib/errors';
+import { err, ok, type Result } from '@akashic/lib/result';
 import { currentTraceparent, traced, withConsumerSpan } from '@akashic/lib/tracing';
 import { recordSpans } from '@akashic/lib/testing';
 
@@ -29,6 +29,18 @@ describe('traced', () => {
 		const [span] = recorder.spans();
 		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
 		expect(span?.attributes['akashic.error.code']).toBe('realm.duplicate_slug');
+	});
+
+	test('an error class is recognised as a failed result, and its type survives', async () => {
+		const refuse = async (): Promise<Result<number, DuplicateSlug | RealmNotFound>> =>
+			err(new DuplicateSlug('Taken.'));
+		const result: Result<number, DuplicateSlug | RealmNotFound> = await traced(
+			'realm.found',
+			{},
+			refuse,
+		);
+		expect(result.ok).toBe(false);
+		expect(recorder.spans()[0]?.attributes['akashic.error.code']).toBe('realm.duplicate_slug');
 	});
 
 	test('a throw is recorded and rethrown', async () => {

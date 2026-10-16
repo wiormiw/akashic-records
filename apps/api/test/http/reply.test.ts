@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import * as v from 'valibot';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ErrorCode, NotBothMembers, RealmNotFound, fail } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { err, ok } from '@akashic/lib/result';
+import { err, ok, type Result } from '@akashic/lib/result';
 import type { AppEnv } from '@/http/env.ts';
 import { problemHandler } from '@/http/problem.ts';
 import { reply, respond } from '@/http/reply.ts';
 
 const View = v.object({ id: v.string(), status: v.picklist([0, 1]) });
+
+// A service result with a named error union, as migrated services return.
+const refusedTyped = (): Result<v.InferInput<typeof View>, RealmNotFound | NotBothMembers> =>
+	err(new NotBothMembers());
 
 const app = new Hono<AppEnv>()
 	.use(async (c, next) => {
@@ -20,7 +24,8 @@ const app = new Hono<AppEnv>()
 	.get('/created', (c) => respond(c, ok({ id: 'a', status: 1 as const }), View, 201))
 	.get('/refused', (c) =>
 		respond(c, err(fail.conflict(ErrorCode.realm.duplicateSlug, 'Taken.')), View),
-	);
+	)
+	.get('/typed', (c) => respond(c, refusedTyped(), View));
 app.onError(problemHandler(silentLogger()));
 
 describe('reply', () => {
@@ -41,5 +46,14 @@ describe('reply', () => {
 		expect(refused.status).toBe(409);
 		expect(refused.headers.get('content-type')).toContain('application/problem+json');
 		expect(((await refused.json()) as { traceId: string }).traceId).toBe('req-1');
+	});
+
+	test('respond renders an error class by its kind and code', async () => {
+		const res = await app.request('/typed');
+		expect(res.status).toBe(403);
+		expect(await res.json()).toMatchObject({
+			code: 'realm.not_member',
+			detail: 'Both people have to be in the realm the posting belongs to.',
+		});
 	});
 });

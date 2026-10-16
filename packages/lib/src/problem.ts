@@ -10,6 +10,8 @@ export const httpStatusByKind: Record<ErrorKind, number> = {
 	rate_limited: 429,
 	// A dependency being down isn't our bug; 502 keeps it out of the 500 alerts.
 	external: 502,
+	// Shutting down, not failing: the client retries after Retry-After.
+	unavailable: 503,
 	internal: 500,
 };
 
@@ -36,6 +38,7 @@ const titleByKind: Record<ErrorKind, string> = {
 	conflict: 'Conflict',
 	rate_limited: 'Too many requests',
 	external: 'Upstream service failed',
+	unavailable: 'Service unavailable',
 	internal: 'Unexpected error',
 };
 
