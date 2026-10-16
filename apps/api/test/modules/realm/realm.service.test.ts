@@ -6,14 +6,11 @@ import { AuditAction, RealmModule, RealmRole } from '@akashic/lib/enums';
 import { ErrorCode, MemberNotFound, SoleAdmin } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { isError } from '@akashic/lib/result';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import type { Embedder } from '@/integrations/embedder.ts';
 import { actingRank, grantable, mayChange, outranks } from '@/modules/realm/realm.service.ts';
 import { databaseUrl, uniqueSlug } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
-
-// Compiles only when `value` is a T: the type assertions below lean on it.
-const expectType = <T>(value: T): T => value;
 
 describe('role rules', () => {
 	test('only a higher rank outranks; someone outside the realm outranks nobody', () => {

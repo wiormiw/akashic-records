@@ -21,14 +21,14 @@ import {
 	value,
 	type ValueOf,
 } from '@akashic/lib/result';
-import { captureLogger, expectErr, expectOk } from '@akashic/lib/testing';
-
-/** Compiles only when `value` is assignable to T. */
-const expectType = <T>(_value: T): void => {};
-/** True only when A and B are the same type. */
-type Equal<A, B> =
-	(<X>() => X extends A ? 1 : 2) extends <X>() => X extends B ? 1 : 2 ? true : false;
-const assertTrue = <_T extends true>(): void => {};
+import {
+	assertTrue,
+	captureLogger,
+	type Equal,
+	expectErr,
+	expectOk,
+	expectType,
+} from '@akashic/lib/testing';
 
 // Distinct fields, so the errors are not structurally interchangeable.
 class Missing extends Error {

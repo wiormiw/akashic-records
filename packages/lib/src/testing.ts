@@ -74,3 +74,13 @@ export function expectErr(
 	else expect(result.error).toBeInstanceOf(expected);
 	return result.error;
 }
+
+/** Compiles only when `value` is a T; returns it, so a runtime check can follow. */
+export const expectType = <T>(value: T): T => value;
+
+/** True only when A and B are the same type, not merely assignable either way. */
+export type Equal<A, B> =
+	(<X>() => X extends A ? 1 : 2) extends <X>() => X extends B ? 1 : 2 ? true : false;
+
+/** Compiles only when T is `true`: `assertTrue<Equal<A, B>>()`. */
+export const assertTrue = <_T extends true>(): void => {};

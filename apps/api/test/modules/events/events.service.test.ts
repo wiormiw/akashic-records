@@ -5,13 +5,10 @@ import { RealmModule, RsvpStatus } from '@akashic/lib/enums';
 import { EventFull, EventNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { isError } from '@akashic/lib/result';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { hasRoomFor } from '@/modules/events/events.service.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
-
-// Compiles only when `value` is a T: the type assertions below lean on it.
-const expectType = <T>(value: T): T => value;
 
 // The events service on the real database, each test in a transaction that is rolled back.
 

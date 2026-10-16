@@ -6,7 +6,7 @@ import { AuditAction } from '@akashic/lib/enums';
 import { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { isError } from '@akashic/lib/result';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { fixedClock, toDate } from '@akashic/lib/time';
 import { createCommentService } from '@/modules/comments/comments.service.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
@@ -21,9 +21,6 @@ const database = createDb({
 const live = await database.ping();
 afterAll(() => database[Symbol.asyncDispose]());
 import { world } from './fixtures.ts';
-
-// Compiles only when `value` is a T: the type assertions below lean on it.
-const expectType = <T>(value: T): T => value;
 
 // The comments service on the real database, each test in a transaction that is rolled back.
 
