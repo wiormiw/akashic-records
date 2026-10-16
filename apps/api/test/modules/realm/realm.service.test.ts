@@ -3,13 +3,17 @@ import { eq } from 'drizzle-orm';
 import { auditEntries, createDb, realmModules, realms as realmTable, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, RealmModule, RealmRole } from '@akashic/lib/enums';
-import { ErrorCode } from '@akashic/lib/errors';
+import { ErrorCode, MemberNotFound, SoleAdmin } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
+import { isError } from '@akashic/lib/result';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import type { Embedder } from '@/integrations/embedder.ts';
 import { actingRank, grantable, mayChange, outranks } from '@/modules/realm/realm.service.ts';
 import { databaseUrl, uniqueSlug } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
+
+// Compiles only when `value` is a T: the type assertions below lean on it.
+const expectType = <T>(value: T): T => value;
 
 describe('role rules', () => {
 	test('only a higher rank outranks; someone outside the realm outranks nobody', () => {
@@ -160,6 +164,25 @@ describe.skipIf(!live)('realms', () => {
 				{ realmId: id, userId: member, role: null },
 			);
 			expectErr(await w.realms.leave(id, member, null), ErrorCode.realm.notMember);
+		}));
+
+	test('a refused leave narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const { id, admin } = await w.realm();
+			const sole = await w.realms.leave(id, admin, RealmRole.admin);
+			if (!isError(sole, SoleAdmin)) throw new Error('expected SoleAdmin');
+			expect(expectType<SoleAdmin>(sole.error)).toBeInstanceOf(SoleAdmin);
+			// @ts-expect-error the branch holds only SoleAdmin
+			expectType<MemberNotFound>(sole.error);
+
+			const stranger = await w.person();
+			const gone = await w.realms.leave(id, stranger, null);
+			if (isError(gone, SoleAdmin)) throw new Error('expected MemberNotFound');
+			if (gone.ok) throw new Error('expected an error');
+			// SoleAdmin is ruled out, so MemberNotFound is all that remains.
+			expect(expectType<MemberNotFound>(gone.error)).toBeInstanceOf(MemberNotFound);
+			// @ts-expect-error SoleAdmin was narrowed away
+			expectType<SoleAdmin>(gone.error);
 		}));
 
 	test("the only admin can't leave; one of two can", () =>

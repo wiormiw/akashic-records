@@ -2,6 +2,14 @@ import type { MiddlewareHandler } from 'hono';
 import type { Authorizer } from '@akashic/authz';
 import type { Executor } from '@akashic/db';
 import type { RealmRole } from '@akashic/lib/enums';
+import type {
+	AlreadyMember,
+	DuplicateSlug,
+	MemberNotFound,
+	RealmForbidden,
+	RealmNotFound,
+	SoleAdmin,
+} from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import type { Clock } from '@akashic/lib/time';
 import type { RealmEnv } from '@/http/realm-context.ts';
@@ -106,6 +114,19 @@ export interface Edited {
 export interface Archived {
 	archived: boolean;
 }
+
+// What each realm service call can fail with.
+export type ReadRealmError = RealmNotFound;
+export type FoundRealmError = DuplicateSlug;
+export type JoinError = AlreadyMember;
+export type LeaveError = SoleAdmin | MemberNotFound;
+export type ChangeRoleError = RealmForbidden | MemberNotFound | SoleAdmin;
+export type EditRealmError = RealmNotFound;
+export type ArchiveRealmError = RealmNotFound;
+// Proposals reuse realm.duplicate_slug for any refusal to file or decide one: the code is on the wire.
+export type ProposeError = DuplicateSlug;
+export type ApproveError = RealmNotFound | FoundRealmError;
+export type RejectError = RealmNotFound;
 
 /** What the realm routes are built from. */
 export interface RealmRoutesDeps {

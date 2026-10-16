@@ -12,7 +12,13 @@ import {
 } from '@akashic/db';
 import { pgVector } from '@akashic/db/sql';
 import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import {
+	AlreadyMember,
+	MemberNotFound,
+	RealmForbidden,
+	RealmNotFound,
+	SoleAdmin,
+} from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { policy } from '@/config.ts';
@@ -25,11 +31,18 @@ import {
 import type {
 	Actor,
 	Archived,
+	ArchiveRealmError,
+	ChangeRoleError,
 	Edited,
+	EditRealmError,
 	FoundedRealm,
 	FoundRealm,
+	FoundRealmError,
 	Joined,
+	JoinError,
+	LeaveError,
 	Left,
+	ReadRealmError,
 	RealmDeps,
 	RoleChange,
 } from './realm.types.ts';
@@ -116,7 +129,10 @@ export function createRealmService(deps: RealmDeps) {
 		return true;
 	}
 
-	async function found(founderId: string, realm: FoundRealm): Promise<Result<FoundedRealm>> {
+	async function found(
+		founderId: string,
+		realm: FoundRealm,
+	): Promise<Result<FoundedRealm, FoundRealmError>> {
 		const id = await inTransaction(db, (tx) => foundIn(tx, founderId, realm, clock.now()));
 		if (!id.ok) return id;
 		// After the commit: the model call is slow, optional, and no reason to hold a transaction.
@@ -135,16 +151,14 @@ export function createRealmService(deps: RealmDeps) {
 		},
 
 		/** Live realms only. */
-		async read(slug: string): Promise<Result<RealmSummary>> {
+		async read(slug: string): Promise<Result<RealmSummary, ReadRealmError>> {
 			const [realm] = await liveSummaries(db, sql`AND r.slug = ${slug} LIMIT 1`);
-			return realm
-				? ok(realm)
-				: err(fail.notFound(ErrorCode.realm.notFound, `No realm called "${slug}".`));
+			return realm ? ok(realm) : err(new RealmNotFound(`No realm called "${slug}".`));
 		},
 
 		found,
 
-		join(realmId: string, userId: string): Promise<Result<Joined>> {
+		join(realmId: string, userId: string): Promise<Result<Joined, JoinError>> {
 			return inTransaction(db, async (tx) => {
 				// A second join, even one racing this, finds the row and inserts nothing.
 				const inserted = await tx
@@ -153,9 +167,7 @@ export function createRealmService(deps: RealmDeps) {
 					.onConflictDoNothing()
 					.returning({ userId: realmMembers.userId });
 				if (inserted.length === 0) {
-					return err(
-						fail.conflict(ErrorCode.realm.alreadyMember, 'You are already in this realm.'),
-					);
+					return err(new AlreadyMember('You are already in this realm.'));
 				}
 				await publish(
 					tx,
@@ -166,8 +178,12 @@ export function createRealmService(deps: RealmDeps) {
 			});
 		},
 
-		leave(realmId: string, userId: string, role: RealmRole | null): Promise<Result<Left>> {
-			return inTransaction(db, async (tx) => {
+		leave(
+			realmId: string,
+			userId: string,
+			role: RealmRole | null,
+		): Promise<Result<Left, LeaveError>> {
+			return inTransaction<Left, LeaveError>(db, async (tx) => {
 				if (role === RealmRole.admin) {
 					// Locked, so two admins leaving at once can't both see the other still there. One
 					// global lock order on realm_member, by user_id, so this can't deadlock with a
@@ -180,10 +196,7 @@ export function createRealmService(deps: RealmDeps) {
 						.for('update');
 					if (admins.length === 1) {
 						return err(
-							fail.conflict(
-								ErrorCode.realm.soleAdmin,
-								'You are the only admin. Promote someone else before leaving.',
-							),
+							new SoleAdmin('You are the only admin. Promote someone else before leaving.'),
 						);
 					}
 				}
@@ -192,7 +205,7 @@ export function createRealmService(deps: RealmDeps) {
 					.where(ofMember(realmId, userId))
 					.returning({ userId: realmMembers.userId });
 				if (removed.length === 0) {
-					return err(fail.notFound(ErrorCode.realm.notMember, 'You are not in this realm.'));
+					return err(new MemberNotFound('You are not in this realm.'));
 				}
 				await publish(tx, [realmEvents.memberChanged(realmId, userId, null)], clock.now());
 				return ok({ left: true as const });
@@ -232,13 +245,11 @@ export function createRealmService(deps: RealmDeps) {
 			actor: Actor,
 			targetId: string,
 			role: RealmRole,
-		): Promise<Result<RoleChange>> {
+		): Promise<Result<RoleChange, ChangeRoleError>> {
 			if (targetId === actor.id) {
-				return Promise.resolve(
-					err(fail.forbidden(ErrorCode.realm.forbidden, 'You cannot change your own role.')),
-				);
+				return Promise.resolve(err(new RealmForbidden('You cannot change your own role.')));
 			}
-			return inTransaction(db, async (tx) => {
+			return inTransaction<RoleChange, ChangeRoleError>(db, async (tx) => {
 				// One statement locks the actor, the target and every admin, in user id order, so two
 				// changes racing each other queue rather than deadlock. Rank and admin count are read
 				// under the lock: two admins demoting each other at once can't leave the realm with none.
@@ -266,8 +277,7 @@ export function createRealmService(deps: RealmDeps) {
 				// nobody grants a role as high as their own.
 				if (!grantable(rank, role)) {
 					return err(
-						fail.forbidden(
-							ErrorCode.realm.forbidden,
+						new RealmForbidden(
 							role >= RealmRole.moderator
 								? 'Only an admin can grant moderator or admin.'
 								: 'You can only grant a role below your own.',
@@ -276,26 +286,18 @@ export function createRealmService(deps: RealmDeps) {
 				}
 				const current = roleIn(targetId);
 				if (current === null) {
-					return err(fail.notFound(ErrorCode.realm.notMember, 'That person is not in this realm.'));
+					return err(new MemberNotFound('That person is not in this realm.'));
 				}
 				// An admin changes anyone's role, a fellow admin's too; below admin, only someone beneath
 				// you (a moderator can't demote a fellow moderator: a recall exists for that).
 				if (!mayChange(rank, current)) {
-					return err(
-						fail.forbidden(
-							ErrorCode.realm.forbidden,
-							'You can only change the role of someone below you.',
-						),
-					);
+					return err(new RealmForbidden('You can only change the role of someone below you.'));
 				}
 				if (current === RealmRole.admin && role < RealmRole.admin) {
 					const admins = locked.filter((r) => r.role === RealmRole.admin).length;
 					if (admins <= 1) {
 						return err(
-							fail.conflict(
-								ErrorCode.realm.soleAdmin,
-								"This is the realm's only admin. Promote someone else first.",
-							),
+							new SoleAdmin("This is the realm's only admin. Promote someone else first."),
 						);
 					}
 				}
@@ -312,7 +314,11 @@ export function createRealmService(deps: RealmDeps) {
 			});
 		},
 
-		async edit(realmId: string, actorId: string, edit: RealmEdit): Promise<Result<Edited>> {
+		async edit(
+			realmId: string,
+			actorId: string,
+			edit: RealmEdit,
+		): Promise<Result<Edited, EditRealmError>> {
 			const { modules, ...values } = edit;
 			const changed = Object.keys(edit).filter((key) => edit[key as keyof RealmEdit] !== undefined);
 			if (changed.length === 0) return ok({ changed });
@@ -324,7 +330,7 @@ export function createRealmService(deps: RealmDeps) {
 					.where(eq(realms.id, realmId))
 					.returning({ id: realms.id });
 				if (updated.length === 0) {
-					return err(fail.notFound(ErrorCode.realm.notFound, 'No such realm.'));
+					return err(new RealmNotFound('No such realm.'));
 				}
 				if (modules) {
 					await tx.delete(realmModules).where(eq(realmModules.realmId, realmId));
@@ -341,7 +347,11 @@ export function createRealmService(deps: RealmDeps) {
 			});
 		},
 
-		archive(realmId: string, actorId: string, archived: boolean): Promise<Result<Archived>> {
+		archive(
+			realmId: string,
+			actorId: string,
+			archived: boolean,
+		): Promise<Result<Archived, ArchiveRealmError>> {
 			const now = clock.now();
 			return inTransaction(db, async (tx) => {
 				const updated = await tx
@@ -350,7 +360,7 @@ export function createRealmService(deps: RealmDeps) {
 					.where(eq(realms.id, realmId))
 					.returning({ id: realms.id });
 				if (updated.length === 0) {
-					return err(fail.notFound(ErrorCode.realm.notFound, 'No such realm.'));
+					return err(new RealmNotFound('No such realm.'));
 				}
 				await audit(tx, {
 					actorId,
