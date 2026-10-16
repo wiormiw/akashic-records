@@ -187,12 +187,28 @@ describe('structure', () => {
 		expect(using).toEqual([]);
 	});
 
+	// A module's errors are named classes. AppError, the base every one of them extends, would
+	// let any error through wherever it appears: in a result, or in a union alias in <m>.types.ts.
+	// So module code never mentions it (comment lines aside).
+	test('module code never mentions AppError', async () => {
+		const mentions: string[] = [];
+		for (const f of scan('apps/api/src/modules/**/*.ts')) {
+			(await read(f)).split('\n').forEach((line, n) => {
+				if (/^\s*(?:\/\/|\/?\*)/.test(line)) return;
+				if (/\bAppError\b/.test(line)) mentions.push(`${f}:${n + 1}`);
+			});
+		}
+		expect(mentions).toEqual([]);
+	});
+
 	// A module's results name their errors: `Result<T, JoinError>`, never `Result<T>` (the
-	// compiler refuses that too, now `E` has no default) nor `Result<T, AppError>`, which would
-	// let any error through. A text heuristic: it reads each `Result<...>` (balanced brackets,
-	// `=>` skipped) outside comment lines and splits its top-level arguments.
-	test('module results name their error union, never AppError or nothing', async () => {
+	// compiler refuses that too, now `E` has no default), nor an error type that admits anything
+	// (`unknown`, `any`, `Error`, `AppError`). A text heuristic: it reads each `Result<...>`
+	// (balanced brackets, `=>` skipped) outside comment lines and splits its top-level arguments;
+	// an alias is checked where it is defined, by the AppError rule above.
+	test('module results name their error union, never a catch-all or nothing', async () => {
 		const loose: string[] = [];
+		const catchAll = new Set(['unknown', 'any', 'Error', 'AppError']);
 		for (const f of scan('apps/api/src/modules/**/*.ts')) {
 			const src = (await read(f))
 				.split('\n')
@@ -217,7 +233,7 @@ describe('structure', () => {
 				}
 				const errors = args[1]?.trim();
 				const members = errors?.split('|').map((part) => part.trim()) ?? [];
-				if (!errors || members.includes('AppError')) {
+				if (!errors || members.some((member) => catchAll.has(member))) {
 					const line = src.slice(0, m.index).split('\n').length;
 					loose.push(`${f}:${line}: Result<${args.join(',').replace(/\s+/g, ' ').trim()}>`);
 				}

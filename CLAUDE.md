@@ -55,7 +55,7 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
   `isError(result, Class)`, not by comparing `error.code`. Routes hand Results to `reply`
   (success, through a view) or `respond`, and `http/problem.ts` renders errors. `throw` is for
   bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it rolls back.
-  `structure.test.ts` keeps `fail.` out of source and AppError out of module results.
+  `structure.test.ts` keeps `fail.` out of source and AppError out of module code.
 - **Events and audits only inside `inTransaction`**, via `publish(tx, ...)` and `audit(tx, ...)`.
   Every membership change publishes `realm.member_changed`, or OpenFGA drifts from Postgres.
 - **Outbox handlers are idempotent.** Write the complete answer, don't apply a delta. The outbox
