@@ -225,6 +225,32 @@ request
 - A validation failure from `sValidator` renders as the same `common.validation` problem.
 - `throw` stays for bugs and infrastructure failing.
 
+## Typed errors (agreed 2026-10-16)
+
+A service declares exactly which errors it can return, and the compiler checks every caller.
+
+- `packages/lib/src/result.ts` provides:
+  - **Results:** `Result<T, E>`, with one `{ ok: false }` branch per error type, so narrowing on one
+    error leaves the rest. Built with `ok` and `err`; tested with `isOk` and `isErr`.
+  - **Narrowing:** `isError(result, Class)`.
+  - **Composition:** `mapOk`, `mapErr`, `andThen` and `pipe` for chaining, `all` for running
+    several at once.
+  - **Unwrapping:** `unwrap`, `value` and `orElse`.
+  - **Edge wrappers:** `fn` and `exec` turn a throwing call into a result at an integration edge,
+    and always take an error mapper in app code.
+  - **Fire and forget:** `forget` runs a call nobody waits for, and logs its failure.
+- Every client-facing error is a class made with `defineError(kind, code, defaultMessage)`, in
+  `packages/lib/src/errors.ts`, one class per stable code (`RealmNotFound`, `AlreadyMember`, …).
+  The class carries its `kind` and `code` as literal types, so two errors are never confused, and
+  it extends `AppError`, so `respond()` and the problem renderer handle any of them unchanged.
+- A service's error union is a named type in `<module>.types.ts`, for example
+  `type JoinError = RealmNotFound | AlreadyMember | RealmArchived`. A route that needs to treat
+  one error differently narrows with `isError` and passes the rest to `respond()`.
+- `throw` stays for bugs and infrastructure failing. `fail.*` and untyped
+  `Result<T, AppError>` signatures are removed once every module is migrated, and a structure
+  test keeps them out.
+- New kind `unavailable` (503) for a request cut off by shutdown, with `Retry-After`.
+
 ## Responses
 
 Hono doesn't check outgoing responses, so every route sends through
