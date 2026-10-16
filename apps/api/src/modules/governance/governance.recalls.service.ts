@@ -3,11 +3,18 @@ import type { NamedUser, Recall, Votes } from '@akashic/contracts';
 import { type Executor, inTransaction, recalls, recallVotes } from '@akashic/db';
 import { narrow, RealmRole, RecallKind, RecallStatus } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AlreadyMember, RealmForbidden, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { toDate } from '@akashic/lib/time';
 import { cannotCarry, majority, roleOf, sizeOf } from './governance.seats.service.ts';
-import type { NewRecall, RecallDeps, RecallOpened, RecallTally } from './governance.types.ts';
+import type {
+	NewRecall,
+	ProposeRecallError,
+	RecallDeps,
+	RecallOpened,
+	RecallTally,
+	VoteRecallError,
+} from './governance.types.ts';
 
 // ---- Rules -----------------------------------------------------------------------------------
 
@@ -23,12 +30,7 @@ export const mayTakePart = (kind: RecallKind, role: RealmRole | null): boolean =
 	kind === RecallKind.members || (role !== null && role >= RealmRole.moderator);
 
 const notTheirs = () =>
-	err(
-		fail.forbidden(
-			ErrorCode.realm.forbidden,
-			"Only moderators propose or vote on a moderators' recall.",
-		),
-	);
+	err(new RealmForbidden("Only moderators propose or vote on a moderators' recall."));
 
 // ---- Queries ---------------------------------------------------------------------------------
 
@@ -131,7 +133,7 @@ export function createRecallService(deps: RecallDeps) {
 			kind: RecallKind,
 			reason: string,
 			proposerId: string,
-		): Promise<Result<RecallOpened>> {
+		): Promise<Result<RecallOpened, ProposeRecallError>> {
 			// The electorate is the moderators; anyone else proposing would cast a vote they don't hold.
 			if (!mayTakePart(kind, await roleOf(db, realmId, proposerId))) return notTheirs();
 			const seat = await seats.requireSeatHolder(
@@ -152,10 +154,7 @@ export function createRecallService(deps: RecallDeps) {
 				});
 				if (!id) {
 					return err(
-						fail.conflict(
-							ErrorCode.realm.alreadyMember,
-							'A recall is already open against them. Vote on it instead.',
-						),
+						new AlreadyMember('A recall is already open against them. Vote on it instead.'),
 					);
 				}
 				await castVote(tx, id, proposerId, true);
@@ -168,13 +167,12 @@ export function createRecallService(deps: RecallDeps) {
 			recallId: string,
 			voterId: string,
 			agree: boolean,
-		): Promise<Result<RecallTally>> {
+		): Promise<Result<RecallTally, VoteRecallError>> {
 			const recall = await findRecall(db, recallId);
 			// Scoped to the realm in the path, so a member elsewhere can't vote here.
-			if (!recall || recall.realmId !== realmId)
-				return err(fail.notFound(ErrorCode.realm.notFound, 'No such recall.'));
+			if (!recall || recall.realmId !== realmId) return err(new RealmNotFound('No such recall.'));
 			if (recall.status !== RecallStatus.open) {
-				return err(fail.conflict(ErrorCode.realm.alreadyMember, 'That recall is already settled.'));
+				return err(new AlreadyMember('That recall is already settled.'));
 			}
 			if (!mayTakePart(recall.kind, await roleOf(db, realmId, voterId))) return notTheirs();
 

@@ -10,15 +10,17 @@ import {
 } from '@akashic/db';
 import { AuditAction, narrow, TakedownStatus } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AlreadyMember, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { toDate } from '@akashic/lib/time';
 import { cannotCarry, majority, sizeOf } from './governance.seats.service.ts';
 import type {
 	GovernanceDeps,
 	NewTakedown,
+	ProposeTakedownError,
 	TakedownOpened,
 	TakedownTally,
+	VoteTakedownError,
 } from './governance.types.ts';
 
 // ---- Rules -----------------------------------------------------------------------------------
@@ -156,18 +158,17 @@ export function createTakedownService(deps: GovernanceDeps) {
 			commentId: string,
 			reason: string,
 			proposerId: string,
-		): Promise<Result<TakedownOpened>> {
+		): Promise<Result<TakedownOpened, ProposeTakedownError>> {
 			return inTransaction(db, async (tx) => {
 				// Scoped to the realm in the path, so a moderator elsewhere can't take this comment down.
 				if (!(await commentInRealm(tx, realmId, commentId))) {
-					return err(fail.notFound(ErrorCode.realm.notFound, 'No such comment in this realm.'));
+					return err(new RealmNotFound('No such comment in this realm.'));
 				}
 				const size = await sizeOf(tx, realmId);
 				const id = await openTakedown(tx, { realmId, commentId, reason, proposedBy: proposerId });
 				if (!id) {
 					return err(
-						fail.conflict(
-							ErrorCode.realm.alreadyMember,
+						new AlreadyMember(
 							'A takedown is already open against that comment. Vote on it instead.',
 						),
 					);
@@ -196,15 +197,13 @@ export function createTakedownService(deps: GovernanceDeps) {
 			takedownId: string,
 			voterId: string,
 			agree: boolean,
-		): Promise<Result<TakedownTally>> {
+		): Promise<Result<TakedownTally, VoteTakedownError>> {
 			const takedown = await findTakedown(db, takedownId);
 			// Scoped to the realm in the path, so a moderator elsewhere can't vote here.
 			if (!takedown || takedown.realmId !== realmId)
-				return err(fail.notFound(ErrorCode.realm.notFound, 'No such takedown.'));
+				return err(new RealmNotFound('No such takedown.'));
 			if (takedown.status !== TakedownStatus.open) {
-				return err(
-					fail.conflict(ErrorCode.realm.alreadyMember, 'That takedown is already settled.'),
-				);
+				return err(new AlreadyMember('That takedown is already settled.'));
 			}
 
 			return inTransaction(db, async (tx) => {

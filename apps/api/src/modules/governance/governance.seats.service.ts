@@ -11,11 +11,13 @@ import {
 } from '@akashic/db';
 import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { NoSeatInRealm, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import type {
 	GovernanceDeps,
 	RealmSize,
+	RemoveModeratorError,
+	RequireSeatHolderError,
 	SeatCandidates,
 	SeatChanges,
 	SeatRemoved,
@@ -23,7 +25,9 @@ import type {
 	Standings,
 	Unseating,
 	Upvoted,
+	UpvoteError,
 	UpvoteWithdrawn,
+	WithdrawUpvoteError,
 } from './governance.types.ts';
 
 // ---- Rules -----------------------------------------------------------------------------------
@@ -262,15 +266,13 @@ export function createSeatService(deps: GovernanceDeps) {
 		realmId: string,
 		userId: string,
 		adminMessage: string,
-	): Promise<Result<void>> {
+	): Promise<Result<void, RequireSeatHolderError>> {
 		const role = await roleOf(db, realmId, userId);
 		if (role === null || role < RealmRole.moderator) {
-			return err(
-				fail.validation(ErrorCode.realm.notMember, 'They do not hold a seat in this realm.'),
-			);
+			return err(new NoSeatInRealm('They do not hold a seat in this realm.'));
 		}
 		if (role === RealmRole.admin) {
-			return err(fail.validation(ErrorCode.common.validation, adminMessage));
+			return err(new ValidationFailed(adminMessage));
 		}
 		return ok(undefined);
 	}
@@ -287,11 +289,14 @@ export function createSeatService(deps: GovernanceDeps) {
 			return { seats: seats(size.members), minimum: MIN_UPVOTES, members };
 		},
 
-		async upvote(realmId: string, voterId: string, candidateId: string): Promise<Result<Upvoted>> {
+		async upvote(
+			realmId: string,
+			voterId: string,
+			candidateId: string,
+		): Promise<Result<Upvoted, UpvoteError>> {
 			if (voterId === candidateId) {
 				return err(
-					fail.validation(
-						ErrorCode.common.validation,
+					new ValidationFailed(
 						'You cannot upvote yourself. A seat is something the realm gives you.',
 					),
 				);
@@ -299,16 +304,14 @@ export function createSeatService(deps: GovernanceDeps) {
 			const role = await roleOf(db, realmId, candidateId);
 			if (role === null) {
 				return err(
-					fail.validation(
-						ErrorCode.realm.notMember,
+					new NoSeatInRealm(
 						'They are not a member of this realm, so there is no seat to give them.',
 					),
 				);
 			}
 			if (role === RealmRole.admin) {
 				return err(
-					fail.validation(
-						ErrorCode.common.validation,
+					new ValidationFailed(
 						'Admins already moderate this realm. A seat would give them nothing.',
 					),
 				);
@@ -328,7 +331,7 @@ export function createSeatService(deps: GovernanceDeps) {
 			realmId: string,
 			voterId: string,
 			candidateId: string,
-		): Promise<Result<UpvoteWithdrawn>> {
+		): Promise<Result<UpvoteWithdrawn, WithdrawUpvoteError>> {
 			return inTransaction(db, async (tx) => {
 				const size = await sizeOf(tx, realmId);
 				await tx
@@ -344,7 +347,7 @@ export function createSeatService(deps: GovernanceDeps) {
 			subjectId: string,
 			actorId: string,
 			reason: string,
-		): Promise<Result<SeatRemoved>> {
+		): Promise<Result<SeatRemoved, RemoveModeratorError>> {
 			const seat = await requireSeatHolder(
 				realmId,
 				subjectId,

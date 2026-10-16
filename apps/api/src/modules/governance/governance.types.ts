@@ -2,6 +2,13 @@ import type { MiddlewareHandler } from 'hono';
 import type { SeatStanding } from '@akashic/contracts';
 import type { Executor } from '@akashic/db';
 import type { RecallKind, RecallStatus, TakedownStatus } from '@akashic/lib/enums';
+import type {
+	AlreadyMember,
+	NoSeatInRealm,
+	RealmForbidden,
+	RealmNotFound,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
 import type { RealmEnv } from '@/http/realm-context.ts';
 import type { createRecallService } from './governance.recalls.service.ts';
@@ -132,3 +139,15 @@ export interface TakedownOpened {
 	agrees: number;
 	needed: number;
 }
+
+// ---- Errors ----------------------------------------------------------------------------------
+
+// What each governance service call can fail with.
+export type RequireSeatHolderError = NoSeatInRealm | ValidationFailed;
+export type UpvoteError = ValidationFailed | NoSeatInRealm;
+export type WithdrawUpvoteError = never;
+export type RemoveModeratorError = RequireSeatHolderError;
+export type ProposeRecallError = RealmForbidden | RequireSeatHolderError | AlreadyMember;
+export type VoteRecallError = RealmNotFound | AlreadyMember | RealmForbidden;
+export type ProposeTakedownError = RealmNotFound | AlreadyMember;
+export type VoteTakedownError = RealmNotFound | AlreadyMember;

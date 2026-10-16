@@ -2,9 +2,10 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { createDb, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
-import { ErrorCode } from '@akashic/lib/errors';
+import { ErrorCode, NoSeatInRealm, ValidationFailed } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { isError } from '@akashic/lib/result';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import {
 	cannotCarry,
 	majority,
@@ -150,6 +151,29 @@ describe.skipIf(!live)('upvoting', () => {
 			expectErr(await w.seats.upvote(id, member, admin), ErrorCode.common.validation);
 			expect(await w.endorsementsOf(id, admin)).toEqual([]);
 			expect(await w.endorsementsOf(id, stranger)).toEqual([]);
+		}));
+});
+
+describe.skipIf(!live)('a refused upvote', () => {
+	test('narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const { id, people } = await w.realm(1);
+			const [member] = people as [string];
+			const stranger = await w.person();
+
+			const nobody = await w.seats.upvote(id, member, stranger);
+			if (!isError(nobody, NoSeatInRealm)) throw new Error('expected NoSeatInRealm');
+			expect(expectType<NoSeatInRealm>(nobody.error)).toBeInstanceOf(NoSeatInRealm);
+			// @ts-expect-error the branch holds only NoSeatInRealm
+			expectType<ValidationFailed>(nobody.error);
+
+			const self = await w.seats.upvote(id, member, member);
+			if (isError(self, NoSeatInRealm)) throw new Error('expected ValidationFailed');
+			if (self.ok) throw new Error('expected an error');
+			// NoSeatInRealm is ruled out, so ValidationFailed is all that remains.
+			expect(expectType<ValidationFailed>(self.error)).toBeInstanceOf(ValidationFailed);
+			// @ts-expect-error NoSeatInRealm was narrowed away
+			expectType<NoSeatInRealm>(self.error);
 		}));
 });
 
