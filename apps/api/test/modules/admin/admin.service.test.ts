@@ -12,9 +12,10 @@ import {
 } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
-import { ErrorCode } from '@akashic/lib/errors';
+import { ErrorCode, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { isError } from '@akashic/lib/result';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { databaseUrl, outbox } from '../../support/fixtures.ts';
 import { world, type World } from './fixtures.ts';
 
@@ -245,5 +246,25 @@ describe.skipIf(!live)('suspensions', () => {
 				ErrorCode.common.validation,
 			);
 			for (const id of [ghost, actor, target.id]) expect(await auditOf(tx, id)).toEqual([]);
+		}));
+});
+
+describe.skipIf(!live)('a refused suspension', () => {
+	test('narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const actor = await w.person();
+
+			const ghost = await w.admin.setBan(Bun.randomUUIDv7(), actor, { banned: true, reason: 'x' });
+			if (!isError(ghost, RouteNotFound)) throw new Error('expected RouteNotFound');
+			expect(expectType<RouteNotFound>(ghost.error)).toBeInstanceOf(RouteNotFound);
+			// @ts-expect-error the branch holds only RouteNotFound
+			expectType<ValidationFailed>(ghost.error);
+
+			const self = await w.admin.setBan(actor, actor, { banned: true, reason: 'x' });
+			if (self.ok || isError(self, RouteNotFound)) throw new Error('expected ValidationFailed');
+			// RouteNotFound is ruled out, so ValidationFailed is all that remains.
+			expect(expectType<ValidationFailed>(self.error)).toBeInstanceOf(ValidationFailed);
+			// @ts-expect-error RouteNotFound was narrowed away
+			expectType<RouteNotFound>(self.error);
 		}));
 });

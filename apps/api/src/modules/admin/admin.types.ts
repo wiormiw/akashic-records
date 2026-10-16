@@ -1,4 +1,5 @@
 import type { Executor } from '@akashic/db';
+import type { RealmNotFound, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
 import type { Sessions } from '@/http/session.ts';
 import type { AdminService } from './admin.service.ts';
@@ -46,3 +47,10 @@ export interface AccountRef {
 	email: string;
 	emailVerified: boolean;
 }
+
+// ---- Errors ----------------------------------------------------------------------------------
+
+// What each admin service call can fail with. A missing report or account is the router's 404.
+export type ReviewReportError = RouteNotFound;
+export type GrantRealmAdminError = RealmNotFound | RouteNotFound;
+export type SetBanError = ValidationFailed | RouteNotFound;

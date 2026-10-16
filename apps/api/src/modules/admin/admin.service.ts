@@ -22,10 +22,20 @@ import {
 import { containing } from '@akashic/db/sql';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { RealmNotFound, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
-import type { AccountRef, AdminDeps, BanRequest, BanResult, Reviewed, Row } from './admin.types.ts';
+import type {
+	AccountRef,
+	AdminDeps,
+	BanRequest,
+	BanResult,
+	GrantRealmAdminError,
+	Reviewed,
+	ReviewReportError,
+	Row,
+	SetBanError,
+} from './admin.types.ts';
 
 // ---- Row readers -----------------------------------------------------------------------------
 
@@ -187,7 +197,10 @@ export function createAdminService(deps: AdminDeps) {
 		reports,
 		accounts,
 
-		async reviewReport(reportId: string, actorId: string): Promise<Result<Reviewed>> {
+		async reviewReport(
+			reportId: string,
+			actorId: string,
+		): Promise<Result<Reviewed, ReviewReportError>> {
 			return inTransaction(db, async (tx) => {
 				// Only an unreviewed report: a second review finds nothing waiting.
 				const reviewed = await tx
@@ -197,8 +210,7 @@ export function createAdminService(deps: AdminDeps) {
 					.returning({ id: roomReports.id });
 				if (reviewed.length === 0) {
 					return err(
-						fail.notFound(
-							ErrorCode.common.routeNotFound,
+						new RouteNotFound(
 							'No report waiting under that id. It may already have been reviewed.',
 						),
 					);
@@ -215,18 +227,21 @@ export function createAdminService(deps: AdminDeps) {
 		},
 
 		/** Makes an existing account an admin of a realm, joining them first if needed. */
-		async grantRealmAdmin(slug: string, email: string, actorId: string): Promise<Result<Granted>> {
+		async grantRealmAdmin(
+			slug: string,
+			email: string,
+			actorId: string,
+		): Promise<Result<Granted, GrantRealmAdminError>> {
 			const [realm] = await db
 				.select({ id: realms.id })
 				.from(realms)
 				.where(eq(realms.slug, slug))
 				.limit(1);
-			if (!realm) return err(fail.notFound(ErrorCode.realm.notFound, `No realm called "${slug}".`));
+			if (!realm) return err(new RealmNotFound(`No realm called "${slug}".`));
 			const account = await findAccountByEmail(email);
 			if (!account) {
 				return err(
-					fail.notFound(
-						ErrorCode.common.routeNotFound,
+					new RouteNotFound(
 						`No account for ${email}. They have to register before they can be given a realm.`,
 					),
 				);
@@ -256,19 +271,21 @@ export function createAdminService(deps: AdminDeps) {
 			});
 		},
 
-		async setBan(userId: string, actorId: string, ban: BanRequest): Promise<Result<BanResult>> {
+		async setBan(
+			userId: string,
+			actorId: string,
+			ban: BanRequest,
+		): Promise<Result<BanResult, SetBanError>> {
 			if (userId === actorId) {
 				return err(
-					fail.validation(
-						ErrorCode.common.validation,
+					new ValidationFailed(
 						'You cannot suspend your own account: undoing it would need shell access to the deployment.',
 					),
 				);
 			}
 			if (ban.banned && !ban.reason) {
 				return err(
-					fail.validation(
-						ErrorCode.common.validation,
+					new ValidationFailed(
 						'A reason is required. It is shown to the account, and an unexplained suspension looks like a broken product.',
 					),
 				);
@@ -289,7 +306,7 @@ export function createAdminService(deps: AdminDeps) {
 					.where(eq(user.id, userId))
 					.returning({ id: user.id });
 				if (updated.length === 0) {
-					return err(fail.notFound(ErrorCode.common.routeNotFound, 'No such account.'));
+					return err(new RouteNotFound('No such account.'));
 				}
 				// Signed-in sessions would otherwise outlive the ban until their cookie expires.
 				if (ban.banned) await tx.delete(session).where(eq(session.userId, userId));
