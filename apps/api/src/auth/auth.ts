@@ -1,126 +1,126 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError } from "better-auth/api";
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { APIError } from 'better-auth/api';
 import {
-  account,
-  inTransaction,
-  publish,
-  session,
-  user,
-  verification,
-  type Executor,
-} from "@akashic/db";
-import type { Logger } from "@akashic/lib/log";
-import { ok } from "@akashic/lib/result";
-import type { Clock } from "@akashic/lib/time";
-import { mailRequested } from "@akashic/contracts";
-import { banMessage, banOf } from "./bans.ts";
+	account,
+	inTransaction,
+	publish,
+	session,
+	user,
+	verification,
+	type Executor,
+} from '@akashic/db';
+import type { Logger } from '@akashic/lib/log';
+import { ok } from '@akashic/lib/result';
+import type { Clock } from '@akashic/lib/time';
+import { mailRequested } from '@akashic/contracts';
+import { banMessage, banOf } from './bans.ts';
 
 export interface AuthOptions {
-  appName: string;
-  /** Browsers scope cookies by host, not port: two apps on localhost need different prefixes. */
-  cookiePrefix: string;
-  db: Executor;
-  secret: string;
-  baseUrl: string;
-  /** Front-end origins. The first is where verification links land. */
-  trustedOrigins: string[];
-  clock: Clock;
-  sessionExpiryDays: number;
-  sessionCacheS: number;
-  secureCookies: boolean;
-  logger: Logger;
+	appName: string;
+	/** Browsers scope cookies by host, not port: two apps on localhost need different prefixes. */
+	cookiePrefix: string;
+	db: Executor;
+	secret: string;
+	baseUrl: string;
+	/** Front-end origins. The first is where verification links land. */
+	trustedOrigins: string[];
+	clock: Clock;
+	sessionExpiryDays: number;
+	sessionCacheS: number;
+	secureCookies: boolean;
+	logger: Logger;
 }
 
 export function createAuth(options: AuthOptions) {
-  const log = options.logger.child({ component: "auth" });
-  const { appName, clock } = options;
+	const log = options.logger.child({ component: 'auth' });
+	const { appName, clock } = options;
 
-  // better-auth owns the transaction that creates the user, so this event is written right after
-  // it: a crash between the two loses that one email, and the person can ask for another.
-  const requestMail = (message: { to: string; subject: string; html: string; link: string }) =>
-    inTransaction(options.db, async (tx) => {
-      await publish(tx, [mailRequested(message)], clock.now());
-      return ok(undefined);
-    }).then(() => undefined);
+	// better-auth owns the transaction that creates the user, so this event is written right after
+	// it: a crash between the two loses that one email, and the person can ask for another.
+	const requestMail = (message: { to: string; subject: string; html: string; link: string }) =>
+		inTransaction(options.db, async (tx) => {
+			await publish(tx, [mailRequested(message)], clock.now());
+			return ok(undefined);
+		}).then(() => undefined);
 
-  // better-auth's links point at the API; send the reader on to the front end afterwards.
-  const toFrontEnd = (url: string): string => {
-    const frontEnd = options.trustedOrigins[0];
-    if (!frontEnd) return url;
-    const link = new URL(url);
-    link.searchParams.set("callbackURL", `${frontEnd}/verified`);
-    return link.toString();
-  };
+	// better-auth's links point at the API; send the reader on to the front end afterwards.
+	const toFrontEnd = (url: string): string => {
+		const frontEnd = options.trustedOrigins[0];
+		if (!frontEnd) return url;
+		const link = new URL(url);
+		link.searchParams.set('callbackURL', `${frontEnd}/verified`);
+		return link.toString();
+	};
 
-  return betterAuth({
-    appName,
-    secret: options.secret,
-    baseURL: options.baseUrl,
-    trustedOrigins: options.trustedOrigins,
-    // The tables are named here: a Drizzle client built from relations alone carries no schema
-    // for the adapter to find them in.
-    database: drizzleAdapter(options.db, {
-      provider: "pg",
-      usePlural: false,
-      schema: { user, session, account, verification },
-    }),
+	return betterAuth({
+		appName,
+		secret: options.secret,
+		baseURL: options.baseUrl,
+		trustedOrigins: options.trustedOrigins,
+		// The tables are named here: a Drizzle client built from relations alone carries no schema
+		// for the adapter to find them in.
+		database: drizzleAdapter(options.db, {
+			provider: 'pg',
+			usePlural: false,
+			schema: { user, session, account, verification },
+		}),
 
-    emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: true,
-      sendResetPassword: ({ user, url }) =>
-        requestMail({
-          to: user.email,
-          subject: `Reset your ${appName} password`,
-          html: `<p>Reset your password: <a href="${url}">${url}</a></p><p>Ignore this if it wasn't you.</p>`,
-          link: url,
-        }),
-    },
+		emailAndPassword: {
+			enabled: true,
+			requireEmailVerification: true,
+			sendResetPassword: ({ user, url }) =>
+				requestMail({
+					to: user.email,
+					subject: `Reset your ${appName} password`,
+					html: `<p>Reset your password: <a href="${url}">${url}</a></p><p>Ignore this if it wasn't you.</p>`,
+					link: url,
+				}),
+		},
 
-    emailVerification: {
-      sendOnSignUp: true,
-      autoSignInAfterVerification: true,
-      sendVerificationEmail: ({ user, url }) => {
-        const link = toFrontEnd(url);
-        return requestMail({
-          to: user.email,
-          subject: `Verify your ${appName} email`,
-          html: `<p>Confirm your address: <a href="${link}">${link}</a></p>`,
-          link,
-        });
-      },
-    },
+		emailVerification: {
+			sendOnSignUp: true,
+			autoSignInAfterVerification: true,
+			sendVerificationEmail: ({ user, url }) => {
+				const link = toFrontEnd(url);
+				return requestMail({
+					to: user.email,
+					subject: `Verify your ${appName} email`,
+					html: `<p>Confirm your address: <a href="${link}">${link}</a></p>`,
+					link,
+				});
+			},
+		},
 
-    session: {
-      expiresIn: 60 * 60 * 24 * options.sessionExpiryDays,
-      updateAge: 60 * 60 * 24,
-      cookieCache: { enabled: true, maxAge: options.sessionCacheS },
-    },
+		session: {
+			expiresIn: 60 * 60 * 24 * options.sessionExpiryDays,
+			updateAge: 60 * 60 * 24,
+			cookieCache: { enabled: true, maxAge: options.sessionCacheS },
+		},
 
-    databaseHooks: {
-      session: {
-        create: {
-          // A suspended account can't start a session.
-          before: async (session) => {
-            const ban = await banOf(options.db, session.userId);
-            if (!ban) return;
-            log.info({ userId: session.userId }, "refused sign-in for a suspended account");
-            throw new APIError("FORBIDDEN", {
-              code: "ACCOUNT_SUSPENDED",
-              message: banMessage(ban),
-            });
-          },
-        },
-      },
-    },
+		databaseHooks: {
+			session: {
+				create: {
+					// A suspended account can't start a session.
+					before: async (session) => {
+						const ban = await banOf(options.db, session.userId);
+						if (!ban) return;
+						log.info({ userId: session.userId }, 'refused sign-in for a suspended account');
+						throw new APIError('FORBIDDEN', {
+							code: 'ACCOUNT_SUSPENDED',
+							message: banMessage(ban),
+						});
+					},
+				},
+			},
+		},
 
-    advanced: {
-      cookiePrefix: options.cookiePrefix,
-      database: { generateId: () => Bun.randomUUIDv7() },
-      useSecureCookies: options.secureCookies,
-    },
-  });
+		advanced: {
+			cookiePrefix: options.cookiePrefix,
+			database: { generateId: () => Bun.randomUUIDv7() },
+			useSecureCookies: options.secureCookies,
+		},
+	});
 }
 
 export type Auth = ReturnType<typeof createAuth>;

@@ -1,172 +1,172 @@
-import { and, desc, eq } from "drizzle-orm";
-import type { Listing, ListingSummary } from "@akashic/contracts";
-import { type Executor, inTransaction, listings, user } from "@akashic/db";
-import { CommentSubject, ListingStatus } from "@akashic/lib/enums";
-import { ErrorCode, fail } from "@akashic/lib/errors";
-import { err, ok, type Result } from "@akashic/lib/result";
-import { fromDate, toDate } from "@akashic/lib/time";
-import { hasOpenInterest, requireMember, settleInterest } from "./postings.interest.service.ts";
+import { and, desc, eq } from 'drizzle-orm';
+import type { Listing, ListingSummary } from '@akashic/contracts';
+import { type Executor, inTransaction, listings, user } from '@akashic/db';
+import { CommentSubject, ListingStatus } from '@akashic/lib/enums';
+import { ErrorCode, fail } from '@akashic/lib/errors';
+import { err, ok, type Result } from '@akashic/lib/result';
+import { fromDate, toDate } from '@akashic/lib/time';
+import { hasOpenInterest, requireMember, settleInterest } from './postings.interest.service.ts';
 import type {
-  Dealt,
-  ListingForViewer,
-  ListingStatusSet,
-  NewListing,
-  Posted,
-  PostingAreaDeps,
-} from "./postings.types.ts";
+	Dealt,
+	ListingForViewer,
+	ListingStatusSet,
+	NewListing,
+	Posted,
+	PostingAreaDeps,
+} from './postings.types.ts';
 
-const noListing = () => fail.notFound(ErrorCode.event.notFound, "No such posting in this realm.");
+const noListing = () => fail.notFound(ErrorCode.event.notFound, 'No such posting in this realm.');
 const settled = () =>
-  fail.conflict(ErrorCode.event.alreadySettled, "This listing is no longer available.");
+	fail.conflict(ErrorCode.event.alreadySettled, 'This listing is no longer available.');
 
 /** One listing of the realm; undefined for another realm's. */
 async function findListing(
-  db: Executor,
-  realmId: string,
-  listingId: string,
+	db: Executor,
+	realmId: string,
+	listingId: string,
 ): Promise<Listing | undefined> {
-  const [row] = await db
-    .select({
-      id: listings.id,
-      title: listings.title,
-      description: listings.description,
-      priceCents: listings.priceCents,
-      currency: listings.currency,
-      status: listings.status,
-      buyerId: listings.buyerId,
-      imageUrl: listings.imageUrl,
-      commentsEnabled: listings.commentsEnabled,
-      sellerId: listings.sellerId,
-      sellerName: user.name,
-      createdAt: listings.createdAt,
-    })
-    .from(listings)
-    .innerJoin(user, eq(user.id, listings.sellerId))
-    .where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-    .limit(1);
-  return row && { ...row, createdAt: fromDate(row.createdAt) };
+	const [row] = await db
+		.select({
+			id: listings.id,
+			title: listings.title,
+			description: listings.description,
+			priceCents: listings.priceCents,
+			currency: listings.currency,
+			status: listings.status,
+			buyerId: listings.buyerId,
+			imageUrl: listings.imageUrl,
+			commentsEnabled: listings.commentsEnabled,
+			sellerId: listings.sellerId,
+			sellerName: user.name,
+			createdAt: listings.createdAt,
+		})
+		.from(listings)
+		.innerJoin(user, eq(user.id, listings.sellerId))
+		.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
+		.limit(1);
+	return row && { ...row, createdAt: fromDate(row.createdAt) };
 }
 
 /** The marketplace: listings, their status, and deals. */
 export function createListingService(deps: PostingAreaDeps) {
-  const { db, clock, fit } = deps;
+	const { db, clock, fit } = deps;
 
-  return {
-    /** A realm's listings, newest first. */
-    async browse(realmId: string, activeOnly: boolean, limit: number): Promise<ListingSummary[]> {
-      const rows = await db
-        .select({
-          id: listings.id,
-          title: listings.title,
-          priceCents: listings.priceCents,
-          currency: listings.currency,
-          status: listings.status,
-          imageUrl: listings.imageUrl,
-          createdAt: listings.createdAt,
-        })
-        .from(listings)
-        .where(
-          and(
-            eq(listings.realmId, realmId),
-            activeOnly ? eq(listings.status, ListingStatus.active) : undefined,
-          ),
-        )
-        .orderBy(desc(listings.createdAt))
-        .limit(limit);
-      return rows.map((row) => ({ ...row, createdAt: fromDate(row.createdAt) }));
-    },
+	return {
+		/** A realm's listings, newest first. */
+		async browse(realmId: string, activeOnly: boolean, limit: number): Promise<ListingSummary[]> {
+			const rows = await db
+				.select({
+					id: listings.id,
+					title: listings.title,
+					priceCents: listings.priceCents,
+					currency: listings.currency,
+					status: listings.status,
+					imageUrl: listings.imageUrl,
+					createdAt: listings.createdAt,
+				})
+				.from(listings)
+				.where(
+					and(
+						eq(listings.realmId, realmId),
+						activeOnly ? eq(listings.status, ListingStatus.active) : undefined,
+					),
+				)
+				.orderBy(desc(listings.createdAt))
+				.limit(limit);
+			return rows.map((row) => ({ ...row, createdAt: fromDate(row.createdAt) }));
+		},
 
-    async read(
-      realmId: string,
-      listingId: string,
-      viewerId: string,
-    ): Promise<Result<ListingForViewer>> {
-      const listing = await findListing(db, realmId, listingId);
-      if (!listing) return err(noListing());
-      const subject = { kind: CommentSubject.listing, id: listingId };
-      return ok({ ...listing, viewerInterested: await hasOpenInterest(db, subject, viewerId) });
-    },
+		async read(
+			realmId: string,
+			listingId: string,
+			viewerId: string,
+		): Promise<Result<ListingForViewer>> {
+			const listing = await findListing(db, realmId, listingId);
+			if (!listing) return err(noListing());
+			const subject = { kind: CommentSubject.listing, id: listingId };
+			return ok({ ...listing, viewerInterested: await hasOpenInterest(db, subject, viewerId) });
+		},
 
-    post: (listing: NewListing): Promise<Result<Posted>> =>
-      fit.admit(
-        { ...listing, type: "listing", kind: CommentSubject.listing, authorId: listing.sellerId },
-        async (tx) => {
-          const [created] = await tx
-            .insert(listings)
-            .values(listing)
-            .returning({ id: listings.id });
-          if (!created) throw new Error("listing insert returned no row");
-          return created.id;
-        },
-      ),
+		post: (listing: NewListing): Promise<Result<Posted>> =>
+			fit.admit(
+				{ ...listing, type: 'listing', kind: CommentSubject.listing, authorId: listing.sellerId },
+				async (tx) => {
+					const [created] = await tx
+						.insert(listings)
+						.values(listing)
+						.returning({ id: listings.id });
+					if (!created) throw new Error('listing insert returned no row');
+					return created.id;
+				},
+			),
 
-    async setStatus(
-      realmId: string,
-      listingId: string,
-      status: ListingStatus,
-      canModerate: boolean,
-    ): Promise<Result<ListingStatusSet>> {
-      if (status === ListingStatus.removed && !canModerate) {
-        return err(
-          fail.forbidden(ErrorCode.realm.forbidden, "Removing a listing is a moderator's call."),
-        );
-      }
-      const updated = await db
-        .update(listings)
-        .set({ status, updatedAt: toDate(clock.now()) })
-        .where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-        .returning({ id: listings.id });
-      return updated.length > 0 ? ok({ status }) : err(noListing());
-    },
+		async setStatus(
+			realmId: string,
+			listingId: string,
+			status: ListingStatus,
+			canModerate: boolean,
+		): Promise<Result<ListingStatusSet>> {
+			if (status === ListingStatus.removed && !canModerate) {
+				return err(
+					fail.forbidden(ErrorCode.realm.forbidden, "Removing a listing is a moderator's call."),
+				);
+			}
+			const updated = await db
+				.update(listings)
+				.set({ status, updatedAt: toDate(clock.now()) })
+				.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
+				.returning({ id: listings.id });
+			return updated.length > 0 ? ok({ status }) : err(noListing());
+		},
 
-    /** Sells to one buyer: marks the listing sold and settles every other offer. */
-    async deal(
-      realmId: string,
-      listingId: string,
-      actorId: string,
-      buyerId: string,
-    ): Promise<Result<Dealt>> {
-      const listing = await findListing(db, realmId, listingId);
-      if (!listing) return err(noListing());
-      if (listing.sellerId !== actorId) {
-        return err(fail.forbidden(ErrorCode.realm.forbidden, "Only the seller can close a deal."));
-      }
-      if (listing.status !== ListingStatus.active) return err(settled());
-      const member = await requireMember(db, realmId, buyerId);
-      if (!member.ok) return member;
-      const subject = { kind: CommentSubject.listing, id: listingId };
-      if (!(await hasOpenInterest(db, subject, buyerId))) {
-        return err(
-          fail.validation(
-            ErrorCode.common.validation,
-            "That buyer has not offered, or has withdrawn.",
-          ),
-        );
-      }
+		/** Sells to one buyer: marks the listing sold and settles every other offer. */
+		async deal(
+			realmId: string,
+			listingId: string,
+			actorId: string,
+			buyerId: string,
+		): Promise<Result<Dealt>> {
+			const listing = await findListing(db, realmId, listingId);
+			if (!listing) return err(noListing());
+			if (listing.sellerId !== actorId) {
+				return err(fail.forbidden(ErrorCode.realm.forbidden, 'Only the seller can close a deal.'));
+			}
+			if (listing.status !== ListingStatus.active) return err(settled());
+			const member = await requireMember(db, realmId, buyerId);
+			if (!member.ok) return member;
+			const subject = { kind: CommentSubject.listing, id: listingId };
+			if (!(await hasOpenInterest(db, subject, buyerId))) {
+				return err(
+					fail.validation(
+						ErrorCode.common.validation,
+						'That buyer has not offered, or has withdrawn.',
+					),
+				);
+			}
 
-      return inTransaction(db, async (tx) => {
-        // Only an active listing sells: of two deals at once, the second finds it sold and
-        // settles nothing.
-        const sold = await tx
-          .update(listings)
-          .set({
-            status: ListingStatus.sold,
-            buyerId,
-            soldAt: toDate(clock.now()),
-            updatedAt: toDate(clock.now()),
-          })
-          .where(
-            and(
-              eq(listings.id, listingId),
-              eq(listings.realmId, realmId),
-              eq(listings.status, ListingStatus.active),
-            ),
-          )
-          .returning({ id: listings.id });
-        if (sold.length === 0) return err(settled());
-        await settleInterest(tx, subject, buyerId);
-        return ok({ buyerId });
-      });
-    },
-  };
+			return inTransaction(db, async (tx) => {
+				// Only an active listing sells: of two deals at once, the second finds it sold and
+				// settles nothing.
+				const sold = await tx
+					.update(listings)
+					.set({
+						status: ListingStatus.sold,
+						buyerId,
+						soldAt: toDate(clock.now()),
+						updatedAt: toDate(clock.now()),
+					})
+					.where(
+						and(
+							eq(listings.id, listingId),
+							eq(listings.realmId, realmId),
+							eq(listings.status, ListingStatus.active),
+						),
+					)
+					.returning({ id: listings.id });
+				if (sold.length === 0) return err(settled());
+				await settleInterest(tx, subject, buyerId);
+				return ok({ buyerId });
+			});
+		},
+	};
 }

@@ -1,30 +1,30 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { realmEvents, type SeatStanding } from "@akashic/contracts";
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { realmEvents, type SeatStanding } from '@akashic/contracts';
 import {
-  audit,
-  type Executor,
-  inTransaction,
-  publish,
-  realmEndorsements,
-  realmMembers,
-  type Tx,
-} from "@akashic/db";
-import { AuditAction, narrow, RealmRole } from "@akashic/lib/enums";
-import { rowInstant } from "@akashic/db/sql";
-import { ErrorCode, fail } from "@akashic/lib/errors";
-import { err, ok, type Result } from "@akashic/lib/result";
+	audit,
+	type Executor,
+	inTransaction,
+	publish,
+	realmEndorsements,
+	realmMembers,
+	type Tx,
+} from '@akashic/db';
+import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
+import { rowInstant } from '@akashic/db/sql';
+import { ErrorCode, fail } from '@akashic/lib/errors';
+import { err, ok, type Result } from '@akashic/lib/result';
 import type {
-  GovernanceDeps,
-  RealmSize,
-  SeatCandidates,
-  SeatChanges,
-  SeatRemoved,
-  SizeRow,
-  Standings,
-  Unseating,
-  Upvoted,
-  UpvoteWithdrawn,
-} from "./governance.types.ts";
+	GovernanceDeps,
+	RealmSize,
+	SeatCandidates,
+	SeatChanges,
+	SeatRemoved,
+	SizeRow,
+	Standings,
+	Unseating,
+	Upvoted,
+	UpvoteWithdrawn,
+} from './governance.types.ts';
 
 // ---- Rules -----------------------------------------------------------------------------------
 
@@ -35,44 +35,44 @@ const MEMBERS_PER_SEAT = 25;
 
 /** Moderator seats for a realm of `members`: one per 25, between 1 and 10. */
 export const seats = (members: number): number =>
-  Math.min(MAX_SEATS, Math.max(1, Math.ceil(members / MEMBERS_PER_SEAT)));
+	Math.min(MAX_SEATS, Math.max(1, Math.ceil(members / MEMBERS_PER_SEAT)));
 
 export const majority = (voters: number): number => Math.floor(voters / 2) + 1;
 
 /** A vote is lost once the refusals leave too few voters to reach the threshold. */
 export const cannotCarry = (refusals: number, electorate: number, needed: number): boolean =>
-  refusals > electorate - needed;
+	refusals > electorate - needed;
 
 /** The counts row as a size; a realm with no row has no one in it. Counts may arrive as strings. */
 export const sizeFrom = (row: SizeRow | undefined): RealmSize => ({
-  members: Number(row?.members ?? 0),
-  moderators: Number(row?.moderators ?? 0),
+	members: Number(row?.members ?? 0),
+	moderators: Number(row?.moderators ?? 0),
 });
 
 // ---- Queries ---------------------------------------------------------------------------------
 
 /** How many members the realm has, and how many of them moderate (moderators and admins). */
 export async function sizeOf(db: Executor, realmId: string): Promise<RealmSize> {
-  const [row] = (await db.execute(sql`
+	const [row] = (await db.execute(sql`
     SELECT count(*)::int AS members,
            count(*) FILTER (WHERE role >= ${RealmRole.moderator})::int AS moderators
     FROM realm_member WHERE realm_id = ${realmId}
   `)) as unknown as SizeRow[];
-  return sizeFrom(row);
+	return sizeFrom(row);
 }
 
 /** The member's role in the realm; null when they aren't in it. */
 export async function roleOf(
-  db: Executor,
-  realmId: string,
-  userId: string,
+	db: Executor,
+	realmId: string,
+	userId: string,
 ): Promise<RealmRole | null> {
-  const [row] = await db
-    .select({ role: realmMembers.role })
-    .from(realmMembers)
-    .where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-    .limit(1);
-  return row ? narrow(RealmRole, row.role) : null;
+	const [row] = await db
+		.select({ role: realmMembers.role })
+		.from(realmMembers)
+		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
+		.limit(1);
+	return row ? narrow(RealmRole, row.role) : null;
 }
 
 // Upvotes for every member, as a lateral join; shared by standings and seat allocation.
@@ -84,16 +84,16 @@ const upvotesOf = sql`
 `;
 
 type StandingRow = {
-  user_id: string;
-  role: number;
-  joined_at: string | Date;
-  name: string | null;
-  upvotes: number;
+	user_id: string;
+	role: number;
+	joined_at: string | Date;
+	name: string | null;
+	upvotes: number;
 };
 
 /** Members ranked by upvotes, ties broken by seniority. */
 async function standingsOf(db: Executor, realmId: string, limit: number): Promise<SeatStanding[]> {
-  const rows = (await db.execute(sql`
+	const rows = (await db.execute(sql`
     SELECT m.user_id, m.role, m.joined_at, u.name, coalesce(e.votes, 0)::int AS upvotes
     FROM realm_member m
     JOIN "user" u ON u.id = m.user_id
@@ -102,22 +102,22 @@ async function standingsOf(db: Executor, realmId: string, limit: number): Promis
     ORDER BY upvotes DESC, m.joined_at ASC
     LIMIT ${limit}
   `)) as unknown as StandingRow[];
-  return rows.map((row) => ({
-    userId: row.user_id,
-    name: row.name ?? "",
-    role: Number(row.role),
-    upvotes: Number(row.upvotes),
-    seated: Number(row.role) === RealmRole.moderator,
-    joinedAt: rowInstant(row.joined_at),
-  }));
+	return rows.map((row) => ({
+		userId: row.user_id,
+		name: row.name ?? '',
+		role: Number(row.role),
+		upvotes: Number(row.upvotes),
+		seated: Number(row.role) === RealmRole.moderator,
+		joinedAt: rowInstant(row.joined_at),
+	}));
 }
 
 async function upvotesFor(db: Executor, realmId: string, candidateId: string): Promise<number> {
-  const [row] = (await db.execute(sql`
+	const [row] = (await db.execute(sql`
     SELECT count(*)::int AS votes FROM realm_endorsement
     WHERE realm_id = ${realmId} AND candidate_id = ${candidateId}
   `)) as unknown as { votes: number }[];
-  return Number(row?.votes ?? 0);
+	return Number(row?.votes ?? 0);
 }
 
 /**
@@ -125,12 +125,12 @@ async function upvotesFor(db: Executor, realmId: string, candidateId: string): P
  * holds one now. Admins are never candidates.
  */
 async function seatCandidates(
-  db: Executor,
-  realmId: string,
-  seatCount: number,
-  minimum: number,
+	db: Executor,
+	realmId: string,
+	seatCount: number,
+	minimum: number,
 ): Promise<SeatCandidates> {
-  const rows = (await db.execute(sql`
+	const rows = (await db.execute(sql`
     WITH ranked AS (
       SELECT m.user_id, m.role, m.joined_at, coalesce(e.votes, 0)::int AS upvotes
       FROM realm_member m
@@ -143,198 +143,198 @@ async function seatCandidates(
       (role = ${RealmRole.moderator}) AS holds
     FROM ranked
   `)) as unknown as { user_id: string; should_hold: boolean; holds: boolean }[];
-  return {
-    shouldHold: rows.filter((row) => row.should_hold).map((row) => row.user_id),
-    currentlyHold: rows.filter((row) => row.holds).map((row) => row.user_id),
-  };
+	return {
+		shouldHold: rows.filter((row) => row.should_hold).map((row) => row.user_id),
+		currentlyHold: rows.filter((row) => row.holds).map((row) => row.user_id),
+	};
 }
 
 const ofCandidate = (realmId: string, candidateId: string) =>
-  and(eq(realmEndorsements.realmId, realmId), eq(realmEndorsements.candidateId, candidateId));
+	and(eq(realmEndorsements.realmId, realmId), eq(realmEndorsements.candidateId, candidateId));
 
 // ---- Service ---------------------------------------------------------------------------------
 
 export function createSeatService(deps: GovernanceDeps) {
-  const { db, clock } = deps;
+	const { db, clock } = deps;
 
-  /** Sets the role of each listed member; every change publishes realm.member_changed. */
-  async function setRoles(
-    tx: Tx,
-    realmId: string,
-    userIds: readonly string[],
-    role: RealmRole,
-  ): Promise<string[]> {
-    if (userIds.length === 0) return [];
-    const changed = await tx
-      .update(realmMembers)
-      .set({ role })
-      .where(and(eq(realmMembers.realmId, realmId), inArray(realmMembers.userId, [...userIds])))
-      .returning({ userId: realmMembers.userId });
-    const ids = changed.map((row) => row.userId);
-    // Or OpenFGA drifts from Postgres.
-    await publish(
-      tx,
-      ids.map((userId) => realmEvents.memberChanged(realmId, userId, role)),
-      clock.now(),
-    );
-    return ids;
-  }
+	/** Sets the role of each listed member; every change publishes realm.member_changed. */
+	async function setRoles(
+		tx: Tx,
+		realmId: string,
+		userIds: readonly string[],
+		role: RealmRole,
+	): Promise<string[]> {
+		if (userIds.length === 0) return [];
+		const changed = await tx
+			.update(realmMembers)
+			.set({ role })
+			.where(and(eq(realmMembers.realmId, realmId), inArray(realmMembers.userId, [...userIds])))
+			.returning({ userId: realmMembers.userId });
+		const ids = changed.map((row) => row.userId);
+		// Or OpenFGA drifts from Postgres.
+		await publish(
+			tx,
+			ids.map((userId) => realmEvents.memberChanged(realmId, userId, role)),
+			clock.now(),
+		);
+		return ids;
+	}
 
-  /** Brings seats in line with upvotes: the top candidates hold them, nobody else does. */
-  async function reconcile(tx: Tx, realmId: string, size: RealmSize): Promise<SeatChanges> {
-    const { shouldHold, currentlyHold } = await seatCandidates(
-      tx,
-      realmId,
-      seats(size.members),
-      MIN_UPVOTES,
-    );
-    const seated = await setRoles(
-      tx,
-      realmId,
-      shouldHold.filter((id) => !currentlyHold.includes(id)),
-      RealmRole.moderator,
-    );
-    const unseated = await setRoles(
-      tx,
-      realmId,
-      currentlyHold.filter((id) => !shouldHold.includes(id)),
-      RealmRole.member,
-    );
+	/** Brings seats in line with upvotes: the top candidates hold them, nobody else does. */
+	async function reconcile(tx: Tx, realmId: string, size: RealmSize): Promise<SeatChanges> {
+		const { shouldHold, currentlyHold } = await seatCandidates(
+			tx,
+			realmId,
+			seats(size.members),
+			MIN_UPVOTES,
+		);
+		const seated = await setRoles(
+			tx,
+			realmId,
+			shouldHold.filter((id) => !currentlyHold.includes(id)),
+			RealmRole.moderator,
+		);
+		const unseated = await setRoles(
+			tx,
+			realmId,
+			currentlyHold.filter((id) => !shouldHold.includes(id)),
+			RealmRole.member,
+		);
 
-    // An election result has no actor: the realm made it.
-    const byElection = (role: RealmRole) => (userId: string) => ({
-      actorId: null,
-      entityType: "realm_member",
-      entityId: userId,
-      action: AuditAction.roleChanged,
-      changes: { realmId, role, by: "election" },
-    });
-    await audit(
-      tx,
-      ...seated.map(byElection(RealmRole.moderator)),
-      ...unseated.map(byElection(RealmRole.member)),
-    );
-    return { seated, unseated };
-  }
+		// An election result has no actor: the realm made it.
+		const byElection = (role: RealmRole) => (userId: string) => ({
+			actorId: null,
+			entityType: 'realm_member',
+			entityId: userId,
+			action: AuditAction.roleChanged,
+			changes: { realmId, role, by: 'election' },
+		});
+		await audit(
+			tx,
+			...seated.map(byElection(RealmRole.moderator)),
+			...unseated.map(byElection(RealmRole.member)),
+		);
+		return { seated, unseated };
+	}
 
-  /** Takes a moderator's seat and their upvotes, then refills seats from the standings. */
-  async function unseat(
-    tx: Tx,
-    realmId: string,
-    userId: string,
-    unseating: Unseating,
-  ): Promise<void> {
-    const size = await sizeOf(tx, realmId);
-    await tx.delete(realmEndorsements).where(ofCandidate(realmId, userId));
-    await setRoles(tx, realmId, [userId], RealmRole.member);
-    await audit(tx, {
-      actorId: unseating.actorId,
-      entityType: "realm_member",
-      entityId: userId,
-      action: AuditAction.roleChanged,
-      changes: { realmId, role: RealmRole.member, ...unseating.changes },
-    });
-    await reconcile(tx, realmId, size);
-  }
+	/** Takes a moderator's seat and their upvotes, then refills seats from the standings. */
+	async function unseat(
+		tx: Tx,
+		realmId: string,
+		userId: string,
+		unseating: Unseating,
+	): Promise<void> {
+		const size = await sizeOf(tx, realmId);
+		await tx.delete(realmEndorsements).where(ofCandidate(realmId, userId));
+		await setRoles(tx, realmId, [userId], RealmRole.member);
+		await audit(tx, {
+			actorId: unseating.actorId,
+			entityType: 'realm_member',
+			entityId: userId,
+			action: AuditAction.roleChanged,
+			changes: { realmId, role: RealmRole.member, ...unseating.changes },
+		});
+		await reconcile(tx, realmId, size);
+	}
 
-  /** Refuses anyone who holds no seat: non-members, plain members, and admins. */
-  async function requireSeatHolder(
-    realmId: string,
-    userId: string,
-    adminMessage: string,
-  ): Promise<Result<void>> {
-    const role = await roleOf(db, realmId, userId);
-    if (role === null || role < RealmRole.moderator) {
-      return err(
-        fail.validation(ErrorCode.realm.notMember, "They do not hold a seat in this realm."),
-      );
-    }
-    if (role === RealmRole.admin) {
-      return err(fail.validation(ErrorCode.common.validation, adminMessage));
-    }
-    return ok(undefined);
-  }
+	/** Refuses anyone who holds no seat: non-members, plain members, and admins. */
+	async function requireSeatHolder(
+		realmId: string,
+		userId: string,
+		adminMessage: string,
+	): Promise<Result<void>> {
+		const role = await roleOf(db, realmId, userId);
+		if (role === null || role < RealmRole.moderator) {
+			return err(
+				fail.validation(ErrorCode.realm.notMember, 'They do not hold a seat in this realm.'),
+			);
+		}
+		if (role === RealmRole.admin) {
+			return err(fail.validation(ErrorCode.common.validation, adminMessage));
+		}
+		return ok(undefined);
+	}
 
-  return {
-    unseat,
-    requireSeatHolder,
+	return {
+		unseat,
+		requireSeatHolder,
 
-    async standings(realmId: string, limit: number): Promise<Standings> {
-      const [size, members] = await Promise.all([
-        sizeOf(db, realmId),
-        standingsOf(db, realmId, limit),
-      ]);
-      return { seats: seats(size.members), minimum: MIN_UPVOTES, members };
-    },
+		async standings(realmId: string, limit: number): Promise<Standings> {
+			const [size, members] = await Promise.all([
+				sizeOf(db, realmId),
+				standingsOf(db, realmId, limit),
+			]);
+			return { seats: seats(size.members), minimum: MIN_UPVOTES, members };
+		},
 
-    async upvote(realmId: string, voterId: string, candidateId: string): Promise<Result<Upvoted>> {
-      if (voterId === candidateId) {
-        return err(
-          fail.validation(
-            ErrorCode.common.validation,
-            "You cannot upvote yourself. A seat is something the realm gives you.",
-          ),
-        );
-      }
-      const role = await roleOf(db, realmId, candidateId);
-      if (role === null) {
-        return err(
-          fail.validation(
-            ErrorCode.realm.notMember,
-            "They are not a member of this realm, so there is no seat to give them.",
-          ),
-        );
-      }
-      if (role === RealmRole.admin) {
-        return err(
-          fail.validation(
-            ErrorCode.common.validation,
-            "Admins already moderate this realm. A seat would give them nothing.",
-          ),
-        );
-      }
-      return inTransaction(db, async (tx) => {
-        const size = await sizeOf(tx, realmId);
-        await tx
-          .insert(realmEndorsements)
-          .values({ realmId, endorserId: voterId, candidateId })
-          .onConflictDoNothing();
-        const upvotes = await upvotesFor(tx, realmId, candidateId);
-        return ok({ upvotes, seats: seats(size.members), ...(await reconcile(tx, realmId, size)) });
-      });
-    },
+		async upvote(realmId: string, voterId: string, candidateId: string): Promise<Result<Upvoted>> {
+			if (voterId === candidateId) {
+				return err(
+					fail.validation(
+						ErrorCode.common.validation,
+						'You cannot upvote yourself. A seat is something the realm gives you.',
+					),
+				);
+			}
+			const role = await roleOf(db, realmId, candidateId);
+			if (role === null) {
+				return err(
+					fail.validation(
+						ErrorCode.realm.notMember,
+						'They are not a member of this realm, so there is no seat to give them.',
+					),
+				);
+			}
+			if (role === RealmRole.admin) {
+				return err(
+					fail.validation(
+						ErrorCode.common.validation,
+						'Admins already moderate this realm. A seat would give them nothing.',
+					),
+				);
+			}
+			return inTransaction(db, async (tx) => {
+				const size = await sizeOf(tx, realmId);
+				await tx
+					.insert(realmEndorsements)
+					.values({ realmId, endorserId: voterId, candidateId })
+					.onConflictDoNothing();
+				const upvotes = await upvotesFor(tx, realmId, candidateId);
+				return ok({ upvotes, seats: seats(size.members), ...(await reconcile(tx, realmId, size)) });
+			});
+		},
 
-    withdrawUpvote(
-      realmId: string,
-      voterId: string,
-      candidateId: string,
-    ): Promise<Result<UpvoteWithdrawn>> {
-      return inTransaction(db, async (tx) => {
-        const size = await sizeOf(tx, realmId);
-        await tx
-          .delete(realmEndorsements)
-          .where(and(ofCandidate(realmId, candidateId), eq(realmEndorsements.endorserId, voterId)));
-        const upvotes = await upvotesFor(tx, realmId, candidateId);
-        return ok({ upvotes, ...(await reconcile(tx, realmId, size)) });
-      });
-    },
+		withdrawUpvote(
+			realmId: string,
+			voterId: string,
+			candidateId: string,
+		): Promise<Result<UpvoteWithdrawn>> {
+			return inTransaction(db, async (tx) => {
+				const size = await sizeOf(tx, realmId);
+				await tx
+					.delete(realmEndorsements)
+					.where(and(ofCandidate(realmId, candidateId), eq(realmEndorsements.endorserId, voterId)));
+				const upvotes = await upvotesFor(tx, realmId, candidateId);
+				return ok({ upvotes, ...(await reconcile(tx, realmId, size)) });
+			});
+		},
 
-    async removeModerator(
-      realmId: string,
-      subjectId: string,
-      actorId: string,
-      reason: string,
-    ): Promise<Result<SeatRemoved>> {
-      const seat = await requireSeatHolder(
-        realmId,
-        subjectId,
-        "Change their rank instead. An admin holds no seat to take.",
-      );
-      if (!seat.ok) return seat;
-      return inTransaction(db, async (tx) => {
-        await unseat(tx, realmId, subjectId, { actorId, changes: { by: "admin", reason } });
-        return ok({ removed: true });
-      });
-    },
-  };
+		async removeModerator(
+			realmId: string,
+			subjectId: string,
+			actorId: string,
+			reason: string,
+		): Promise<Result<SeatRemoved>> {
+			const seat = await requireSeatHolder(
+				realmId,
+				subjectId,
+				'Change their rank instead. An admin holds no seat to take.',
+			);
+			if (!seat.ok) return seat;
+			return inTransaction(db, async (tx) => {
+				await unseat(tx, realmId, subjectId, { actorId, changes: { by: 'admin', reason } });
+				return ok({ removed: true });
+			});
+		},
+	};
 }

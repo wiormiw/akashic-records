@@ -45,18 +45,18 @@ export const RoomSubject = { job: 0, listing: 1 } as const;
 export type RoomSubject = ValueOf<typeof RoomSubject>;
 
 export const AuditAction = {
-  created: 0,
-  updated: 1,
-  deleted: 2,
-  roleChanged: 3,
-  moderated: 4,
+	created: 0,
+	updated: 1,
+	deleted: 2,
+	roleChanged: 3,
+	moderated: 4,
 } as const;
 export type AuditAction = ValueOf<typeof AuditAction>;
 
 /** Narrows a raw column value, failing loudly on anything the code doesn't know. */
 export function narrow<E extends Record<string, number>>(members: E, value: number): ValueOf<E> {
-  if (!Object.values(members).includes(value)) {
-    throw new RangeError(`${value} is not one of ${Object.values(members).join(", ")}`);
-  }
-  return value as ValueOf<E>;
+	if (!Object.values(members).includes(value)) {
+		throw new RangeError(`${value} is not one of ${Object.values(members).join(', ')}`);
+	}
+	return value as ValueOf<E>;
 }

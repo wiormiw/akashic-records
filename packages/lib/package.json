@@ -1,42 +1,42 @@
 {
-  "name": "@akashic/lib",
-  "private": true,
-  "type": "module",
-  "exports": {
-    "./result": "./src/result.ts",
-    "./errors": "./src/errors.ts",
-    "./enums": "./src/enums.ts",
-    "./time": "./src/time.ts",
-    "./abort": "./src/abort.ts",
-    "./problem": "./src/problem.ts",
-    "./json": "./src/json.ts",
-    "./log": "./src/log.ts",
-    "./config": "./src/config.ts",
-    "./lifecycle": "./src/lifecycle.ts",
-    "./concurrency": "./src/concurrency.ts",
-    "./retry": "./src/retry.ts",
-    "./circuit-breaker": "./src/circuit-breaker.ts",
-    "./tracing": "./src/tracing.ts",
-    "./telemetry": "./src/telemetry.ts",
-    "./metrics": "./src/metrics.ts",
-    "./testing": "./src/testing.ts"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p ."
-  },
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/context-async-hooks": "^2.10.0",
-    "@opentelemetry/core": "^2.10.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.221.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-metrics": "^2.10.0",
-    "@opentelemetry/sdk-node": "^0.221.0",
-    "@opentelemetry/sdk-trace-base": "^2.10.0",
-    "@opentelemetry/semantic-conventions": "^1.43.0",
-    "p-limit": "^7.3.1",
-    "pino": "^10.3.1",
-    "valibot": "1.5.0"
-  }
+	"name": "@akashic/lib",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./result": "./src/result.ts",
+		"./errors": "./src/errors.ts",
+		"./enums": "./src/enums.ts",
+		"./time": "./src/time.ts",
+		"./abort": "./src/abort.ts",
+		"./problem": "./src/problem.ts",
+		"./json": "./src/json.ts",
+		"./log": "./src/log.ts",
+		"./config": "./src/config.ts",
+		"./lifecycle": "./src/lifecycle.ts",
+		"./concurrency": "./src/concurrency.ts",
+		"./retry": "./src/retry.ts",
+		"./circuit-breaker": "./src/circuit-breaker.ts",
+		"./tracing": "./src/tracing.ts",
+		"./telemetry": "./src/telemetry.ts",
+		"./metrics": "./src/metrics.ts",
+		"./testing": "./src/testing.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p ."
+	},
+	"dependencies": {
+		"@opentelemetry/api": "^1.9.1",
+		"@opentelemetry/context-async-hooks": "^2.10.0",
+		"@opentelemetry/core": "^2.10.0",
+		"@opentelemetry/exporter-metrics-otlp-http": "^0.221.0",
+		"@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+		"@opentelemetry/resources": "^2.10.0",
+		"@opentelemetry/sdk-metrics": "^2.10.0",
+		"@opentelemetry/sdk-node": "^0.221.0",
+		"@opentelemetry/sdk-trace-base": "^2.10.0",
+		"@opentelemetry/semantic-conventions": "^1.43.0",
+		"p-limit": "^7.3.1",
+		"pino": "^10.3.1",
+		"valibot": "1.5.0"
+	}
 }

@@ -1,18 +1,18 @@
-import type { Env as HonoEnv } from "hono";
+import type { Env as HonoEnv } from 'hono';
 
 export interface Caller {
-  readonly id: string;
-  readonly email: string;
+	readonly id: string;
+	readonly email: string;
 }
 
 /** What every request carries, set by middleware before any route runs. */
 export interface AppEnv extends HonoEnv {
-  Variables: {
-    requestId: string;
-    /** Aborts on client disconnect, the request deadline, or shutdown. */
-    signal: AbortSignal;
-    user: Caller | null;
-  };
+	Variables: {
+		requestId: string;
+		/** Aborts on client disconnect, the request deadline, or shutdown. */
+		signal: AbortSignal;
+		user: Caller | null;
+	};
 }
 
 /**
@@ -20,6 +20,6 @@ export interface AppEnv extends HonoEnv {
  * caller here means the route was mounted outside the session: a bug, so it throws.
  */
 export function callerOf(c: { var: { user: Caller | null } }): Caller {
-  if (!c.var.user) throw new Error("a signed-in route ran without a caller");
-  return c.var.user;
+	if (!c.var.user) throw new Error('a signed-in route ran without a caller');
+	return c.var.user;
 }

@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "paths": { "@/*": ["./src/*"] } },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": { "paths": { "@/*": ["./src/*"] } },
+	"include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }

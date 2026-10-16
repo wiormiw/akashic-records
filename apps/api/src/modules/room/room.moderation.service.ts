@@ -1,24 +1,24 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from 'drizzle-orm';
 import {
-  type Executor,
-  inTransaction,
-  roomBlocks,
-  roomMessages,
-  roomReports,
-  rooms,
-} from "@akashic/db";
-import { ErrorCode, fail } from "@akashic/lib/errors";
-import { err, ok, type Result } from "@akashic/lib/result";
-import { participant } from "./room.service.ts";
+	type Executor,
+	inTransaction,
+	roomBlocks,
+	roomMessages,
+	roomReports,
+	rooms,
+} from '@akashic/db';
+import { ErrorCode, fail } from '@akashic/lib/errors';
+import { err, ok, type Result } from '@akashic/lib/result';
+import { participant } from './room.service.ts';
 import type {
-  Agreement,
-  Blocked,
-  MessageReport,
-  Opened,
-  Retention,
-  RetentionState,
-  RoomAreaDeps,
-} from "./room.types.ts";
+	Agreement,
+	Blocked,
+	MessageReport,
+	Opened,
+	Retention,
+	RetentionState,
+	RoomAreaDeps,
+} from './room.types.ts';
 
 // ---- Rules -----------------------------------------------------------------------------------
 
@@ -27,125 +27,125 @@ import type {
  * agreed; a different number starts over. It takes force once both participants have agreed.
  */
 export function agreeOn(room: RetentionState, days: number | null, userId: string): Agreement {
-  const agreed = new Set([...(room.days === days ? (room.agreedBy ?? []) : []), userId]);
-  return { agreedBy: [...agreed], inForce: agreed.has(room.low) && agreed.has(room.high) };
+	const agreed = new Set([...(room.days === days ? (room.agreedBy ?? []) : []), userId]);
+	return { agreedBy: [...agreed], inForce: agreed.has(room.low) && agreed.has(room.high) };
 }
 
 // ---- Queries ---------------------------------------------------------------------------------
 
 /** The sender of a message in the room, for a report. */
 async function senderOf(
-  db: Executor,
-  roomId: string,
-  messageId: string,
+	db: Executor,
+	roomId: string,
+	messageId: string,
 ): Promise<string | undefined> {
-  const [row] = await db
-    .select({ senderId: roomMessages.senderId })
-    .from(roomMessages)
-    .where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId)))
-    .limit(1);
-  return row?.senderId;
+	const [row] = await db
+		.select({ senderId: roomMessages.senderId })
+		.from(roomMessages)
+		.where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId)))
+		.limit(1);
+	return row?.senderId;
 }
 
 /** Records the user's agreement to `days`; true once both participants agree. */
 function agreeRetention(
-  db: Executor,
-  roomId: string,
-  userId: string,
-  days: number | null,
+	db: Executor,
+	roomId: string,
+	userId: string,
+	days: number | null,
 ): Promise<Result<boolean>> {
-  return inTransaction(db, async (tx) => {
-    // Locked, so two people agreeing at once don't each overwrite the other's agreement.
-    const [room] = await tx
-      .select({
-        days: rooms.retentionDays,
-        agreedBy: rooms.retentionAgreedBy,
-        low: rooms.lowUserId,
-        high: rooms.highUserId,
-      })
-      .from(rooms)
-      .where(eq(rooms.id, roomId))
-      .for("update")
-      .limit(1);
-    if (!room) return ok(false);
+	return inTransaction(db, async (tx) => {
+		// Locked, so two people agreeing at once don't each overwrite the other's agreement.
+		const [room] = await tx
+			.select({
+				days: rooms.retentionDays,
+				agreedBy: rooms.retentionAgreedBy,
+				low: rooms.lowUserId,
+				high: rooms.highUserId,
+			})
+			.from(rooms)
+			.where(eq(rooms.id, roomId))
+			.for('update')
+			.limit(1);
+		if (!room) return ok(false);
 
-    const { agreedBy, inForce } = agreeOn(room, days, userId);
-    await tx
-      .update(rooms)
-      .set({ retentionDays: days, retentionAgreedBy: agreedBy })
-      .where(eq(rooms.id, roomId));
-    return ok(inForce);
-  });
+		const { agreedBy, inForce } = agreeOn(room, days, userId);
+		await tx
+			.update(rooms)
+			.set({ retentionDays: days, retentionAgreedBy: agreedBy })
+			.where(eq(rooms.id, roomId));
+		return ok(inForce);
+	});
 }
 
 // ---- Service ---------------------------------------------------------------------------------
 
 /** Closing a room, reporting a message, and how long messages are kept. */
 export function createModerationService(deps: RoomAreaDeps) {
-  const { db } = deps;
+	const { db } = deps;
 
-  return {
-    async block(roomId: string, userId: string): Promise<Result<Blocked>> {
-      const room = await participant(db, roomId, userId);
-      if (!room.ok) return room;
-      await db.insert(roomBlocks).values({ roomId, blockerId: userId }).onConflictDoNothing();
-      return ok({ blocked: true });
-    },
+	return {
+		async block(roomId: string, userId: string): Promise<Result<Blocked>> {
+			const room = await participant(db, roomId, userId);
+			if (!room.ok) return room;
+			await db.insert(roomBlocks).values({ roomId, blockerId: userId }).onConflictDoNothing();
+			return ok({ blocked: true });
+		},
 
-    /** Lifts only the caller's own block; the other person's stays. */
-    async unblock(roomId: string, userId: string): Promise<Result<Blocked>> {
-      const room = await participant(db, roomId, userId);
-      if (!room.ok) return room;
-      await db
-        .delete(roomBlocks)
-        .where(and(eq(roomBlocks.roomId, roomId), eq(roomBlocks.blockerId, userId)));
-      return ok({ blocked: false });
-    },
+		/** Lifts only the caller's own block; the other person's stays. */
+		async unblock(roomId: string, userId: string): Promise<Result<Blocked>> {
+			const room = await participant(db, roomId, userId);
+			if (!room.ok) return room;
+			await db
+				.delete(roomBlocks)
+				.where(and(eq(roomBlocks.roomId, roomId), eq(roomBlocks.blockerId, userId)));
+			return ok({ blocked: false });
+		},
 
-    async report(
-      roomId: string,
-      reporterId: string,
-      report: MessageReport,
-    ): Promise<Result<Opened>> {
-      const room = await participant(db, roomId, reporterId);
-      if (!room.ok) return room;
-      const accusedId = await senderOf(db, roomId, report.messageId);
-      if (!accusedId) {
-        return err(fail.notFound(ErrorCode.event.notFound, "No such message in this room."));
-      }
-      if (accusedId === reporterId) {
-        return err(fail.validation(ErrorCode.common.validation, "That message was sent by you."));
-      }
+		async report(
+			roomId: string,
+			reporterId: string,
+			report: MessageReport,
+		): Promise<Result<Opened>> {
+			const room = await participant(db, roomId, reporterId);
+			if (!room.ok) return room;
+			const accusedId = await senderOf(db, roomId, report.messageId);
+			if (!accusedId) {
+				return err(fail.notFound(ErrorCode.event.notFound, 'No such message in this room.'));
+			}
+			if (accusedId === reporterId) {
+				return err(fail.validation(ErrorCode.common.validation, 'That message was sent by you.'));
+			}
 
-      const [created] = await db
-        .insert(roomReports)
-        .values({
-          roomId,
-          messageId: report.messageId,
-          reporterId,
-          accusedId,
-          reason: report.reason,
-          disclosedText: report.disclosedText,
-        })
-        .returning({ id: roomReports.id });
-      if (!created) throw new Error("report insert returned no row");
-      return ok({ id: created.id });
-    },
+			const [created] = await db
+				.insert(roomReports)
+				.values({
+					roomId,
+					messageId: report.messageId,
+					reporterId,
+					accusedId,
+					reason: report.reason,
+					disclosedText: report.disclosedText,
+				})
+				.returning({ id: roomReports.id });
+			if (!created) throw new Error('report insert returned no row');
+			return ok({ id: created.id });
+		},
 
-    async setRetention(
-      roomId: string,
-      userId: string,
-      days: number | null,
-    ): Promise<Result<Retention>> {
-      const room = await participant(db, roomId, userId);
-      if (!room.ok) return room;
-      const agreed = await agreeRetention(db, roomId, userId, days);
-      return agreed.ok ? ok({ days, inForce: agreed.value }) : agreed;
-    },
+		async setRetention(
+			roomId: string,
+			userId: string,
+			days: number | null,
+		): Promise<Result<Retention>> {
+			const room = await participant(db, roomId, userId);
+			if (!room.ok) return room;
+			const agreed = await agreeRetention(db, roomId, userId, days);
+			return agreed.ok ? ok({ days, inForce: agreed.value }) : agreed;
+		},
 
-    /** Deletes messages past a retention both participants agreed to; answers how many. */
-    async sweepExpired(): Promise<number> {
-      const removed = (await db.execute(sql`
+		/** Deletes messages past a retention both participants agreed to; answers how many. */
+		async sweepExpired(): Promise<number> {
+			const removed = (await db.execute(sql`
         DELETE FROM room_message m
         USING room r
         WHERE m.room_id = r.id
@@ -155,7 +155,7 @@ export function createModerationService(deps: RoomAreaDeps) {
           AND m.created_at < now() - make_interval(days => r.retention_days)
         RETURNING m.id
       `)) as unknown as unknown[];
-      return removed.length;
-    },
-  };
+			return removed.length;
+		},
+	};
 }

@@ -1,24 +1,24 @@
 {
-  "name": "@akashic/db",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": "./src/index.ts",
-    "./rows": "./src/rows.ts",
-    "./sql": "./src/sql.ts",
-    "./testing": "./src/testing.ts"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p .",
-    "generate": "drizzle-kit generate"
-  },
-  "dependencies": {
-    "@akashic/lib": "workspace:*",
-    "@opentelemetry/api": "^1.9.1",
-    "drizzle-orm": "1.0.0-rc.4",
-    "valibot": "1.5.0"
-  },
-  "devDependencies": {
-    "drizzle-kit": "1.0.0-rc.4"
-  }
+	"name": "@akashic/db",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./rows": "./src/rows.ts",
+		"./sql": "./src/sql.ts",
+		"./testing": "./src/testing.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit -p .",
+		"generate": "drizzle-kit generate"
+	},
+	"dependencies": {
+		"@akashic/lib": "workspace:*",
+		"@opentelemetry/api": "^1.9.1",
+		"drizzle-orm": "1.0.0-rc.4",
+		"valibot": "1.5.0"
+	},
+	"devDependencies": {
+		"drizzle-kit": "1.0.0-rc.4"
+	}
 }

@@ -1,4 +1,4 @@
-import type { AppError } from "./errors.ts";
+import type { AppError } from './errors.ts';
 
 /**
  * What a service returns when it can fail in a way the caller should handle: a value, or the
@@ -13,4 +13,4 @@ export const err = <E>(error: E): Err<E> => ({ ok: false, error });
 
 /** Transforms a success, passing a failure through untouched: for presenting it at an edge. */
 export const mapOk = <T, U, E>(result: Result<T, E>, transform: (value: T) => U): Result<U, E> =>
-  result.ok ? ok(transform(result.value)) : result;
+	result.ok ? ok(transform(result.value)) : result;
