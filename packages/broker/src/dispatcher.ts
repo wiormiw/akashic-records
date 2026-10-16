@@ -1,4 +1,5 @@
 import { OutboxStatus, type OutboxEvent } from '@akashic/db';
+import { untilAborted } from '@akashic/lib/abort';
 import { mapLimitedSettled } from '@akashic/lib/concurrency';
 import { owned, type Lifecycle } from '@akashic/lib/lifecycle';
 import type { Logger } from '@akashic/lib/log';
@@ -232,7 +233,9 @@ export async function runDispatcher(options: {
 
 	while (options.prepare && !signal.aborted) {
 		try {
-			await options.prepare();
+			// Raced against the signal: rabbitmq-client can wait 20 s for a channel when the broker is
+			// unreachable, longer than shutdown allows. A prepare left behind finishes or fails unseen.
+			await untilAborted(options.prepare(), signal);
 			break;
 		} catch (error) {
 			if (signal.aborted) break;

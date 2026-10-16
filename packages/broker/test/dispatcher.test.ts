@@ -182,3 +182,40 @@ describe('outbox shutdown', () => {
 		expect(performance.now() - started).toBeLessThan(1000);
 	});
 });
+
+describe('outbox shutdown while preparing', () => {
+	test('a prepare that never settles does not hold disposal open', async () => {
+		const lifecycle = createLifecycle(silentLogger());
+		let prepared = false;
+		const outbox = createOutbox({
+			store: {
+				async claim() {
+					return [];
+				},
+				async finish() {
+					return true;
+				},
+				async prune() {
+					return 0;
+				},
+			},
+			transport: async () => {},
+			clock: systemClock,
+			lifecycle,
+			logger: silentLogger(),
+			batchSize: 10,
+			pollMs: 5000,
+			concurrency: 1,
+			sendTimeoutMs: 1000,
+			retentionDays: 7,
+		});
+		// As rabbitmq-client's channel acquisition is, with the broker unreachable.
+		outbox.start({ prepare: () => ((prepared = true), new Promise<void>(() => {})) });
+		await Bun.sleep(10);
+		expect(prepared).toBe(true);
+
+		const started = performance.now();
+		await outbox[Symbol.asyncDispose]();
+		expect(performance.now() - started).toBeLessThan(100);
+	});
+});
