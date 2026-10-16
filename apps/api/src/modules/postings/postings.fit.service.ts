@@ -153,31 +153,37 @@ async function decideReview(
 }
 
 // What rejecting a posting does to it, and the audit entity it is; kinds without an entry have
-// nothing to take down.
+// nothing to take down. `apply` answers how many rows it changed.
 const takeDown: Partial<
 	Record<
 		number,
 		{
 			entityType: string;
-			apply: (tx: Tx, realmId: string, id: string, now: Date) => Promise<unknown>;
+			apply: (tx: Tx, realmId: string, id: string, now: Date) => Promise<number>;
 		}
 	>
 > = {
 	[CommentSubject.job]: {
 		entityType: 'job',
-		apply: (tx, realmId, id, now) =>
-			tx
-				.update(jobs)
-				.set({ status: JobStatus.closed, updatedAt: now })
-				.where(and(eq(jobs.id, id), eq(jobs.realmId, realmId))),
+		apply: async (tx, realmId, id, now) =>
+			(
+				await tx
+					.update(jobs)
+					.set({ status: JobStatus.closed, updatedAt: now })
+					.where(and(eq(jobs.id, id), eq(jobs.realmId, realmId)))
+					.returning({ id: jobs.id })
+			).length,
 	},
 	[CommentSubject.listing]: {
 		entityType: 'listing',
-		apply: (tx, realmId, id, now) =>
-			tx
-				.update(listings)
-				.set({ status: ListingStatus.removed, updatedAt: now })
-				.where(and(eq(listings.id, id), eq(listings.realmId, realmId))),
+		apply: async (tx, realmId, id, now) =>
+			(
+				await tx
+					.update(listings)
+					.set({ status: ListingStatus.removed, updatedAt: now })
+					.where(and(eq(listings.id, id), eq(listings.realmId, realmId)))
+					.returning({ id: listings.id })
+			).length,
 	},
 };
 
@@ -288,9 +294,9 @@ export function createFitService(deps: PostingsDeps) {
 				}
 				const removal = kept ? undefined : takeDown[decided.subjectKind];
 				if (kept) await learn(tx, realmId, decided.embedding);
-				else if (removal) {
-					await removal.apply(tx, realmId, decided.subjectId, now);
+				else if (removal && (await removal.apply(tx, realmId, decided.subjectId, now)) > 0) {
 					// A moderator took someone's posting down: on the record, like any other takedown.
+					// A posting already gone (deleted since it was queued) had nothing taken down.
 					await audit(tx, {
 						actorId: moderatorId,
 						entityType: removal.entityType,

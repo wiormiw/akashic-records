@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
-import { AuditAction, JobStatus, JobType, ListingStatus } from '@akashic/lib/enums';
+import { AuditAction, CommentSubject, JobStatus, JobType, ListingStatus } from '@akashic/lib/enums';
 import { type Logger, silentLogger } from '@akashic/lib/log';
 import { captureLogger, expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -273,6 +273,17 @@ describe.skipIf(!live)('fit review', () => {
 				await w.fit.decide(realm.id, await w.queued(realm.id, event, null), realm.admin, false),
 			);
 			expect(await w.audits(event.id)).toEqual([]);
+		}));
+
+	test('a rejection that takes nothing down puts nothing on the record', () =>
+		inWorld(async (w) => {
+			const realm = await w.realm();
+			// The job is gone since it was queued, so the takedown changes no row.
+			const ghost = { kind: CommentSubject.job, id: Bun.randomUUIDv7() };
+			expectOk(
+				await w.fit.decide(realm.id, await w.queued(realm.id, ghost, null), realm.admin, false),
+			);
+			expect(await w.audits(ghost.id)).toEqual([]);
 		}));
 
 	test('an entry already decided, never there, or of another realm is a 404', () =>
