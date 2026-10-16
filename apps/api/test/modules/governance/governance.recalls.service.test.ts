@@ -189,6 +189,24 @@ describe.skipIf(!live)('voting on a recall', () => {
 			]);
 		}));
 
+	test('the deciding vote is refused once the subject is an admin, and no admin is demoted', () =>
+		inWorld(async (w) => {
+			const { id, recall, moderator, voters } = await openRecall(w);
+			expectOk(await w.recalls.voteOnRecall(id, recall.id, voters[0]!, true));
+			// Promoted after the recall was proposed, so only the check under the lock sees it.
+			await w.setRole(id, moderator, RealmRole.admin);
+
+			expectErr(
+				await w.recalls.voteOnRecall(id, recall.id, voters[1]!, true),
+				ErrorCode.common.validation,
+			);
+			expect(await w.roleOf(id, moderator)).toBe(RealmRole.admin);
+			// The vote rolled back with it: the recall is still open, not carried against an admin.
+			expect((await w.recallRow(recall.id))?.status).toBe(RecallStatus.open);
+			expect(await w.memberChanges(id)).toEqual([]);
+			expect(await w.audits(moderator)).toEqual([]);
+		}));
+
 	test('carrying it refills the seat, and every role change is announced in the same vote', () =>
 		inWorld(async (w) => {
 			const { id, recall, moderator, voters } = await openRecall(w);

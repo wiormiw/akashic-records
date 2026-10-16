@@ -13,7 +13,8 @@ import {
 	seats,
 	sizeFrom,
 } from '@/modules/governance/governance.seats.service.ts';
-import { databaseUrl } from '../../support/fixtures.ts';
+import { createGovernanceServices } from '@/modules/governance/governance.module.ts';
+import { clock, databaseUrl } from '../../support/fixtures.ts';
 import { world, type World } from './fixtures.ts';
 
 describe('seats', () => {
@@ -221,5 +222,36 @@ describe.skipIf(!live)('removing a moderator', () => {
 				ErrorCode.realm.notMember,
 			);
 			expect(await w.memberChanges(id)).toEqual([]);
+		}));
+
+	test('someone promoted to admin after the check is refused under the lock, and stays admin', () =>
+		inWorld(async (w, tx) => {
+			const { id, admin, people } = await w.realm(4);
+			const [moderator, ...voters] = people as [string, ...string[]];
+			await w.upvotes(id, moderator, voters);
+			await w.setRole(id, moderator, RealmRole.moderator);
+			// The promotion commits between removeModerator's check and its transaction.
+			const promoting = new Proxy(tx, {
+				get(target, key) {
+					if (key === 'transaction') {
+						return async (...args: Parameters<Tx['transaction']>) => {
+							await w.setRole(id, moderator, RealmRole.admin);
+							return target.transaction(...args);
+						};
+					}
+					const value: unknown = Reflect.get(target, key, target);
+					return typeof value === 'function' ? value.bind(target) : value;
+				},
+			});
+			const { seats } = createGovernanceServices({ db: promoting, clock });
+
+			expectErr(
+				await seats.removeModerator(id, moderator, admin, 'Gone quiet.'),
+				ErrorCode.common.validation,
+			);
+			expect(await w.roleOf(id, moderator)).toBe(RealmRole.admin);
+			expect(await w.endorsementsOf(id, moderator)).toHaveLength(voters.length);
+			expect(await w.memberChanges(id)).toEqual([]);
+			expect(await w.audits(moderator)).toEqual([]);
 		}));
 });

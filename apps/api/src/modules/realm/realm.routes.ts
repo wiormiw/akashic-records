@@ -63,10 +63,9 @@ export function createRealmRoutes(deps: RealmRoutesDeps): ModuleRoutes {
 		.post('/join', realmContext, async (c) =>
 			respond(c, await realms.join(c.var.realm.realmId, callerOf(c).id), JoinedView, 201),
 		)
-		.post('/leave', realmContext, async (c) => {
-			const { realmId, realmRole } = c.var.realm;
-			return respond(c, await realms.leave(realmId, callerOf(c).id, realmRole), LeftView);
-		})
+		.post('/leave', realmContext, async (c) =>
+			respond(c, await realms.leave(c.var.realm.realmId, callerOf(c).id), LeftView),
+		)
 		.patch(
 			'/',
 			validate('param', RealmSlugParam),

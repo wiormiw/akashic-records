@@ -24,6 +24,7 @@ import type {
 	SizeRow,
 	Standings,
 	Unseating,
+	UnseatError,
 	Upvoted,
 	UpvoteError,
 	UpvoteWithdrawn,
@@ -238,17 +239,25 @@ export function createSeatService(deps: GovernanceDeps) {
 		return { seated, unseated };
 	}
 
-	/** Takes a moderator's seat and their upvotes, then refills seats from the standings. */
+	/**
+	 * Takes a moderator's seat and their upvotes, then refills seats from the standings. Refuses
+	 * when the subject has become an admin since the caller checked: an admin holds no seat.
+	 */
 	async function unseat(
 		tx: Tx,
 		realmId: string,
 		userId: string,
 		unseating: Unseating,
-	): Promise<void> {
+	): Promise<Result<void, UnseatError>> {
 		const size = await sizeOf(tx, realmId);
 		// Unseating then refilling touches rows in no set order, so everyone a seat change can
 		// touch is locked first, in user_id order. Rare (a carried recall, an admin's removal).
 		await lockMembers(tx, realmId);
+		// Read again under the lock. A promotion committed since the caller's check took the row out
+		// of the locked set; demoting it now would lock an admin row out of order, and demote them.
+		if ((await roleOf(tx, realmId, userId)) === RealmRole.admin) {
+			return err(new ValidationFailed('They are an admin now. An admin holds no seat to take.'));
+		}
 		await tx.delete(realmEndorsements).where(ofCandidate(realmId, userId));
 		await setRoles(tx, realmId, [userId], RealmRole.member);
 		await audit(tx, {
@@ -259,6 +268,7 @@ export function createSeatService(deps: GovernanceDeps) {
 			changes: { realmId, role: RealmRole.member, ...unseating.changes },
 		});
 		await reconcile(tx, realmId, size);
+		return ok(undefined);
 	}
 
 	/** Refuses anyone who holds no seat: non-members, plain members, and admins. */
@@ -355,7 +365,11 @@ export function createSeatService(deps: GovernanceDeps) {
 			);
 			if (!seat.ok) return seat;
 			return inTransaction(db, async (tx) => {
-				await unseat(tx, realmId, subjectId, { actorId, changes: { by: 'admin', reason } });
+				const unseated = await unseat(tx, realmId, subjectId, {
+					actorId,
+					changes: { by: 'admin', reason },
+				});
+				if (!unseated.ok) return unseated;
 				return ok({ removed: true });
 			});
 		},

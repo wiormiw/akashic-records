@@ -87,7 +87,7 @@ describe.skipIf(!live)('realms', () => {
 			const [member] = people as [string];
 			expect(await w.realms.memberRole(id, admin)).toBe(RealmRole.admin);
 			expect(await w.realms.memberRole(id, member)).toBe(RealmRole.member);
-			expectOk(await w.realms.leave(id, member, RealmRole.member));
+			expectOk(await w.realms.leave(id, member));
 			expect(await w.realms.memberRole(id, member)).toBeNull();
 		}));
 
@@ -155,25 +155,25 @@ describe.skipIf(!live)('realms', () => {
 		inWorld(async (w) => {
 			const { id, people } = await w.realm([], 1);
 			const [member] = people as [string];
-			expect(expectOk(await w.realms.leave(id, member, RealmRole.member))).toEqual({ left: true });
+			expect(expectOk(await w.realms.leave(id, member))).toEqual({ left: true });
 			expect(await w.roleOf(id, member)).toBeNull();
 			expect((await w.outbox('realm.member_changed', id)).map((row) => row.payload)).toContainEqual(
 				{ realmId: id, userId: member, role: null },
 			);
-			expectErr(await w.realms.leave(id, member, null), ErrorCode.realm.notMember);
+			expectErr(await w.realms.leave(id, member), ErrorCode.realm.notMember);
 		}));
 
 	test('a refused leave narrows to the one error, leaving the rest', () =>
 		inWorld(async (w) => {
 			const { id, admin } = await w.realm();
-			const sole = await w.realms.leave(id, admin, RealmRole.admin);
+			const sole = await w.realms.leave(id, admin);
 			if (!isError(sole, SoleAdmin)) throw new Error('expected SoleAdmin');
 			expect(expectType<SoleAdmin>(sole.error)).toBeInstanceOf(SoleAdmin);
 			// @ts-expect-error the branch holds only SoleAdmin
 			expectType<MemberNotFound>(sole.error);
 
 			const stranger = await w.person();
-			const gone = await w.realms.leave(id, stranger, null);
+			const gone = await w.realms.leave(id, stranger);
 			if (isError(gone, SoleAdmin)) throw new Error('expected MemberNotFound');
 			if (gone.ok) throw new Error('expected an error');
 			// SoleAdmin is ruled out, so MemberNotFound is all that remains.
@@ -185,12 +185,29 @@ describe.skipIf(!live)('realms', () => {
 	test("the only admin can't leave; one of two can", () =>
 		inWorld(async (w) => {
 			const { id, admin, people } = await w.realm([], 1);
-			expectErr(await w.realms.leave(id, admin, RealmRole.admin), ErrorCode.realm.soleAdmin);
+			expectErr(await w.realms.leave(id, admin), ErrorCode.realm.soleAdmin);
 			const [other] = people as [string];
 			expectOk(
 				await w.realms.changeRole(id, { id: admin, platform: false }, other, RealmRole.admin),
 			);
-			expectOk(await w.realms.leave(id, admin, RealmRole.admin));
+			expectOk(await w.realms.leave(id, admin));
+		}));
+
+	test('an admin demoted before leaving leaves as what they are now, not as the sole admin', () =>
+		inWorld(async (w) => {
+			// The request read the leaver as an admin; a demotion committed before the leave ran.
+			const { id, admin, people } = await w.realm([], 1);
+			const [other] = people as [string];
+			expectOk(
+				await w.realms.changeRole(id, { id: admin, platform: false }, other, RealmRole.admin),
+			);
+			expectOk(
+				await w.realms.changeRole(id, { id: other, platform: false }, admin, RealmRole.member),
+			);
+			// The other admin is the only one left, which the old leave counted against the leaver.
+			expect(expectOk(await w.realms.leave(id, admin))).toEqual({ left: true });
+			expect(await w.roleOf(id, admin)).toBeNull();
+			expect(await w.roleOf(id, other)).toBe(RealmRole.admin);
 		}));
 
 	test('the roster lists staff first, with their names', () =>

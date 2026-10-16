@@ -187,7 +187,7 @@ export function createRecallService(deps: RecallDeps) {
 					const subjectId = recall.subject?.id;
 					// A concurrent vote that resolved it first has done the unseating already.
 					if ((await resolve(tx, recallId, RecallStatus.carried, now)) && subjectId) {
-						await seats.unseat(tx, realmId, subjectId, {
+						const unseated = await seats.unseat(tx, realmId, subjectId, {
 							actorId: voterId,
 							changes: {
 								by: `recall.${recall.kind === RecallKind.members ? 'members' : 'moderators'}`,
@@ -195,6 +195,8 @@ export function createRecallService(deps: RecallDeps) {
 								agrees,
 							},
 						});
+						// Rolls the vote back too: the recall stays open rather than carried against an admin.
+						if (!unseated.ok) return unseated;
 					}
 					return ok({ status: RecallStatus.carried, agrees, refusals, needed });
 				}

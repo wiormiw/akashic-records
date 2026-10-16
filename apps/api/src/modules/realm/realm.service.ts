@@ -178,35 +178,32 @@ export function createRealmService(deps: RealmDeps) {
 			});
 		},
 
-		leave(
-			realmId: string,
-			userId: string,
-			role: RealmRole | null,
-		): Promise<Result<Left, LeaveError>> {
+		leave(realmId: string, userId: string): Promise<Result<Left, LeaveError>> {
 			return inTransaction(db, async (tx) => {
-				if (role === RealmRole.admin) {
-					// Locked, so two admins leaving at once can't both see the other still there. One
-					// global lock order on realm_member, by user_id, so this can't deadlock with a
-					// role change.
-					const admins = await tx
-						.select({ userId: realmMembers.userId })
-						.from(realmMembers)
-						.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.role, RealmRole.admin)))
-						.orderBy(asc(realmMembers.userId))
-						.for('update');
-					if (admins.length === 1) {
-						return err(
-							new SoleAdmin('You are the only admin. Promote someone else before leaving.'),
-						);
-					}
-				}
-				const removed = await tx
-					.delete(realmMembers)
-					.where(ofMember(realmId, userId))
-					.returning({ userId: realmMembers.userId });
-				if (removed.length === 0) {
+				// One statement locks the leaver and every admin, in user_id order: the global lock
+				// order on realm_member, so this can't deadlock with a role change. The leaver's role is
+				// read under the lock, not trusted from the request: one demoted meanwhile leaves as
+				// what they are now, and two admins leaving at once can't both see the other still there.
+				const locked = await tx
+					.select({ userId: realmMembers.userId, role: realmMembers.role })
+					.from(realmMembers)
+					.where(
+						and(
+							eq(realmMembers.realmId, realmId),
+							or(eq(realmMembers.userId, userId), eq(realmMembers.role, RealmRole.admin)),
+						),
+					)
+					.orderBy(asc(realmMembers.userId))
+					.for('update');
+				const self = locked.find((row) => row.userId === userId);
+				if (!self) {
 					return err(new MemberNotFound('You are not in this realm.'));
 				}
+				const admins = locked.filter((row) => row.role === RealmRole.admin).length;
+				if (self.role === RealmRole.admin && admins === 1) {
+					return err(new SoleAdmin('You are the only admin. Promote someone else before leaving.'));
+				}
+				await tx.delete(realmMembers).where(ofMember(realmId, userId));
 				await publish(tx, [realmEvents.memberChanged(realmId, userId, null)], clock.now());
 				return ok({ left: true as const });
 			});
