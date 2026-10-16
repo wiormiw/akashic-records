@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { AppError, ErrorCode, fail } from '@akashic/lib/errors';
+import { DeliveryFailed } from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import { traced } from '@akashic/lib/tracing';
 
@@ -115,7 +115,7 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
 			}
 			note(null);
 		} catch (error) {
-			if (error instanceof AppError) throw error;
+			if (error instanceof DeliveryFailed) throw error;
 			note(error instanceof Error ? error.message : String(error));
 			log.error({ recipient: recipientHash(to), subject, err: error }, 'mail delivery failed');
 			throw failed(error);
@@ -125,6 +125,4 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
 
 // The message is for clients and trace spans, so it says nothing of the recipient or the provider's reply.
 const failed = (cause: unknown) =>
-	fail.external(ErrorCode.external.resendDeliveryFailed, 'The email could not be delivered.', {
-		cause,
-	});
+	new DeliveryFailed('The email could not be delivered.', { cause });
