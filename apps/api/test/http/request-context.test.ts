@@ -189,19 +189,21 @@ describe('shutdown', () => {
 		return { res: await pending, lines };
 	};
 
-	test.each(['/wait', '/abort'])(
-		'a handler stopped by shutdown (%s) is a 503 with Retry-After',
-		async (path) => {
-			const { res, lines } = await cutOff(path);
-			expect(res.status).toBe(503);
-			expect(res.headers.get('retry-after')).toBe('5');
-			expect(res.headers.get(REQUEST_ID_HEADER)).toBeTruthy();
-			expect(((await res.json()) as { code: string }).code).toBe(ErrorCode.common.unavailable);
-			expect(lines.some((l) => l.msg === 'unhandled error')).toBe(false);
-			const line = lines.find((l) => l.msg === 'request cut off by shutdown');
-			expect(line?.level).toBe(30);
-		},
-	);
+	test('a handler that throws the shutdown reason is a 503 with Retry-After', async () => {
+		const { res, lines } = await cutOff('/wait');
+		expect(res.status).toBe(503);
+		expect(res.headers.get('retry-after')).toBe('5');
+		expect(res.headers.get(REQUEST_ID_HEADER)).toBeTruthy();
+		expect(((await res.json()) as { code: string }).code).toBe(ErrorCode.common.unavailable);
+		expect(lines.some((l) => l.msg === 'unhandled error')).toBe(false);
+		const line = lines.find((l) => l.msg === 'request cut off by shutdown');
+		expect(line?.level).toBe(30);
+	});
+
+	test('an AbortError of its own during shutdown is not taken for the shutdown', async () => {
+		const { res } = await cutOff('/abort');
+		expect(res.status).toBe(500);
+	});
 
 	test('the server span says cancelled, and is ERROR only for its 5xx', async () => {
 		await cutOff('/wait');

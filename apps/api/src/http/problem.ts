@@ -85,11 +85,10 @@ function classify(
 	if (timedOut) {
 		return new RequestTimeout();
 	}
+	// Only the shutdown's own reason, as such or through the request's signal: an AbortError
+	// of another making during shutdown is still whatever failure it was.
 	const cutOff =
-		shutdown?.aborted === true &&
-		(error === shutdown.reason ||
-			error === signal?.reason ||
-			(error instanceof DOMException && error.name === 'AbortError'));
+		shutdown?.aborted === true && (error === shutdown.reason || error === signal?.reason);
 	if (cutOff) return new ServiceUnavailable(undefined, { cause: error });
 	return new UnexpectedError('Unexpected error', { cause: error });
 }
