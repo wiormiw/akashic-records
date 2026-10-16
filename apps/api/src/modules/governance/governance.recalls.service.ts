@@ -101,6 +101,21 @@ async function resolve(db: Executor, id: string, status: RecallStatus, at: Date)
 	return updated.length > 0;
 }
 
+/**
+ * The recall's status, its row locked for the rest of the transaction. NO KEY UPDATE, the lock
+ * `resolve`'s UPDATE takes: FOR UPDATE would conflict with the KEY SHARE lock every concurrent
+ * vote's insert holds on the row through its foreign key, and two deciding votes would deadlock.
+ */
+async function lockStatus(db: Executor, id: string): Promise<RecallStatus> {
+	const [row] = await db
+		.select({ status: recalls.status })
+		.from(recalls)
+		.where(eq(recalls.id, id))
+		.for('no key update');
+	if (!row) throw new Error(`recall ${id} vanished mid-vote`);
+	return narrow(RecallStatus, row.status);
+}
+
 /** Undefined when a recall is already open against that member. */
 async function openRecall(db: Executor, recall: NewRecall): Promise<string | undefined> {
 	const [created] = await db
@@ -184,20 +199,29 @@ export function createRecallService(deps: RecallDeps) {
 				const now = toDate(clock.now());
 
 				if (agrees >= needed) {
+					// The recall row first, then the members, the order carrying always took. A concurrent
+					// vote that settled it first has done (or declined) the unseating already.
+					const status = await lockStatus(tx, recallId);
+					if (status !== RecallStatus.open) return ok({ status, agrees, refusals, needed });
+					// Read under the members' lock. A subject promoted to admin, demoted or gone since the
+					// recall opened holds no seat to take: refused, so the recall neither sticks open nor
+					// carries later against a seat they hold again.
 					const subjectId = recall.subject?.id;
-					// A concurrent vote that resolved it first has done the unseating already.
-					if ((await resolve(tx, recallId, RecallStatus.carried, now)) && subjectId) {
-						const unseated = await seats.unseat(tx, realmId, subjectId, {
-							actorId: voterId,
-							changes: {
-								by: `recall.${recall.kind === RecallKind.members ? 'members' : 'moderators'}`,
-								reason: recall.reason,
-								agrees,
-							},
-						});
-						// Rolls the vote back too: the recall stays open rather than carried against an admin.
-						if (!unseated.ok) return unseated;
+					if (!subjectId || !(await seats.lockSeatHolder(tx, realmId, subjectId))) {
+						await resolve(tx, recallId, RecallStatus.refused, now);
+						return ok({ status: RecallStatus.refused, agrees, refusals, needed });
 					}
+					await resolve(tx, recallId, RecallStatus.carried, now);
+					const unseated = await seats.unseat(tx, realmId, subjectId, {
+						actorId: voterId,
+						changes: {
+							by: `recall.${recall.kind === RecallKind.members ? 'members' : 'moderators'}`,
+							reason: recall.reason,
+							agrees,
+						},
+					});
+					// Can't happen under the lock taken above; returned all the same, rolling back.
+					if (!unseated.ok) return unseated;
 					return ok({ status: RecallStatus.carried, agrees, refusals, needed });
 				}
 				if (cannotCarry(refusals, electorate, needed)) {

@@ -287,8 +287,18 @@ export function createSeatService(deps: GovernanceDeps) {
 		return ok(undefined);
 	}
 
+	/**
+	 * Locks every member a seat change can touch, as `unseat` does, and says whether `userId`
+	 * holds a seat now. Taken before deciding to unseat, so the answer holds until the commit.
+	 */
+	async function lockSeatHolder(tx: Tx, realmId: string, userId: string): Promise<boolean> {
+		await lockMembers(tx, realmId);
+		return (await roleOf(tx, realmId, userId)) === RealmRole.moderator;
+	}
+
 	return {
 		unseat,
+		lockSeatHolder,
 		requireSeatHolder,
 
 		async standings(realmId: string, limit: number): Promise<Standings> {

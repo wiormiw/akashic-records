@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
-import { createDb, recalls, type Tx } from '@akashic/db';
+import { and, eq } from 'drizzle-orm';
+import { createDb, realmMembers, recalls, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { RealmRole, RecallKind, RecallStatus } from '@akashic/lib/enums';
 import { ErrorCode } from '@akashic/lib/errors';
@@ -189,20 +189,38 @@ describe.skipIf(!live)('voting on a recall', () => {
 			]);
 		}));
 
-	test('the deciding vote is refused once the subject is an admin, and no admin is demoted', () =>
+	test('a subject promoted to admin since: the deciding vote refuses the recall, demoting nobody', () =>
 		inWorld(async (w) => {
 			const { id, recall, moderator, voters } = await openRecall(w);
 			expectOk(await w.recalls.voteOnRecall(id, recall.id, voters[0]!, true));
 			// Promoted after the recall was proposed, so only the check under the lock sees it.
 			await w.setRole(id, moderator, RealmRole.admin);
 
-			expectErr(
-				await w.recalls.voteOnRecall(id, recall.id, voters[1]!, true),
-				ErrorCode.common.validation,
-			);
+			expect(expectOk(await w.recalls.voteOnRecall(id, recall.id, voters[1]!, true))).toEqual({
+				status: RecallStatus.refused,
+				agrees: 3,
+				refusals: 0,
+				needed: 3,
+			});
 			expect(await w.roleOf(id, moderator)).toBe(RealmRole.admin);
-			// The vote rolled back with it: the recall is still open, not carried against an admin.
-			expect((await w.recallRow(recall.id))?.status).toBe(RecallStatus.open);
+			// Settled, not stuck open: a later demotion can't let it carry against them.
+			expect((await w.recallRow(recall.id))?.status).toBe(RecallStatus.refused);
+			expect(await w.memberChanges(id)).toEqual([]);
+			expect(await w.audits(moderator)).toEqual([]);
+		}));
+
+	test('a subject who has left the realm: the deciding vote refuses the recall', () =>
+		inWorld(async (w, tx) => {
+			const { id, recall, moderator, voters } = await openRecall(w);
+			expectOk(await w.recalls.voteOnRecall(id, recall.id, voters[0]!, true));
+			await tx
+				.delete(realmMembers)
+				.where(and(eq(realmMembers.realmId, id), eq(realmMembers.userId, moderator)));
+
+			expect(expectOk(await w.recalls.voteOnRecall(id, recall.id, voters[1]!, true)).status).toBe(
+				RecallStatus.refused,
+			);
+			expect((await w.recallRow(recall.id))?.status).toBe(RecallStatus.refused);
 			expect(await w.memberChanges(id)).toEqual([]);
 			expect(await w.audits(moderator)).toEqual([]);
 		}));
