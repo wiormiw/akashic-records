@@ -59,6 +59,7 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
 - **Realm-scoped actions check the realm.** An id in the body or path must belong to the realm in
   the URL; otherwise a member of one realm can act in another.
 - **Comments say why, briefly.**
+- **One code style, the web app's:** tabs, single quotes, 100 columns (`.oxfmtrc.json`); `bun run format` applies it.
 
 ## Testing
 

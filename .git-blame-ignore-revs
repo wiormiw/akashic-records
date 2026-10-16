@@ -1,0 +1,3 @@
+# Bulk reformats, skipped by `git blame` (git config blame.ignoreRevsFile .git-blame-ignore-revs).
+# style: tabs and single quotes, the web app's style
+354e7fa3ba29935b245d04cf846c80807b3e9b18
