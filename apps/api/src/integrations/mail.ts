@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { DeliveryFailed } from '@akashic/lib/errors';
+import { AppError, DeliveryFailed } from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import { traced } from '@akashic/lib/tracing';
 
@@ -115,7 +115,7 @@ export function createResendMailer(options: ResendMailerOptions): Mailer {
 			}
 			note(null);
 		} catch (error) {
-			if (error instanceof DeliveryFailed) throw error;
+			if (error instanceof AppError) throw error;
 			note(error instanceof Error ? error.message : String(error));
 			log.error({ recipient: recipientHash(to), subject, err: error }, 'mail delivery failed');
 			throw failed(error);
