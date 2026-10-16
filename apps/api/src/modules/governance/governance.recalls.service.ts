@@ -178,7 +178,7 @@ export function createRecallService(deps: RecallDeps) {
 			}
 			if (!mayTakePart(recall.kind, await roleOf(db, realmId, voterId))) return notTheirs();
 
-			return inTransaction<RecallTally>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				const size = await sizeOf(tx, realmId);
 				const electorate = recall.kind === RecallKind.members ? size.members : size.moderators;
 				const needed = recallThreshold(recall.kind, electorate);

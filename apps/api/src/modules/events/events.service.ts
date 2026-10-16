@@ -200,7 +200,7 @@ export function createEventService(deps: EventsDeps) {
 			if (!(await findEvent(db, realmId, eventId, userId))) return err(notFound());
 			// Its own transaction (a savepoint inside a caller's), because the capacity check needs the
 			// event row locked until the RSVP is written: two people can't take the last place.
-			return inTransaction<RsvpAnswer, RsvpError>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				const [event] = (await tx.execute(
 					sql`SELECT capacity FROM event WHERE id = ${eventId} FOR UPDATE`,
 				)) as unknown as { capacity: number | null }[];

@@ -228,7 +228,6 @@ export function createFitService(deps: PostingsDeps) {
 				);
 				return ok(created);
 			});
-			if (!id.ok) return id;
 			// After the commit: learning or queueing is a follow-up, not part of the posting. The
 			// posting is stored either way, so a failure here is logged, not answered: a 500 would make
 			// the client retry and post it twice.

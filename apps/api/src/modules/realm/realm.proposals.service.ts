@@ -102,13 +102,6 @@ export async function foundIn(
 	return ok(created.id);
 }
 
-// What the approving transaction hands on to the centroid seeding after it commits.
-interface Approval {
-	realmId: string;
-	name: string;
-	description: string | null;
-}
-
 /** How a proposal was decided. */
 interface Verdict {
 	status: ProposalStatus;
@@ -220,7 +213,7 @@ export function createProposals(deps: ProposalDeps) {
 			proposalId: string,
 			actorId: string,
 		): Promise<Result<ApprovedRealm, ApproveError>> {
-			const approved = await inTransaction<Approval, ApproveError>(db, async (tx) => {
+			const approved = await inTransaction(db, async (tx) => {
 				// Locked, so a second approval waits for this one and then finds it decided.
 				const [proposal] = await tx
 					.select()

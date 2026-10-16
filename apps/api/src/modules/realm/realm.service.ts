@@ -183,7 +183,7 @@ export function createRealmService(deps: RealmDeps) {
 			userId: string,
 			role: RealmRole | null,
 		): Promise<Result<Left, LeaveError>> {
-			return inTransaction<Left, LeaveError>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				if (role === RealmRole.admin) {
 					// Locked, so two admins leaving at once can't both see the other still there. One
 					// global lock order on realm_member, by user_id, so this can't deadlock with a
@@ -249,7 +249,7 @@ export function createRealmService(deps: RealmDeps) {
 			if (targetId === actor.id) {
 				return Promise.resolve(err(new RealmForbidden('You cannot change your own role.')));
 			}
-			return inTransaction<RoleChange, ChangeRoleError>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				// One statement locks the actor, the target and every admin, in user id order, so two
 				// changes racing each other queue rather than deadlock. Rank and admin count are read
 				// under the lock: two admins demoting each other at once can't leave the realm with none.

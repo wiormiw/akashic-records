@@ -157,7 +157,7 @@ export function createTakedownService(deps: GovernanceDeps) {
 			reason: string,
 			proposerId: string,
 		): Promise<Result<TakedownOpened>> {
-			return inTransaction<TakedownOpened>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				// Scoped to the realm in the path, so a moderator elsewhere can't take this comment down.
 				if (!(await commentInRealm(tx, realmId, commentId))) {
 					return err(fail.notFound(ErrorCode.realm.notFound, 'No such comment in this realm.'));
@@ -207,7 +207,7 @@ export function createTakedownService(deps: GovernanceDeps) {
 				);
 			}
 
-			return inTransaction<TakedownTally>(db, async (tx) => {
+			return inTransaction(db, async (tx) => {
 				const size = await sizeOf(tx, realmId);
 				const needed = majority(size.moderators);
 				const { agrees, refusals } = await castVote(tx, takedownId, voterId, agree);
