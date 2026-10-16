@@ -3,20 +3,32 @@
 What the module port's reviews deferred, and what Plan 3 (web app, deployment) must know. Written
 from the execution ledger when Plan 2 finished (2026-10-15).
 
-## Open decision before merging `feat/modules`
+## Settled before merging `feat/modules` (2026-10-16)
 
-**Role changes after ruling R14.** The fix that stops a moderator demoting an admin also made two
-legitimate actions impossible:
+**Role changes (R14, refined).** Two levels of admin: the platform admin is the app's superadmin,
+a realm admin runs one realm. As built in `changeRole`:
 
-- **A realm admin can no longer demote another admin.** The old API allowed it, and it never left
-  a realm without an admin, since an admin can't change their own role. There is also no
-  platform route that removes a realm admin. Recommended fix: allow an admin to change another
-  admin's role, locking both `realm_member` rows `FOR UPDATE` in id order and re-checking that
-  the actor is still an admin, so two admins demoting each other at once can't leave none.
-- **A platform admin who isn't a realm member gets 403 on role changes.** `model.fga` still gives
-  them `can_vouch` (`admin from platform`), so the route guard lets them through and the service
-  refuses. Pick one: treat a platform admin as an admin in `changeRole`, or drop
-  `admin from platform` from `can_vouch`.
+- The route decides platform authority (`sessions.isPlatformAdmin`, `Relation.platform.administer`
+  on `PLATFORM_ID`) and passes it on the actor; the service makes no authorizer call. A platform
+  admin acts as an admin of every realm, member or not. `can_vouch` keeps `admin from platform`.
+- An admin changes anyone's role, a fellow admin's included. Below admin, you change only someone
+  ranked below you, and grant only a role below your own and below moderator. Nobody changes their
+  own role.
+- A realm never ends with zero admins (`realm.sole_admin`, 409). One `SELECT ... FOR UPDATE`, in
+  user id order, locks the actor's row, the target's and every admin's; the actor's rank and the
+  admin count are read under that lock, so two admins demoting each other at once leave exactly
+  one (`realm.role-race.test.ts`).
+
+**Also decided:**
+
+- R9 stays as built: a non-member gets 403, by decision.
+- Comment removal (R8): the comment's author or a moderator of its realm (`comment#can_delete`);
+  a moderator removing someone else's comment is audited.
+- Money (R12): `budget_cents` and `price_cents` are `bigint`, capped at `Number.MAX_SAFE_INTEGER`
+  on the way in.
+- Timeouts (R2) are errors in traces (`error.type = "timeout"`); a shutdown abort stays cancelled.
+- Code style is the web app's: tabs, single quotes, 100 columns.
+- The Result library becomes its own plan.
 
 ## Before the first production deploy
 
@@ -28,8 +40,8 @@ legitimate actions impossible:
   abort signal.
 - `POST /realms` (founding) still validates before `platformAdmin`, so a malformed request from a
   non-admin shows the route exists (R15 covered `/admin/*` only).
-- Moderator actions without an audit entry: comment removal, fit-review takedown, a moderator's
-  job or listing status change.
+- Moderator actions without an audit entry: fit-review takedown, a moderator's job or listing
+  status change.
 - Mail payloads (address and reset link) sit in `outbox_messages`, RabbitMQ and the dead queue.
 - Pin `openfga/openfga` in compose and CI.
 
@@ -50,13 +62,12 @@ legitimate actions impossible:
 
 ## Can wait
 
-- `changeRole` trusts the actor's role as read at request start; only the target row is locked.
 - In a members' recall, a non-member passes `mayTakePart` (unchanged).
 - The first RSVP's `respondedAt` comes from the database default, not the injected clock. Column
   defaults stay database time everywhere.
 - Realm context runs its lookups in parallel (two pool connections per realm request).
 - No index serves the outbox prune; the prune runs before the claim once an hour.
-- No concurrency tests for the approve and sole-admin row locks.
+- No concurrency tests for the approve lock and the sole-admin lock on leaving.
 - The comment-thread check runs outside the transaction, and removing twice overwrites
   `removedAt`.
 - Duplicated helpers across modules (`roleOf`/`isMember`, `person`, `castVote`); two query styles
