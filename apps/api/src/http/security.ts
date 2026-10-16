@@ -1,7 +1,9 @@
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
-import { ContentTooLarge, Forbidden } from '@akashic/lib/errors';
+import { ContentTooLarge, Forbidden, PayloadTooLarge } from '@akashic/lib/errors';
 import type { AppEnv } from './env.ts';
+import { problemResponse } from './problem.ts';
 
 /** "a, b" -> ["a", "b"]. An empty list trusts no browser origin. */
 export const parseOrigins = (value: string): string[] =>
@@ -53,4 +55,18 @@ export function security(options: {
 		c.header('referrer-policy', 'no-referrer');
 		return corsPolicy(c, async () => void (await checks(c, next)));
 	});
+}
+
+/**
+ * A route's own body ceiling, counted as the body streams in, so a chunked body is cut off too.
+ * Over it, the answer is a 413 problem: the request id and CORS headers set before it ride along,
+ * unlike Bun's bare 413 at the server's ceiling, which a browser sees as a network error.
+ */
+export function bodyCeiling(maxBytes: number) {
+	const ceiling = bodyLimit({
+		maxSize: maxBytes,
+		onError: (c) =>
+			problemResponse(c, new PayloadTooLarge(`Request body exceeds ${maxBytes} bytes.`)),
+	});
+	return createMiddleware<AppEnv>((c, next) => ceiling(c, next));
 }

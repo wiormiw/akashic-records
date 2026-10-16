@@ -26,6 +26,8 @@ const catalogue: Record<string, readonly [code: string, status: number]> = {
 	SessionExpired: ['auth.session.expired', 401],
 	Forbidden: ['common.auth.forbidden', 403],
 	ContentTooLarge: ['common.request.payload_too_large', 400],
+	// The route-level ceiling on uploads answers 413 with the same code (Task 6 of Plan 3).
+	PayloadTooLarge: ['common.request.payload_too_large', 413],
 	RateLimited: ['common.request.rate_limited', 429],
 	RouteNotFound: ['common.route.not_found', 404],
 	RequestTimeout: ['common.request.timeout', 502],

@@ -4,6 +4,7 @@
  */
 export type ErrorKind =
 	| 'validation'
+	| 'payload_too_large'
 	| 'not_found'
 	| 'conflict'
 	| 'unauthorized'
@@ -140,6 +141,13 @@ export const ContentTooLarge = defineError(
 	'That is larger than allowed.',
 );
 export type ContentTooLarge = InstanceType<typeof ContentTooLarge>;
+/** A request body over a route's own ceiling, refused as it streams in: the 413 a proxy would send. */
+export const PayloadTooLarge = defineError(
+	'payload_too_large',
+	ErrorCode.common.payloadTooLarge,
+	'The request body is larger than allowed.',
+);
+export type PayloadTooLarge = InstanceType<typeof PayloadTooLarge>;
 // Stopped before it finished, so retrying later can work: the same answer as a shutdown's.
 export const RequestCancelled = defineError(
 	'unavailable',

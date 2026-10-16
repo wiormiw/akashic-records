@@ -3,8 +3,9 @@ import { LimitsView, PurposeParam, UploadedView, uploadBody } from '@akashic/con
 import type { AppEnv } from '@/http/env.ts';
 import { rateLimit } from '@/http/rate-limit.ts';
 import { reply, respond } from '@/http/reply.ts';
+import { bodyCeiling } from '@/http/security.ts';
 import { validate } from '@/http/validate.ts';
-import { policy } from '@/config.ts';
+import { policy, UPLOAD_BODY_BYTES } from '@/config.ts';
 import type { ModuleRoutes } from '../module.ts';
 import type { UploadRoutesDeps } from './upload.types.ts';
 
@@ -24,6 +25,8 @@ export function createUploadRoutes(deps: UploadRoutesDeps): ModuleRoutes {
 		.get('/uploads', limited, (c) => reply(c, LimitsView, uploads.limits()))
 		.post(
 			'/uploads/:purpose',
+			// Before the form is parsed, so an oversized body is refused before it is buffered whole.
+			bodyCeiling(UPLOAD_BODY_BYTES),
 			validate('param', PurposeParam),
 			validate('form', UploadBody),
 			limited,

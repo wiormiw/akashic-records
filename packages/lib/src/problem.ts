@@ -7,6 +7,7 @@ export const httpStatusByKind: Record<ErrorKind, number> = {
 	forbidden: 403,
 	not_found: 404,
 	conflict: 409,
+	payload_too_large: 413,
 	rate_limited: 429,
 	// A dependency being down isn't our bug; 502 keeps it out of the 500 alerts.
 	external: 502,
@@ -36,6 +37,7 @@ const titleByKind: Record<ErrorKind, string> = {
 	forbidden: 'Forbidden',
 	not_found: 'Not found',
 	conflict: 'Conflict',
+	payload_too_large: 'Payload too large',
 	rate_limited: 'Too many requests',
 	external: 'Upstream service failed',
 	unavailable: 'Service unavailable',

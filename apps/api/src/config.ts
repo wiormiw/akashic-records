@@ -108,3 +108,6 @@ export const policy = {
 		minSamplesToRefuse: 25,
 	},
 } as const;
+
+/** The most an upload's request body may be: the file, plus room for the multipart framing. */
+export const UPLOAD_BODY_BYTES = policy.uploads.maxBytes + 64 * 1024;

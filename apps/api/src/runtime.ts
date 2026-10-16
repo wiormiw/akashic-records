@@ -1,7 +1,7 @@
 import { createEventConsumer, declareTopology, EVENTS_EXCHANGE } from '@akashic/broker';
 import { owned, type Lifecycle } from '@akashic/lib/lifecycle';
 import { createApp } from '@/app.ts';
-import { policy } from '@/config.ts';
+import { UPLOAD_BODY_BYTES } from '@/config.ts';
 import type { AppContainer } from '@/container.ts';
 import { realmContext } from '@/http/realm-context.ts';
 import { parseOrigins } from '@/http/security.ts';
@@ -152,11 +152,11 @@ export async function start(container: AppContainer, build = buildModules) {
 
 /**
  * The most Bun reads of any request body, counted as it streams, so a chunked body (which declares
- * no length) is cut off too. Ordinary routes keep their smaller limit on the declared length in
- * http/security.ts; this is the ceiling for everything, sized for the largest thing we accept: an
- * upload, plus room for the multipart boundaries and part headers around it.
+ * no length) is cut off too. It is only the backstop: Bun's 413 is bare (no problem body, request
+ * id or CORS headers, so a browser sees a network error). The upload route refuses at
+ * UPLOAD_BODY_BYTES itself, with a problem response, so this sits well above it.
  */
-export const MAX_REQUEST_BODY_BYTES = policy.uploads.maxBytes + 64 * 1024;
+export const MAX_REQUEST_BODY_BYTES = 2 * UPLOAD_BODY_BYTES;
 
 /** What `listen` needs of the server: topic publishing for the relay, and stopping. */
 export interface Served {

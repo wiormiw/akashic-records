@@ -11,12 +11,22 @@ import { sessions } from '@/http/session.ts';
 import { createMemoryCounters } from '@/integrations/counters.ts';
 import type { Mailer } from '@/integrations/mail.ts';
 import { createRateLimiter } from '@/integrations/rate-limit.ts';
+import { UPLOAD_BODY_BYTES } from '@/config.ts';
+import type { ModuleRoutes } from '@/modules/module.ts';
+import { createUploadRoutes } from '@/modules/upload/upload.routes.ts';
+import { createUploadService } from '@/modules/upload/upload.service.ts';
+import { memoryStore } from './modules/upload/fixtures.ts';
 
 const rule = { limit: 100, windowSeconds: 60 };
 
 let sessionLookups = 0;
 
-const build = (session: { user: { id: string; email: string } } | null) => {
+const ORIGIN = 'https://web.test';
+
+const build = (
+	session: { user: { id: string; email: string } } | null,
+	extra: { modules?: ModuleRoutes[] } = {},
+) => {
 	const lifecycle = createLifecycle(silentLogger());
 	lifecycle.markReady();
 	const auth = {
@@ -49,7 +59,7 @@ const build = (session: { user: { id: string; email: string } } | null) => {
 			auth: { ...rule, bucket: 'auth-read' },
 			credentials: { ...rule, bucket: 'auth' },
 		},
-		allowedOrigins: [],
+		allowedOrigins: [ORIGIN],
 		maxBodyBytes: 1024 * 1024,
 		budgetMs: 5000,
 		trustProxy: false,
@@ -62,6 +72,7 @@ const build = (session: { user: { id: string; email: string } } | null) => {
 				public: new Hono<AppEnv>().get('/whoami', (c) => c.text(String(c.var.user))),
 				root: new Hono<AppEnv>().get('/socket', (c) => c.text('root')),
 			},
+			...(extra.modules ?? []),
 		],
 	});
 };
@@ -109,5 +120,55 @@ describe('app', () => {
 		const res = await build(null).request('/socket');
 		expect(res.status).toBe(200);
 		expect(await res.text()).toBe('root');
+	});
+});
+
+describe('an oversized upload', () => {
+	test('streamed with no declared length, it is a 413 problem with CORS and a request id', async () => {
+		const { store, stored } = memoryStore();
+		const app = build(
+			{ user: { id: 'u1', email: 'u1@x.test' } },
+			{
+				modules: [
+					createUploadRoutes({
+						uploads: createUploadService({ store }),
+						limiter: createRateLimiter({ counters: createMemoryCounters() }),
+						trustProxy: false,
+						logger: silentLogger(),
+					}),
+				],
+			},
+		);
+		// Chunked, so only counting the stream can catch it: there is no content-length to judge.
+		const chunk = new Uint8Array(64 * 1024);
+		let sent = 0;
+		const body = new ReadableStream<Uint8Array>({
+			pull(controller) {
+				if (sent > UPLOAD_BODY_BYTES) return controller.close();
+				sent += chunk.byteLength;
+				controller.enqueue(chunk);
+			},
+		});
+		const res = await app.request('/api/v1/uploads/avatar', {
+			method: 'POST',
+			headers: {
+				origin: ORIGIN,
+				'x-request-id': 'req-big',
+				'content-type': 'multipart/form-data; boundary=x',
+			},
+			body,
+			duplex: 'half',
+		} as RequestInit);
+
+		expect(res.status).toBe(413);
+		expect(res.headers.get('content-type')).toContain('application/problem+json');
+		expect(res.headers.get('x-request-id')).toBe('req-big');
+		expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+		expect(await res.json()).toMatchObject({
+			status: 413,
+			code: 'common.request.payload_too_large',
+			traceId: 'req-big',
+		});
+		expect(stored).toEqual([]);
 	});
 });
