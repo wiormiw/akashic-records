@@ -23,7 +23,11 @@ a realm admin runs one realm. As built in `changeRole`:
 
 - R9 stays as built: a non-member gets 403, by decision.
 - Comment removal (R8): the comment's author or a moderator of its realm (`comment#can_delete`);
-  a moderator removing someone else's comment is audited.
+  a moderator removing someone else's comment is audited, once (removing it again changes
+  nothing). The object check runs before the service, so for anyone who isn't a moderator there,
+  DELETE answers 403 for an id that doesn't exist and for a comment of another realm (404 only
+  once the check passes). An author gets 403 until the consumer has written their `author` tuple:
+  eventual consistency, as with postings.
 - Money (R12): `budget_cents` and `price_cents` are `bigint`, capped at `Number.MAX_SAFE_INTEGER`
   on the way in.
 - Timeouts (R2) are errors in traces (`error.type = "timeout"`); a shutdown abort stays cancelled.
@@ -32,6 +36,8 @@ a realm admin runs one realm. As built in `changeRole`:
 
 ## Before the first production deploy
 
+- A request cut off by shutdown renders as a 500 today. It should be a 503 with `Retry-After`,
+  which needs a new `unavailable` error kind (and keeps the server span from reading as an error).
 - The broker-level 413 (`maxRequestBodySize`) is a bare response: no problem+json body, no
   request id, no CORS headers. A browser uploading straight to the API sees a network error.
   Check the size in the web app before sending, or raise the margin.
@@ -65,11 +71,12 @@ a realm admin runs one realm. As built in `changeRole`:
 - In a members' recall, a non-member passes `mayTakePart` (unchanged).
 - The first RSVP's `respondedAt` comes from the database default, not the injected clock. Column
   defaults stay database time everywhere.
+- `leave` trusts the role read at request start: an admin demoted while leaving can be refused as
+  the sole admin.
 - Realm context runs its lookups in parallel (two pool connections per realm request).
 - No index serves the outbox prune; the prune runs before the claim once an hour.
-- No concurrency tests for the approve lock and the sole-admin lock on leaving.
-- The comment-thread check runs outside the transaction, and removing twice overwrites
-  `removedAt`.
+- No concurrency test for the approve lock.
+- The comment-thread check runs outside the transaction.
 - Duplicated helpers across modules (`roleOf`/`isMember`, `person`, `castVote`); two query styles
   (raw `db.execute` rows and the typed builder).
 - Governance enums typed as `number` in contracts (`SeatStanding.role`, `Takedown.subjectKind`).

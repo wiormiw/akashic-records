@@ -59,14 +59,17 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
 - **Realm-scoped actions check the realm.** An id in the body or path must belong to the realm in
   the URL; otherwise a member of one realm can act in another.
 - **Comments say why, briefly.**
-- **One code style, the web app's:** tabs, single quotes, 100 columns (`.oxfmtrc.json`); `bun run format` applies it.
+- **One code style, the web app's:** tabs, single quotes, 100 columns (`.oxfmtrc.json`);
+  `bun run format` applies it.
 
 ## Testing
 
 `bun test`. Unit tests use in-memory fakes. Integration tests run against the real database,
 OpenFGA and RabbitMQ; each skips when nothing answers. The database holds real dev data: a test
-writes inside `withRollback` (`@akashic/db/testing`), so nothing it creates persists. Migrations are generated with
-`cd packages/db && bunx drizzle-kit generate`; CI fails if they differ from the schema.
+writes inside `withRollback` (`@akashic/db/testing`), so nothing it creates persists. The exception
+is race tests, which need several connections: they commit uniquely named rows and delete exactly
+those. Migrations are generated with `cd packages/db && bunx drizzle-kit generate`; CI fails if
+they differ from the schema.
 
 ## Traps already hit
 
