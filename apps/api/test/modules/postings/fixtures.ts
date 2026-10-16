@@ -1,6 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import * as v from 'valibot';
 import {
+	auditEntries,
 	events,
 	jobs,
 	listings,
@@ -160,6 +161,8 @@ export function world(tx: Tx, embedder: Embedder = embedderOf(), logger: Logger 
 			const [row] = await tx.select().from(jobs).where(eq(jobs.id, id));
 			return row;
 		},
+		audits: (entityId: string) =>
+			tx.select().from(auditEntries).where(eq(auditEntries.entityId, entityId)),
 		async listing(id: string) {
 			const [row] = await tx.select().from(listings).where(eq(listings.id, id));
 			return row;

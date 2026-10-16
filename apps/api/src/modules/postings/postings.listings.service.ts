@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Listing, ListingSummary } from '@akashic/contracts';
-import { type Executor, inTransaction, listings, user } from '@akashic/db';
-import { CommentSubject, ListingStatus } from '@akashic/lib/enums';
+import { audit, type Executor, inTransaction, listings, user } from '@akashic/db';
+import { AuditAction, CommentSubject, ListingStatus } from '@akashic/lib/enums';
 import {
 	EventNotFound,
 	PostingSettled,
@@ -108,21 +108,35 @@ export function createListingService(deps: PostingAreaDeps) {
 				},
 			),
 
+		/** By its seller, or by a moderator, whose change to someone else's listing is audited. */
 		async setStatus(
 			realmId: string,
 			listingId: string,
+			actorId: string,
 			status: ListingStatus,
 			canModerate: boolean,
 		): Promise<Result<ListingStatusSet, SetListingStatusError>> {
 			if (status === ListingStatus.removed && !canModerate) {
 				return err(new RealmForbidden("Removing a listing is a moderator's call."));
 			}
-			const updated = await db
-				.update(listings)
-				.set({ status, updatedAt: toDate(clock.now()) })
-				.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-				.returning({ id: listings.id });
-			return updated.length > 0 ? ok({ status }) : err(noListing());
+			return inTransaction(db, async (tx) => {
+				const [updated] = await tx
+					.update(listings)
+					.set({ status, updatedAt: toDate(clock.now()) })
+					.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
+					.returning({ sellerId: listings.sellerId });
+				if (!updated) return err(noListing());
+				if (updated.sellerId !== actorId) {
+					await audit(tx, {
+						actorId,
+						entityType: 'listing',
+						entityId: listingId,
+						action: AuditAction.moderated,
+						changes: { by: 'moderator', status },
+					});
+				}
+				return ok({ status });
+			});
 		},
 
 		/** Sells to one buyer: marks the listing sold and settles every other offer. */

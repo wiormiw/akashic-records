@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { type FitReview, realmEvents } from '@akashic/contracts';
 import {
+	audit,
 	type Executor,
 	inTransaction,
 	jobs,
@@ -11,7 +12,7 @@ import {
 	type Tx,
 } from '@akashic/db';
 import { centroidFrom, parseVector, pgVector } from '@akashic/db/sql';
-import { CommentSubject, JobStatus, ListingStatus } from '@akashic/lib/enums';
+import { AuditAction, CommentSubject, JobStatus, ListingStatus } from '@akashic/lib/enums';
 import { EventNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
@@ -151,20 +152,33 @@ async function decideReview(
 	return row && { ...row, embedding: row.embedding ? parseVector(row.embedding) : null };
 }
 
-// What rejecting a posting does to it; kinds without an entry have nothing to take down.
+// What rejecting a posting does to it, and the audit entity it is; kinds without an entry have
+// nothing to take down.
 const takeDown: Partial<
-	Record<number, (tx: Tx, realmId: string, id: string, now: Date) => Promise<unknown>>
+	Record<
+		number,
+		{
+			entityType: string;
+			apply: (tx: Tx, realmId: string, id: string, now: Date) => Promise<unknown>;
+		}
+	>
 > = {
-	[CommentSubject.job]: (tx, realmId, id, now) =>
-		tx
-			.update(jobs)
-			.set({ status: JobStatus.closed, updatedAt: now })
-			.where(and(eq(jobs.id, id), eq(jobs.realmId, realmId))),
-	[CommentSubject.listing]: (tx, realmId, id, now) =>
-		tx
-			.update(listings)
-			.set({ status: ListingStatus.removed, updatedAt: now })
-			.where(and(eq(listings.id, id), eq(listings.realmId, realmId))),
+	[CommentSubject.job]: {
+		entityType: 'job',
+		apply: (tx, realmId, id, now) =>
+			tx
+				.update(jobs)
+				.set({ status: JobStatus.closed, updatedAt: now })
+				.where(and(eq(jobs.id, id), eq(jobs.realmId, realmId))),
+	},
+	[CommentSubject.listing]: {
+		entityType: 'listing',
+		apply: (tx, realmId, id, now) =>
+			tx
+				.update(listings)
+				.set({ status: ListingStatus.removed, updatedAt: now })
+				.where(and(eq(listings.id, id), eq(listings.realmId, realmId))),
+	},
 };
 
 // ---- Service ---------------------------------------------------------------------------------
@@ -272,8 +286,19 @@ export function createFitService(deps: PostingsDeps) {
 				if (!decided) {
 					return err(new EventNotFound('Nothing waiting under that id. Already decided?'));
 				}
+				const removal = kept ? undefined : takeDown[decided.subjectKind];
 				if (kept) await learn(tx, realmId, decided.embedding);
-				else await takeDown[decided.subjectKind]?.(tx, realmId, decided.subjectId, now);
+				else if (removal) {
+					await removal.apply(tx, realmId, decided.subjectId, now);
+					// A moderator took someone's posting down: on the record, like any other takedown.
+					await audit(tx, {
+						actorId: moderatorId,
+						entityType: removal.entityType,
+						entityId: decided.subjectId,
+						action: AuditAction.moderated,
+						changes: { by: 'fit-review' },
+					});
+				}
 				return ok({ kept });
 			});
 		},

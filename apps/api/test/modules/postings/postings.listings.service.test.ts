@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createDb, listings } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
-import { CommentSubject, InterestStatus, ListingStatus } from '@akashic/lib/enums';
+import { AuditAction, CommentSubject, InterestStatus, ListingStatus } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -37,7 +37,15 @@ describe.skipIf(!live)('the marketplace', () => {
 				.update(listings)
 				.set({ createdAt: new Date(Date.now() - 3_600_000) })
 				.where(eq(listings.id, first.listing.id));
-			expectOk(await w.listings.setStatus(realm.id, second.listing.id, ListingStatus.sold, false));
+			expectOk(
+				await w.listings.setStatus(
+					realm.id,
+					second.listing.id,
+					realm.admin,
+					ListingStatus.sold,
+					false,
+				),
+			);
 
 			expect((await w.listings.browse(realm.id, true, 20)).map((l) => l.id)).toEqual([
 				first.listing.id,
@@ -72,13 +80,44 @@ describe.skipIf(!live)('the marketplace', () => {
 			const realm = await w.realm();
 			const { listing } = await w.seed(realm.id, realm.admin);
 			expectErr(
-				await w.listings.setStatus(realm.id, listing.id, ListingStatus.removed, false),
+				await w.listings.setStatus(realm.id, listing.id, realm.admin, ListingStatus.removed, false),
 				'realm.forbidden',
 			);
 			expect((await w.listing(listing.id))?.status).toBe(ListingStatus.active);
 			expect(
-				expectOk(await w.listings.setStatus(realm.id, listing.id, ListingStatus.removed, true)),
+				expectOk(
+					await w.listings.setStatus(
+						realm.id,
+						listing.id,
+						realm.admin,
+						ListingStatus.removed,
+						true,
+					),
+				),
 			).toEqual({ status: ListingStatus.removed });
+		}));
+
+	test("a moderator's change to someone else's listing is audited; the seller's own is not", () =>
+		inWorld(async (w) => {
+			const realm = await w.realm({ members: 1 });
+			const seller = realm.people[0]!;
+			const { listing } = await w.seed(realm.id, seller);
+
+			expectOk(await w.listings.setStatus(realm.id, listing.id, seller, ListingStatus.sold, false));
+			expect(await w.audits(listing.id)).toEqual([]);
+
+			expectOk(
+				await w.listings.setStatus(realm.id, listing.id, realm.admin, ListingStatus.removed, true),
+			);
+			expect(await w.audits(listing.id)).toEqual([
+				expect.objectContaining({
+					userId: realm.admin,
+					entityType: 'listing',
+					entityId: listing.id,
+					action: AuditAction.moderated,
+					changes: { by: 'moderator', status: ListingStatus.removed },
+				}),
+			]);
 		}));
 
 	test('a listing of another realm is not found to read, change or deal, and stays', () =>
@@ -91,7 +130,7 @@ describe.skipIf(!live)('the marketplace', () => {
 
 			expectErr(await w.listings.read(realm.id, listing.id, realm.admin), 'event.not_found');
 			expectErr(
-				await w.listings.setStatus(realm.id, listing.id, ListingStatus.removed, true),
+				await w.listings.setStatus(realm.id, listing.id, realm.admin, ListingStatus.removed, true),
 				'event.not_found',
 			);
 			expectErr(

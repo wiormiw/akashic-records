@@ -1,7 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Job, JobSummary } from '@akashic/contracts';
-import { type Executor, inTransaction, jobs, user } from '@akashic/db';
-import { CommentSubject, JobStatus } from '@akashic/lib/enums';
+import { audit, type Executor, inTransaction, jobs, user } from '@akashic/db';
+import { AuditAction, CommentSubject, JobStatus } from '@akashic/lib/enums';
 import {
 	EventNotFound,
 	PostingSettled,
@@ -96,17 +96,31 @@ export function createJobService(deps: PostingAreaDeps) {
 				return created.id;
 			}),
 
-		async setStatus(
+		/** By its author, or by a moderator, whose change to someone else's job is audited. */
+		setStatus(
 			realmId: string,
 			jobId: string,
+			actorId: string,
 			status: JobStatus,
 		): Promise<Result<JobStatusSet, SetJobStatusError>> {
-			const updated = await db
-				.update(jobs)
-				.set({ status, updatedAt: toDate(clock.now()) })
-				.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
-				.returning({ id: jobs.id });
-			return updated.length > 0 ? ok({ status }) : err(noJob());
+			return inTransaction(db, async (tx) => {
+				const [updated] = await tx
+					.update(jobs)
+					.set({ status, updatedAt: toDate(clock.now()) })
+					.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
+					.returning({ authorId: jobs.authorId });
+				if (!updated) return err(noJob());
+				if (updated.authorId !== actorId) {
+					await audit(tx, {
+						actorId,
+						entityType: 'job',
+						entityId: jobId,
+						action: AuditAction.moderated,
+						changes: { by: 'moderator', status },
+					});
+				}
+				return ok({ status });
+			});
 		},
 
 		/** Hires one applicant: fills the job and settles every other application. */

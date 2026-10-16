@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
-import { JobStatus, JobType, ListingStatus } from '@akashic/lib/enums';
+import { AuditAction, JobStatus, JobType, ListingStatus } from '@akashic/lib/enums';
 import { type Logger, silentLogger } from '@akashic/lib/log';
 import { captureLogger, expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -242,6 +242,37 @@ describe.skipIf(!live)('fit review', () => {
 			const centroid = await w.centroid(realm.id);
 			expect(closeTo(centroid.centroid, CENTROID)).toBe(true);
 			expect(centroid.samples).toBe(3);
+		}));
+
+	test('a rejection is audited as moderated by the reviewer; keeping is not', () =>
+		inWorld(async (w) => {
+			const realm = await w.realm({ members: 1 });
+			const author = realm.people[0]!;
+			const { job, listing } = await w.seed(realm.id, author);
+			const event = await w.event(realm.id, author);
+
+			expectOk(
+				await w.fit.decide(realm.id, await w.queued(realm.id, job, null), realm.admin, false),
+			);
+			expect(await w.audits(job.id)).toEqual([
+				expect.objectContaining({
+					userId: realm.admin,
+					entityType: 'job',
+					entityId: job.id,
+					action: AuditAction.moderated,
+					changes: { by: 'fit-review' },
+				}),
+			]);
+
+			expectOk(
+				await w.fit.decide(realm.id, await w.queued(realm.id, listing, null), realm.admin, true),
+			);
+			expect(await w.audits(listing.id)).toEqual([]);
+			// An event has nothing taken down, so nothing to put on the record.
+			expectOk(
+				await w.fit.decide(realm.id, await w.queued(realm.id, event, null), realm.admin, false),
+			);
+			expect(await w.audits(event.id)).toEqual([]);
 		}));
 
 	test('an entry already decided, never there, or of another realm is a 404', () =>

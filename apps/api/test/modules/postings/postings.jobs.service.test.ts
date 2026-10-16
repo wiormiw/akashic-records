@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createDb, jobs } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
-import { InterestStatus, JobStatus, JobType } from '@akashic/lib/enums';
+import { AuditAction, InterestStatus, JobStatus, JobType } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -37,7 +37,7 @@ describe.skipIf(!live)('the job board', () => {
 				.update(jobs)
 				.set({ createdAt: new Date(Date.now() - 3_600_000) })
 				.where(eq(jobs.id, first.job.id));
-			expectOk(await w.jobs.setStatus(realm.id, second.job.id, JobStatus.closed));
+			expectOk(await w.jobs.setStatus(realm.id, second.job.id, realm.admin, JobStatus.closed));
 
 			expect((await w.jobs.browse(realm.id, true, 20)).map((j) => j.id)).toEqual([first.job.id]);
 			expect((await w.jobs.browse(realm.id, false, 20)).map((j) => j.id)).toEqual([
@@ -70,8 +70,34 @@ describe.skipIf(!live)('the job board', () => {
 			const elsewhere = await w.realm();
 			const { job } = await w.seed(elsewhere.id, elsewhere.admin);
 			expectErr(await w.jobs.read(realm.id, job.id, realm.admin), 'event.not_found');
-			expectErr(await w.jobs.setStatus(realm.id, job.id, JobStatus.closed), 'event.not_found');
+			expectErr(
+				await w.jobs.setStatus(realm.id, job.id, realm.admin, JobStatus.closed),
+				'event.not_found',
+			);
 			expect((await w.job(job.id))?.status).toBe(JobStatus.open);
+		}));
+});
+
+describe.skipIf(!live)('changing a job status', () => {
+	test("a moderator's change to someone else's job is audited; the author's own is not", () =>
+		inWorld(async (w) => {
+			const realm = await w.realm({ members: 1 });
+			const author = realm.people[0]!;
+			const { job } = await w.seed(realm.id, author);
+
+			expectOk(await w.jobs.setStatus(realm.id, job.id, author, JobStatus.closed));
+			expect(await w.audits(job.id)).toEqual([]);
+
+			expectOk(await w.jobs.setStatus(realm.id, job.id, realm.admin, JobStatus.open));
+			expect(await w.audits(job.id)).toEqual([
+				expect.objectContaining({
+					userId: realm.admin,
+					entityType: 'job',
+					entityId: job.id,
+					action: AuditAction.moderated,
+					changes: { by: 'moderator', status: JobStatus.open },
+				}),
+			]);
 		}));
 });
 
@@ -118,7 +144,7 @@ describe.skipIf(!live)('hiring', () => {
 				await w.jobs.hire(realm.id, job.id, realm.admin, chosen),
 				'common.request.validation_failed',
 			);
-			expectOk(await w.jobs.setStatus(realm.id, job.id, JobStatus.closed));
+			expectOk(await w.jobs.setStatus(realm.id, job.id, realm.admin, JobStatus.closed));
 			expectErr(await w.jobs.hire(realm.id, job.id, realm.admin, other), 'posting.already_settled');
 			// Nobody was settled by any refusal.
 			expect(await w.interestOf(job.id, other)).toBe(InterestStatus.open);

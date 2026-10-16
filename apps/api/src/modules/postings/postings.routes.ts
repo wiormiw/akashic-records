@@ -151,6 +151,7 @@ export function createPostingsRoutes(deps: PostingsRoutesDeps): ModuleRoutes {
 					await postings.jobs.setStatus(
 						c.var.realm.realmId,
 						c.req.valid('param').id,
+						callerOf(c).id,
 						c.req.valid('json').status,
 					),
 					JobStatusView,
@@ -223,6 +224,7 @@ export function createPostingsRoutes(deps: PostingsRoutesDeps): ModuleRoutes {
 					await postings.listings.setStatus(
 						c.var.realm.realmId,
 						c.req.valid('param').id,
+						callerOf(c).id,
 						c.req.valid('json').status,
 						c.var.realm.permissions.moderate,
 					),
