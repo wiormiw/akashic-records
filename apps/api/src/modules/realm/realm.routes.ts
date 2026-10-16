@@ -103,13 +103,14 @@ export function createRealmRoutes(deps: RealmRoutesDeps): ModuleRoutes {
       realmContext,
       requirePermission("vouch"),
       async (c) => {
-        const { realmId, realmRole } = c.var.realm;
         const caller = callerOf(c);
+        // Platform authority is decided here, so the service stays free of authorizer calls.
+        const platform = await sessions.isPlatformAdmin(caller.id, c.var.signal);
         return respond(
           c,
           await realms.changeRole(
-            realmId,
-            { id: caller.id, role: realmRole },
+            c.var.realm.realmId,
+            { id: caller.id, platform },
             c.req.valid("param").userId,
             c.req.valid("json").role,
           ),

@@ -7,7 +7,7 @@ import { ErrorCode } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
 import type { Embedder } from "@/integrations/embedder.ts";
-import { grantable, outranks } from "@/modules/realm/realm.service.ts";
+import { actingRank, grantable, mayChange, outranks } from "@/modules/realm/realm.service.ts";
 import { databaseUrl, uniqueSlug } from "../../support/fixtures.ts";
 import { world } from "./fixtures.ts";
 
@@ -26,6 +26,20 @@ describe("role rules", () => {
     expect(grantable(RealmRole.verified, RealmRole.verified)).toBe(false);
     expect(grantable(RealmRole.verified, RealmRole.member)).toBe(true);
     expect(grantable(null, RealmRole.member)).toBe(false);
+  });
+
+  test("an admin changes a fellow admin's role; below admin, only someone beneath you", () => {
+    expect(mayChange(RealmRole.admin, RealmRole.admin)).toBe(true);
+    expect(mayChange(RealmRole.moderator, RealmRole.moderator)).toBe(false);
+    expect(mayChange(RealmRole.moderator, RealmRole.verified)).toBe(true);
+    expect(mayChange(null, RealmRole.member)).toBe(false);
+  });
+
+  test("a platform admin acts as an admin, member or not", () => {
+    expect(actingRank(true, null)).toBe(RealmRole.admin);
+    expect(actingRank(true, RealmRole.member)).toBe(RealmRole.admin);
+    expect(actingRank(false, RealmRole.moderator)).toBe(RealmRole.moderator);
+    expect(actingRank(false, null)).toBeNull();
   });
 });
 
@@ -154,7 +168,7 @@ describe.skipIf(!live)("realms", () => {
       expectErr(await w.realms.leave(id, admin, RealmRole.admin), ErrorCode.realm.soleAdmin);
       const [other] = people as [string];
       expectOk(
-        await w.realms.changeRole(id, { id: admin, role: RealmRole.admin }, other, RealmRole.admin),
+        await w.realms.changeRole(id, { id: admin, platform: false }, other, RealmRole.admin),
       );
       expectOk(await w.realms.leave(id, admin, RealmRole.admin));
     }));
@@ -214,7 +228,7 @@ describe.skipIf(!live)("roles", () => {
     inWorld(async (w, tx) => {
       const { id, admin, people } = await w.realm([], 2);
       const [mod, member] = people as [string, string];
-      const asAdmin = { id: admin, role: RealmRole.admin };
+      const asAdmin = { id: admin, platform: false };
 
       expectOk(await w.realms.changeRole(id, asAdmin, mod, RealmRole.moderator));
       expect(await w.roleOf(id, mod)).toBe(RealmRole.moderator);
@@ -227,7 +241,7 @@ describe.skipIf(!live)("roles", () => {
         }),
       ]);
 
-      const asMod = { id: mod, role: RealmRole.moderator };
+      const asMod = { id: mod, platform: false };
       expectErr(
         await w.realms.changeRole(id, asMod, member, RealmRole.moderator),
         ErrorCode.realm.forbidden,
@@ -252,12 +266,12 @@ describe.skipIf(!live)("roles", () => {
     inWorld(async (w) => {
       const { id, admin, people } = await w.realm([], 3);
       const [mod, peer, member] = people as [string, string, string];
-      const asAdmin = { id: admin, role: RealmRole.admin };
+      const asAdmin = { id: admin, platform: false };
       expectOk(await w.realms.changeRole(id, asAdmin, mod, RealmRole.moderator));
       expectOk(await w.realms.changeRole(id, asAdmin, peer, RealmRole.moderator));
       expectOk(await w.realms.changeRole(id, asAdmin, member, RealmRole.verified));
 
-      const asMod = { id: mod, role: RealmRole.moderator };
+      const asMod = { id: mod, platform: false };
       expectErr(
         await w.realms.changeRole(id, asMod, admin, RealmRole.member),
         ErrorCode.realm.forbidden,
@@ -275,7 +289,7 @@ describe.skipIf(!live)("roles", () => {
       expect(await w.roleOf(id, peer)).toBe(RealmRole.member);
 
       // Someone verified can't hand out verified: only a role below their own.
-      const asVerified = { id: member, role: RealmRole.verified };
+      const asVerified = { id: member, platform: false };
       expectErr(
         await w.realms.changeRole(id, asVerified, peer, RealmRole.verified),
         ErrorCode.realm.forbidden,
@@ -287,28 +301,55 @@ describe.skipIf(!live)("roles", () => {
       const { id, admin, people } = await w.realm([], 1);
       const [mod] = people as [string];
       expectOk(
-        await w.realms.changeRole(
-          id,
-          { id: admin, role: RealmRole.admin },
-          mod,
-          RealmRole.moderator,
-        ),
+        await w.realms.changeRole(id, { id: admin, platform: false }, mod, RealmRole.moderator),
       );
       for (const role of [RealmRole.member, RealmRole.verified, RealmRole.moderator]) {
         expectErr(
-          await w.realms.changeRole(id, { id: mod, role: RealmRole.moderator }, admin, role),
+          await w.realms.changeRole(id, { id: mod, platform: false }, admin, role),
           ErrorCode.realm.forbidden,
         );
       }
       expectErr(
-        await w.realms.changeRole(
-          id,
-          { id: admin, role: RealmRole.admin },
-          admin,
-          RealmRole.member,
-        ),
+        await w.realms.changeRole(id, { id: admin, platform: false }, admin, RealmRole.member),
         ErrorCode.realm.forbidden,
       );
       expect(await w.roleOf(id, admin)).toBe(RealmRole.admin);
+
+      // Platform authority outranks the realm's admin, but doesn't leave the realm without one.
+      const platform = await w.person("Platform admin");
+      expectErr(
+        await w.realms.changeRole(id, { id: platform, platform: true }, admin, RealmRole.member),
+        ErrorCode.realm.soleAdmin,
+      );
+      expect(await w.roleOf(id, admin)).toBe(RealmRole.admin);
+    }));
+
+  test("an admin demotes a fellow admin", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm([], 1);
+      const [peer] = people as [string];
+      const asAdmin = { id: admin, platform: false };
+      expectOk(await w.realms.changeRole(id, asAdmin, peer, RealmRole.admin));
+      expectOk(await w.realms.changeRole(id, asAdmin, peer, RealmRole.moderator));
+      expect(await w.roleOf(id, peer)).toBe(RealmRole.moderator);
+      // The demoted admin no longer acts as one: their role is read under the lock.
+      expectErr(
+        await w.realms.changeRole(id, { id: peer, platform: false }, admin, RealmRole.member),
+        ErrorCode.realm.forbidden,
+      );
+    }));
+
+  test("a platform admin who isn't a member changes any role, an admin's included", () =>
+    inWorld(async (w) => {
+      const { id, admin, people } = await w.realm([], 2);
+      const [member, peer] = people as [string, string];
+      const asPlatform = { id: await w.person("Platform admin"), platform: true };
+      expectOk(await w.realms.changeRole(id, asPlatform, member, RealmRole.moderator));
+      expectOk(await w.realms.changeRole(id, asPlatform, peer, RealmRole.admin));
+      expectOk(await w.realms.changeRole(id, asPlatform, admin, RealmRole.verified));
+      expect(await w.roleOf(id, admin)).toBe(RealmRole.verified);
+      expect((await w.outbox("realm.member_changed", id)).map((row) => row.payload)).toContainEqual(
+        { realmId: id, userId: admin, role: RealmRole.verified },
+      );
     }));
 });

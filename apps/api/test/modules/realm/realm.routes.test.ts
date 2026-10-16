@@ -191,6 +191,60 @@ describe.skipIf(!live)("membership routes", () => {
     }));
 });
 
+describe.skipIf(!live)("role changes", () => {
+  test("a platform admin who isn't a member changes a role, and it is announced", () =>
+    scenario(async ({ call, grants, w }) => {
+      const { id, slug, people } = await w.realm([], 1);
+      const [member] = people as [string];
+      const platform = await w.person("Platform admin");
+      grants.platform.add(platform);
+      grants.realm.set(platform, new Set(["can_vouch"]));
+
+      const changed = await call("PATCH", `/api/v1/realms/${slug}/members/${member}`, {
+        as: platform,
+        body: { role: RealmRole.moderator },
+      });
+      expect(changed.status).toBe(200);
+      expect(changed.body).toEqual({ userId: member, role: RealmRole.moderator });
+      expect((await w.outbox("realm.member_changed", id)).map((row) => row.payload)).toContainEqual(
+        { realmId: id, userId: member, role: RealmRole.moderator },
+      );
+    }));
+
+  test("an admin demotes a co-admin; a moderator can't touch an admin or a moderator", () =>
+    scenario(async ({ call, grants, w }) => {
+      const { id, slug, admin, people } = await w.realm([], 3);
+      const [peer, mod, other] = people as [string, string, string];
+      const asAdmin = { id: admin, platform: false };
+      for (const [who, role] of [
+        [peer, RealmRole.admin],
+        [mod, RealmRole.moderator],
+        [other, RealmRole.moderator],
+      ] as const) {
+        expect((await w.realms.changeRole(id, asAdmin, who, role)).ok).toBe(true);
+      }
+      grants.realm.set(admin, new Set(["can_vouch"]));
+      grants.realm.set(mod, new Set(["can_vouch"]));
+      const base = `/api/v1/realms/${slug}/members`;
+
+      for (const target of [admin, other]) {
+        const refused = await call("PATCH", `${base}/${target}`, {
+          as: mod,
+          body: { role: RealmRole.member },
+        });
+        expect(refused.status).toBe(403);
+        expect(refused.body.code).toBe("realm.forbidden");
+      }
+
+      const demoted = await call("PATCH", `${base}/${peer}`, {
+        as: admin,
+        body: { role: RealmRole.moderator },
+      });
+      expect(demoted.status).toBe(200);
+      expect(await w.roleOf(id, peer)).toBe(RealmRole.moderator);
+    }));
+});
+
 describe.skipIf(!live)("validation comes before the realm's guards", () => {
   test("a non-admin's malformed edit is a validation failure, not a refusal", () =>
     scenario(async ({ call, w }) => {

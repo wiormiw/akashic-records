@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, or, type SQL, sql } from "drizzle-orm";
 import { type Member, type RealmEdit, realmEvents, type RealmSummary } from "@akashic/contracts";
 import {
   audit,
@@ -82,6 +82,17 @@ export const outranks = (actor: RealmRole | null, target: RealmRole): boolean =>
  */
 export const grantable = (actor: RealmRole | null, role: RealmRole): boolean =>
   actor === RealmRole.admin || (actor !== null && role < actor && role < RealmRole.moderator);
+
+/** The rank someone acts with in a realm: a platform admin counts as its admin, member or not. */
+export const actingRank = (platform: boolean, role: RealmRole | null): RealmRole | null =>
+  platform ? RealmRole.admin : role;
+
+/**
+ * Whether `actor` may change the role of someone holding `target`: an admin anyone's, a fellow
+ * admin's included; anyone else only someone below them.
+ */
+export const mayChange = (actor: RealmRole | null, target: RealmRole): boolean =>
+  actor === RealmRole.admin || outranks(actor, target);
 
 export function createRealmService(deps: RealmDeps) {
   const { db, embedder, clock } = deps;
@@ -224,40 +235,66 @@ export function createRealmService(deps: RealmDeps) {
           err(fail.forbidden(ErrorCode.realm.forbidden, "You cannot change your own role.")),
         );
       }
-      // Vouching makes someone verified; only an admin hands out staff roles. Below admin, nobody
-      // grants a role as high as their own.
-      if (!grantable(actor.role, role)) {
-        return Promise.resolve(
-          err(
+      return inTransaction(db, async (tx) => {
+        // One statement locks the actor, the target and every admin, in user id order, so two
+        // changes racing each other queue rather than deadlock. Rank and admin count are read
+        // under the lock: two admins demoting each other at once can't leave the realm with none.
+        const locked = await tx
+          .select({ userId: realmMembers.userId, role: realmMembers.role })
+          .from(realmMembers)
+          .where(
+            and(
+              eq(realmMembers.realmId, realmId),
+              or(
+                eq(realmMembers.userId, actor.id),
+                eq(realmMembers.userId, targetId),
+                eq(realmMembers.role, RealmRole.admin),
+              ),
+            ),
+          )
+          .orderBy(asc(realmMembers.userId))
+          .for("update");
+        const roleIn = (userId: string) => {
+          const row = locked.find((r) => r.userId === userId);
+          return row ? narrow(RealmRole, row.role) : null;
+        };
+        const rank = actingRank(actor.platform, roleIn(actor.id));
+        // Vouching makes someone verified; only an admin hands out staff roles. Below admin,
+        // nobody grants a role as high as their own.
+        if (!grantable(rank, role)) {
+          return err(
             fail.forbidden(
               ErrorCode.realm.forbidden,
               role >= RealmRole.moderator
                 ? "Only an admin can grant moderator or admin."
                 : "You can only grant a role below your own.",
             ),
-          ),
-        );
-      }
-      return inTransaction(db, async (tx) => {
-        // Locked, so the rank compared is the rank changed.
-        const [target] = await tx
-          .select({ role: realmMembers.role })
-          .from(realmMembers)
-          .where(ofMember(realmId, targetId))
-          .for("update");
-        if (!target) {
+          );
+        }
+        const current = roleIn(targetId);
+        if (current === null) {
           return err(fail.notFound(ErrorCode.realm.notMember, "That person is not in this realm."));
         }
-        // Only someone above them changes their role: a moderator can't demote a fellow moderator
-        // or an admin (a recall exists for that). Since nobody outranks an admin, no change here
-        // can take a realm's last admin away.
-        if (!outranks(actor.role, narrow(RealmRole, target.role))) {
+        // An admin changes anyone's role, a fellow admin's too; below admin, only someone beneath
+        // you (a moderator can't demote a fellow moderator: a recall exists for that).
+        if (!mayChange(rank, current)) {
           return err(
             fail.forbidden(
               ErrorCode.realm.forbidden,
               "You can only change the role of someone below you.",
             ),
           );
+        }
+        if (current === RealmRole.admin && role < RealmRole.admin) {
+          const admins = locked.filter((r) => r.role === RealmRole.admin).length;
+          if (admins <= 1) {
+            return err(
+              fail.conflict(
+                ErrorCode.realm.soleAdmin,
+                "This is the realm's only admin. Promote someone else first.",
+              ),
+            );
+          }
         }
         await tx.update(realmMembers).set({ role }).where(ofMember(realmId, targetId));
         await publish(tx, [realmEvents.memberChanged(realmId, targetId, role)], clock.now());

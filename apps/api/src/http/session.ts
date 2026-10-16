@@ -32,20 +32,24 @@ export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }
     await next();
   });
 
-  // A 404 rather than a 403, so the admin surface doesn't announce itself.
-  const platformAdmin = createMiddleware<AppEnv>(async (c, next) => {
-    const signal = c.get("signal");
-    // Behind `session` the caller is already identified and ban-checked: one lookup, not two.
-    const user = c.get("user") ?? (await identify(c.req.raw.headers, signal));
-    const allowed = await options.authorizer.check(
+  /** Whether `userId` holds platform authority; routes that rank it above realm roles ask this. */
+  const isPlatformAdmin = (userId: string, signal: AbortSignal): Promise<boolean> =>
+    options.authorizer.check(
       {
-        userId: user.id,
+        userId,
         relation: Relation.platform.administer,
         type: FgaType.platform,
         objectId: PLATFORM_ID,
       },
       signal,
     );
+
+  // A 404 rather than a 403, so the admin surface doesn't announce itself.
+  const platformAdmin = createMiddleware<AppEnv>(async (c, next) => {
+    const signal = c.get("signal");
+    // Behind `session` the caller is already identified and ban-checked: one lookup, not two.
+    const user = c.get("user") ?? (await identify(c.req.raw.headers, signal));
+    const allowed = await isPlatformAdmin(user.id, signal);
     // Word for word the router's own 404 (http/problem.ts), so the two can't be told apart.
     if (!allowed) {
       throw fail.notFound(ErrorCode.common.routeNotFound, `No route for ${c.req.path}.`);
@@ -54,7 +58,7 @@ export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }
     await next();
   });
 
-  return { session, maybeSession, platformAdmin };
+  return { session, maybeSession, platformAdmin, isPlatformAdmin };
 }
 
 export type Sessions = ReturnType<typeof sessions>;

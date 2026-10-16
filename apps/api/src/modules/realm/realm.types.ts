@@ -76,10 +76,13 @@ export interface ApprovedRealm {
   realmId: string;
 }
 
-/** Who acts on a membership, and the role they hold in the realm (null for none). */
+/**
+ * Who acts on a membership, and whether they hold platform authority, which outranks every realm
+ * role. Their realm role isn't carried: the service reads it under the row lock.
+ */
 export interface Actor {
   id: string;
-  role: RealmRole | null;
+  platform: boolean;
 }
 
 export interface Joined {
