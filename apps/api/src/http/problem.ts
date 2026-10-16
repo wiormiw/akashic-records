@@ -2,6 +2,7 @@ import { HTTPException } from 'hono/http-exception';
 import type { Context, ErrorHandler, NotFoundHandler } from 'hono';
 import { AppError, ErrorCode, fail } from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
+import { isTimeout } from '@akashic/lib/tracing';
 import { PROBLEM_CONTENT_TYPE, toProblem } from '@akashic/lib/problem';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { AppEnv } from './env.ts';
@@ -24,7 +25,7 @@ export function problemHandler(logger: Logger): ErrorHandler<AppEnv> {
 	return (error, c) => {
 		if (c.req.raw.signal.aborted) return new Response(null, { status: CLIENT_CLOSED_REQUEST });
 
-		const failure = classify(error);
+		const failure = classify(error, c.get('signal'));
 		const traceId = c.get('requestId');
 		if (failure.kind === 'internal') {
 			log.error({ err: error, path: c.req.path, method: c.req.method, traceId }, 'unhandled error');
@@ -42,8 +43,11 @@ export function problemHandler(logger: Logger): ErrorHandler<AppEnv> {
 export const notFound: NotFoundHandler<AppEnv> = (c) =>
 	problemResponse(c, fail.notFound(ErrorCode.common.routeNotFound, `No route for ${c.req.path}.`));
 
-/** Maps whatever escaped a handler onto the error vocabulary. */
-function classify(error: unknown): AppError {
+/**
+ * Maps whatever escaped a handler onto the error vocabulary. `signal` is the request's: an abort
+ * raised because its deadline fired is the timeout it was, not a bug.
+ */
+function classify(error: unknown, signal: AbortSignal | undefined): AppError {
 	if (error instanceof AppError) return error;
 	if (error instanceof HTTPException) {
 		// Hono's own parsing and body-limit failures: the caller's mistake, not our bug.
@@ -54,7 +58,11 @@ function classify(error: unknown): AppError {
 			return fail.validation(ErrorCode.common.validation, 'The request could not be processed.');
 		}
 	}
-	if (error instanceof DOMException && error.name === 'TimeoutError') {
+	const timedOut =
+		error instanceof DOMException &&
+		(error.name === 'TimeoutError' ||
+			(error.name === 'AbortError' && signal?.aborted === true && isTimeout(signal.reason)));
+	if (timedOut) {
 		return fail.external(ErrorCode.common.timeout, 'The request took too long.');
 	}
 	return fail.internal(ErrorCode.common.unexpected, 'Unexpected error', { cause: error });

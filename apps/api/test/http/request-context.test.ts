@@ -33,6 +33,12 @@ const build = (budgetMs = 1000, logger = silentLogger()) => {
 			await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
 			throw signal.reason;
 		})
+		.get('/abort', async (c) => {
+			// Gives up with an AbortError of its own once the deadline fires, as some clients do.
+			const signal = c.get('signal');
+			await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }));
+			throw new DOMException('aborted', 'AbortError');
+		})
 		.get('/livez', (c) => c.text('ok'))
 		.get('/dup', () => {
 			throw Object.assign(new Error('dup key (email)=(ann@example.test)'), { code: '23505' });
@@ -126,6 +132,21 @@ describe('server span timeouts', () => {
 		await build(10).request('/slow');
 		const span = serverSpan('/slow');
 		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+		expect(span?.attributes['error.type']).toBe('timeout');
+	});
+
+	test('a request answered in time is not a timeout, however slow its span', async () => {
+		await build(1000).request('/slow');
+		const span = serverSpan('/slow');
+		expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+		expect(span?.attributes['error.type']).toBeUndefined();
+	});
+
+	test('an AbortError thrown after the deadline is the timeout problem, not a 500', async () => {
+		const res = await build(10).request('/abort');
+		expect(res.status).toBe(502);
+		expect(((await res.json()) as { code: string }).code).toBe('common.request.timeout');
+		const span = serverSpan('/abort');
 		expect(span?.attributes['error.type']).toBe('timeout');
 	});
 

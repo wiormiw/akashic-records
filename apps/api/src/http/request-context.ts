@@ -4,7 +4,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Lifecycle } from '@akashic/lib/lifecycle';
 import type { Logger } from '@akashic/lib/log';
 import { ErrorCode, fail } from '@akashic/lib/errors';
-import { isTimeout, recordThrow, recordTimeout } from '@akashic/lib/tracing';
+import { recordThrow, recordTimeout } from '@akashic/lib/tracing';
 import type { AppEnv } from './env.ts';
 import { problemResponse } from './problem.ts';
 
@@ -60,6 +60,10 @@ export function requestContext(options: {
 				c,
 				fail.external(ErrorCode.common.timeout, 'The request took too long.'),
 			);
+			// The server span (none on untraced paths) says so too. A handler that threw instead is
+			// recorded from `c.error` below.
+			const span = trace.getActiveSpan();
+			if (span) recordTimeout(span);
 		}
 		log.info(
 			{
@@ -82,14 +86,10 @@ export function requestContext(options: {
 					// @hono/otel records `c.error` as is, message and stack, when it ends the server span;
 					// a driver's message can carry row values. Record it scrubbed here and leave it nothing.
 					// The problem response and its log line were written before this point.
-					const span = trace.getActiveSpan();
-					const signal = c.get('signal');
 					if (c.error) {
-						if (span) recordThrow(span, c.error, signal);
+						const span = trace.getActiveSpan();
+						if (span) recordThrow(span, c.error, c.get('signal'));
 						c.error = undefined;
-					} else if (span && signal.aborted && isTimeout(signal.reason)) {
-						// Past its budget without a throw: answered with the timeout problem, still an error.
-						recordTimeout(span);
 					}
 				}),
 	);
