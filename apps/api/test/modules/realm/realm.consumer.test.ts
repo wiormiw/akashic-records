@@ -125,6 +125,19 @@ describe("realm consumer", () => {
     expect([...tuples].sort()).toEqual(["realm:r1 realm job:j1", "user:u1 author job:j1"]);
   });
 
+  test("a comment is linked to its author and its realm, so either may delete it", async () => {
+    const { authorizer, tuples } = memoryAuthorizer();
+    const handlers = consumer(authorizer);
+    const event = realmEvents.postingCreated("comment", {
+      postingId: "c1",
+      realmId: "r1",
+      authorId: "u1",
+    });
+
+    await handlers[event.type]?.(event.payload, signal, meta);
+    expect([...tuples].sort()).toEqual(["realm:r1 realm comment:c1", "user:u1 author comment:c1"]);
+  });
+
   test("every write carries the handler's signal, so its deadline reaches OpenFGA", async () => {
     const { authorizer, signals } = memoryAuthorizer();
     const handlers = consumer(authorizer);

@@ -32,6 +32,7 @@ export async function buildModules(container: AppContainer, http: HttpKit): Prom
     createCommentsModule({
       comments: await container.getAsync("comments"),
       realmContext: http.realmContext,
+      authorizer: container.get("authorizer"),
     }),
     createGovernanceModule({
       governance: await container.getAsync("governance"),

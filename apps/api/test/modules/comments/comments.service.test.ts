@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { comments, createDb, type Tx } from "@akashic/db";
 import { withRollback } from "@akashic/db/testing";
 import { eq } from "drizzle-orm";
+import { AuditAction } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { expectErr, expectOk } from "@akashic/lib/testing";
 import { toDate } from "@akashic/lib/time";
@@ -93,7 +94,7 @@ describe.skipIf(!live)("reading a thread", () => {
         .update(comments)
         .set({ createdAt: new Date("2026-01-01T00:00:00Z") })
         .where(eq(comments.id, first.id));
-      expectOk(await w.service.remove(realmId, first.id));
+      expectOk(await w.service.remove(realmId, first.id, admin));
 
       const thread = expectOk(await w.service.thread(realmId, event));
       expect(thread.map((c) => [c.body, c.removed, c.authorName])).toEqual([
@@ -119,10 +120,29 @@ describe.skipIf(!live)("removing a comment", () => {
       const { event } = await w.postings(realmId, admin);
       const { id } = expectOk(await w.service.add(realmId, event, people[0]!, "Oops"));
 
-      expect(expectOk(await w.service.remove(realmId, id))).toEqual({ removed: true });
+      expect(expectOk(await w.service.remove(realmId, id, people[0]!))).toEqual({ removed: true });
       // Stamped by the injected clock.
       expect((await w.row(id))?.removedAt).toEqual(toDate(clock.now()));
-      expectErr(await w.service.remove(realmId, Bun.randomUUIDv7()), "event.not_found");
+      // The author removing their own leaves no record.
+      expect(await w.audits(id)).toEqual([]);
+      expectErr(await w.service.remove(realmId, Bun.randomUUIDv7(), admin), "event.not_found");
+    }));
+
+  test("someone else's removal is recorded as a moderator's", () =>
+    inWorld(async (w) => {
+      const { id: realmId, admin, people } = await w.realm(1);
+      const { event } = await w.postings(realmId, admin);
+      const { id } = expectOk(await w.service.add(realmId, event, people[0]!, "Rude"));
+
+      expectOk(await w.service.remove(realmId, id, admin));
+      expect(await w.audits(id)).toEqual([
+        expect.objectContaining({
+          userId: admin,
+          entityType: "comment",
+          action: AuditAction.deleted,
+          changes: { by: "moderator" },
+        }),
+      ]);
     }));
 
   test("a comment of another realm is not found and stays", () =>
@@ -134,7 +154,7 @@ describe.skipIf(!live)("removing a comment", () => {
         await w.service.add(elsewhere.id, event, elsewhere.people[0]!, "Mine"),
       );
 
-      expectErr(await w.service.remove(home.id, id), "event.not_found");
+      expectErr(await w.service.remove(home.id, id, home.admin), "event.not_found");
       expect((await w.row(id))?.removedAt).toBeNull();
     }));
 });

@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import type { Authorizer } from "@akashic/authz";
 import type { RealmEnv } from "@/http/realm-context.ts";
 import type { CommentService } from "./comments.service.ts";
 import type { Executor } from "@akashic/db";
@@ -30,6 +31,8 @@ export interface RemovedComment {
 export interface CommentsRoutesDeps {
   comments: CommentService;
   realmContext: MiddlewareHandler<RealmEnv>;
+  /** Asks who may delete a comment: its author, or a moderator of its realm. */
+  authorizer: Authorizer;
 }
 
 /** What the comments module is built from: just what its routes need. */

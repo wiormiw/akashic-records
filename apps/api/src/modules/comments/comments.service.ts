@@ -1,6 +1,7 @@
 import { type CommentEntry, realmEvents } from "@akashic/contracts";
 import { and, asc, eq } from "drizzle-orm";
 import {
+  audit,
   comments,
   events,
   type Executor,
@@ -10,7 +11,7 @@ import {
   publish,
   user,
 } from "@akashic/db";
-import { CommentSubject } from "@akashic/lib/enums";
+import { AuditAction, CommentSubject } from "@akashic/lib/enums";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { err, ok, type Result } from "@akashic/lib/result";
 import { fromDate, toDate } from "@akashic/lib/time";
@@ -110,17 +111,31 @@ export function createCommentService(deps: CommentsDeps) {
       });
     },
 
-    /** Soft delete: the comment keeps its place in the thread. */
-    async remove(realmId: string, commentId: string): Promise<Result<RemovedComment>> {
-      const removed = await db
-        .update(comments)
-        .set({ removedAt: toDate(clock.now()) })
-        .where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
-        .returning({ id: comments.id });
-      if (removed.length === 0) {
-        return err(fail.notFound(ErrorCode.event.notFound, "No such comment in this realm."));
-      }
-      return ok({ removed: true as const });
+    /**
+     * Soft delete: the comment keeps its place in the thread. The route has checked the actor may
+     * (its author, or a moderator); a moderator removing someone else's is recorded.
+     */
+    remove(realmId: string, commentId: string, actorId: string): Promise<Result<RemovedComment>> {
+      return inTransaction(db, async (tx) => {
+        const [removed] = await tx
+          .update(comments)
+          .set({ removedAt: toDate(clock.now()) })
+          .where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
+          .returning({ authorId: comments.authorId });
+        if (!removed) {
+          return err(fail.notFound(ErrorCode.event.notFound, "No such comment in this realm."));
+        }
+        if (removed.authorId !== actorId) {
+          await audit(tx, {
+            actorId,
+            entityType: "comment",
+            entityId: commentId,
+            action: AuditAction.deleted,
+            changes: { by: "moderator" },
+          });
+        }
+        return ok({ removed: true as const });
+      });
     },
   };
 }

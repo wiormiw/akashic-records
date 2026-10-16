@@ -10,16 +10,17 @@ import {
   SubjectParam,
   subjectOf,
 } from "@akashic/contracts";
+import { FgaType, Relation } from "@akashic/authz";
 import { mapOk } from "@akashic/lib/result";
 import { type AppEnv, callerOf } from "@/http/env.ts";
-import { type RealmEnv, requirePermission } from "@/http/realm-context.ts";
+import { type RealmEnv, requireOn, requirePermission } from "@/http/realm-context.ts";
 import { respond } from "@/http/reply.ts";
 import { validate } from "@/http/validate.ts";
 import type { ModuleRoutes } from "../module.ts";
 import type { CommentsRoutesDeps } from "./comments.types.ts";
 
 export function createCommentsRoutes(deps: CommentsRoutesDeps): ModuleRoutes {
-  const { comments, realmContext } = deps;
+  const { comments, realmContext, authorizer } = deps;
 
   // Guards sit on each route, after its validation, never `use`d on a shared prefix.
   const privateRoutes = new Hono<RealmEnv>()
@@ -27,11 +28,13 @@ export function createCommentsRoutes(deps: CommentsRoutesDeps): ModuleRoutes {
       "/realms/:slug/comments/:id",
       validate("param", RealmItemParam),
       realmContext,
-      requirePermission("moderate"),
+      // Its author or a moderator of its realm (model.fga); the service still checks the comment
+      // is this realm's, since a moderator elsewhere passes this check.
+      requireOn(authorizer, Relation.comment.delete, FgaType.comment),
       async (c) =>
         respond(
           c,
-          await comments.remove(c.var.realm.realmId, c.req.valid("param").id),
+          await comments.remove(c.var.realm.realmId, c.req.valid("param").id, callerOf(c).id),
           RemovedView,
         ),
     )

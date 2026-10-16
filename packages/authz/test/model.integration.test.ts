@@ -19,6 +19,7 @@ const OUTSIDER = "00000000-0000-0000-0000-00000000000e";
 const PLATFORM_ADMIN = "00000000-0000-0000-0000-0000000000aa";
 const REALM = "00000000-0000-0000-0000-0000000000f0";
 const JOB = "00000000-0000-0000-0000-0000000000f1";
+const COMMENT = "00000000-0000-0000-0000-0000000000f2";
 
 describe.skipIf(!available)("the authorization model", () => {
   let client: OpenFgaClient;
@@ -59,6 +60,18 @@ describe.skipIf(!available)("the authorization model", () => {
           relation: "realm",
           type: FgaType.job,
           objectId: JOB,
+        },
+        {
+          subject: { userId: MEMBER },
+          relation: "author",
+          type: FgaType.comment,
+          objectId: COMMENT,
+        },
+        {
+          subject: { type: FgaType.realm, objectId: REALM },
+          relation: "realm",
+          type: FgaType.comment,
+          objectId: COMMENT,
         },
       ],
     });
@@ -108,6 +121,18 @@ describe.skipIf(!available)("the authorization model", () => {
     expect(await onJob(VOUCHED, Relation.posting.settle)).toBe(true);
     expect(await onJob(MODERATOR, Relation.posting.settle)).toBe(false);
     expect(await onJob(ADMIN, Relation.posting.settle)).toBe(false);
+  });
+
+  test("a comment is deleted by its author or the realm's moderators, nobody else", async () => {
+    const onComment = (userId: string) =>
+      authz.check({
+        userId,
+        relation: Relation.comment.delete,
+        type: FgaType.comment,
+        objectId: COMMENT,
+      });
+    for (const who of [MEMBER, MODERATOR, ADMIN]) expect(await onComment(who)).toBe(true);
+    for (const who of [VOUCHED, OUTSIDER]) expect(await onComment(who)).toBe(false);
   });
 
   test("platform admins hold nothing in a realm until it is linked to the platform", async () => {

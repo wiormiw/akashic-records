@@ -7,6 +7,10 @@ import { clock } from "../../support/fixtures.ts";
 /** The comments routes mounted as app.ts mounts them, on `db`. */
 export const commentsApp = (db: Executor) =>
   testApp(db, {
-    routes: ({ realmContext }) =>
-      createCommentsRoutes({ comments: createCommentService({ db, clock }), realmContext }),
+    routes: ({ realmContext, authorizer }) =>
+      createCommentsRoutes({
+        comments: createCommentService({ db, clock }),
+        realmContext,
+        authorizer,
+      }),
   });

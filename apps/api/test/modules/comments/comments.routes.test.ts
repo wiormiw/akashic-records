@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import * as v from "valibot";
-import { Relation } from "@akashic/authz";
+import { FgaType, Relation } from "@akashic/authz";
 import { createDb } from "@akashic/db";
 import { withRollback } from "@akashic/db/testing";
+import { AuditAction } from "@akashic/lib/enums";
 import { silentLogger } from "@akashic/lib/log";
 import { commentsApp } from "./app.ts";
 import { databaseUrl } from "../../support/fixtures.ts";
@@ -117,36 +118,68 @@ describe.skipIf(!live)("a thread", () => {
 });
 
 describe.skipIf(!live)("removing a comment", () => {
-  test("a moderator removes it (200), and it stays in the thread without its words", () =>
-    scenario(async ({ call, grant, w }) => {
+  const { delete: remove } = Relation.comment;
+
+  test("its author removes it (200), and it stays in the thread without its words", () =>
+    scenario(async ({ call, grant, grantOn, w }) => {
       const { slug, id: realmId, admin, people } = await w.realm(1);
       const { event } = await w.postings(realmId, admin);
-      grant(people[0]!, participate);
-      grant(admin, participate, moderate);
+      const author = people[0]!;
+      grant(author, participate);
       const created = await call("POST", `/api/v1/realms/${slug}/events/${event.id}/comments`, {
-        as: people[0]!,
-        body: { body: "Rude words" },
+        as: author,
+        body: { body: "Typo" },
       });
+      grantOn(author, remove, FgaType.comment, created.body.id);
 
       const removed = await call("DELETE", `/api/v1/realms/${slug}/comments/${created.body.id}`, {
-        as: admin,
+        as: author,
       });
       expect(removed.status).toBe(200);
       expect(removed.body).toEqual({ removed: true });
 
       const thread = await call("GET", `/api/v1/realms/${slug}/events/${event.id}/comments`, {
-        as: admin,
+        as: author,
       });
       expect(v.parse(v.array(Web.Comment), thread.body)).toMatchObject([
         { body: "", removed: true },
       ]);
+      // Removing your own needs no record.
+      expect(await w.audits(created.body.id)).toEqual([]);
     }));
 
-  test("signed out is 401, a member without moderate is 403, a bad id 400", () =>
-    scenario(async ({ call, grant, w }) => {
+  test("a moderator removes anyone's (200), and the removal is recorded", () =>
+    scenario(async ({ call, grant, grantOn, w }) => {
       const { slug, id: realmId, admin, people } = await w.realm(1);
       const { event } = await w.postings(realmId, admin);
       grant(people[0]!, participate);
+      const created = await call("POST", `/api/v1/realms/${slug}/events/${event.id}/comments`, {
+        as: people[0]!,
+        body: { body: "Rude words" },
+      });
+      grantOn(admin, remove, FgaType.comment, created.body.id);
+
+      const removed = await call("DELETE", `/api/v1/realms/${slug}/comments/${created.body.id}`, {
+        as: admin,
+      });
+      expect(removed.status).toBe(200);
+      expect((await w.row(created.body.id))?.removedAt).not.toBeNull();
+      expect(await w.audits(created.body.id)).toEqual([
+        expect.objectContaining({
+          userId: admin,
+          entityType: "comment",
+          action: AuditAction.deleted,
+          changes: { by: "moderator" },
+        }),
+      ]);
+    }));
+
+  test("signed out is 401, a member removing another's is 403, a bad id 400", () =>
+    scenario(async ({ call, grant, w }) => {
+      const { slug, id: realmId, admin, people } = await w.realm(2);
+      const { event } = await w.postings(realmId, admin);
+      grant(people[0]!, participate);
+      grant(people[1]!, participate, moderate);
       const created = await call("POST", `/api/v1/realms/${slug}/events/${event.id}/comments`, {
         as: people[0]!,
         body: { body: "Mine" },
@@ -154,7 +187,8 @@ describe.skipIf(!live)("removing a comment", () => {
       const path = `/api/v1/realms/${slug}/comments/${created.body.id}`;
 
       expect((await call("DELETE", path)).status).toBe(401);
-      const forbidden = await call("DELETE", path, { as: people[0]! });
+      // The realm-wide moderate permission is no longer what's asked: the comment's own is.
+      const forbidden = await call("DELETE", path, { as: people[1]! });
       expect(forbidden.status).toBe(403);
       expect(forbidden.body.code).toBe("realm.forbidden");
       const bad = await call("DELETE", `/api/v1/realms/${slug}/comments/nope`, { as: admin });
@@ -162,28 +196,32 @@ describe.skipIf(!live)("removing a comment", () => {
       expect((await w.row(created.body.id))?.removedAt).toBeNull();
     }));
 
-  test("a comment of another realm is 404 and stays, even for a moderator here", () =>
-    scenario(async ({ call, grant, w }) => {
+  test("a comment of another realm is 404 and stays, even for one who may delete it", () =>
+    scenario(async ({ call, grant, grantOn, w }) => {
       const home = await w.realm();
       const elsewhere = await w.realm(1);
       const { event } = await w.postings(elsewhere.id, elsewhere.admin);
-      grant(elsewhere.people[0]!, participate);
-      grant(home.admin, moderate);
+      const author = elsewhere.people[0]!;
+      grant(author, participate);
       const created = await call(
         "POST",
         `/api/v1/realms/${elsewhere.slug}/events/${event.id}/comments`,
-        { as: elsewhere.people[0]!, body: { body: "Theirs" } },
+        { as: author, body: { body: "Theirs" } },
       );
+      // Its author, and the other realm's moderator, pass the object check; only the realm
+      // check stops them.
+      grantOn(author, remove, FgaType.comment, created.body.id);
+      grantOn(elsewhere.admin, remove, FgaType.comment, created.body.id);
 
-      const refused = await call(
-        "DELETE",
-        `/api/v1/realms/${home.slug}/comments/${created.body.id}`,
-        {
-          as: home.admin,
-        },
-      );
-      expect(refused.status).toBe(404);
-      expect(refused.body.code).toBe("event.not_found");
+      for (const who of [author, elsewhere.admin]) {
+        const refused = await call(
+          "DELETE",
+          `/api/v1/realms/${home.slug}/comments/${created.body.id}`,
+          { as: who },
+        );
+        expect(refused.status).toBe(404);
+        expect(refused.body.code).toBe("event.not_found");
+      }
       expect((await w.row(created.body.id))?.removedAt).toBeNull();
     }));
 });

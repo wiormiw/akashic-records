@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import * as v from "valibot";
 import {
+  auditEntries,
   comments,
   events,
   jobs,
@@ -90,6 +91,8 @@ export function world(tx: Tx) {
       const [row] = await tx.select().from(comments).where(eq(comments.id, id));
       return row;
     },
+    audits: (entityId: string) =>
+      tx.select().from(auditEntries).where(eq(auditEntries.entityId, entityId)),
   };
 }
 
