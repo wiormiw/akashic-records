@@ -12,13 +12,17 @@ import { REQUEST_ID_HEADER, requestContext } from '@/http/request-context.ts';
 const recorder = recordSpans();
 beforeEach(() => recorder.reset());
 
-const build = (budgetMs = 1000, logger = silentLogger()) => {
+const build = (
+	budgetMs = 1000,
+	logger = silentLogger(),
+	lifecycle = createLifecycle(silentLogger()),
+) => {
 	const app = new Hono<AppEnv>()
 		.use(
 			requestContext({
 				budgetMs,
 				logger,
-				lifecycle: createLifecycle(silentLogger()),
+				lifecycle,
 				service: 'test',
 			}),
 		)
@@ -46,7 +50,7 @@ const build = (budgetMs = 1000, logger = silentLogger()) => {
 		.get('/refused', () => {
 			throw new DuplicateSlug('That name is taken.');
 		});
-	app.onError(problemHandler(logger));
+	app.onError(problemHandler(logger, lifecycle.signal));
 	return app;
 };
 
@@ -172,5 +176,47 @@ describe('access log', () => {
 		const line = lines.find((l) => l.msg === 'request');
 		expect(line?.status).toBe(502);
 		expect(typeof line?.ms).toBe('number');
+	});
+});
+
+describe('shutdown', () => {
+	const cutOff = async (path: string) => {
+		const { logger, lines } = captureLogger();
+		const lifecycle = createLifecycle(silentLogger());
+		const pending = build(1000, logger, lifecycle).request(path);
+		await Bun.sleep(5);
+		lifecycle.abort('test');
+		return { res: await pending, lines };
+	};
+
+	test.each(['/wait', '/abort'])(
+		'a handler stopped by shutdown (%s) is a 503 with Retry-After',
+		async (path) => {
+			const { res, lines } = await cutOff(path);
+			expect(res.status).toBe(503);
+			expect(res.headers.get('retry-after')).toBe('5');
+			expect(res.headers.get(REQUEST_ID_HEADER)).toBeTruthy();
+			expect(((await res.json()) as { code: string }).code).toBe(ErrorCode.common.unavailable);
+			expect(lines.some((l) => l.msg === 'unhandled error')).toBe(false);
+			const line = lines.find((l) => l.msg === 'request cut off by shutdown');
+			expect(line?.level).toBe(30);
+		},
+	);
+
+	test('the server span says cancelled, and is ERROR only for its 5xx', async () => {
+		await cutOff('/wait');
+		const span = serverSpan('/wait');
+		expect(span?.attributes['akashic.cancelled']).toBe(true);
+		expect(span?.attributes['error.type']).toBeUndefined();
+		expect(span?.events.filter((e) => e.name === 'exception')).toHaveLength(0);
+		// @hono/otel marks every 5xx as ERROR; nothing else on the span reads as a failure.
+		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+	});
+
+	test('an unrelated throw during shutdown is still a 500', async () => {
+		const lifecycle = createLifecycle(silentLogger());
+		lifecycle.abort('test');
+		const res = await build(1000, silentLogger(), lifecycle).request('/dup');
+		expect(res.status).toBe(500);
 	});
 });

@@ -83,6 +83,8 @@ export function requestContext(options: {
 					// @hono/otel records `c.error` as is, message and stack, when it ends the server span;
 					// a driver's message can carry row values. Record it scrubbed here and leave it nothing.
 					// The problem response and its log line were written before this point.
+					// A request cut off by shutdown is marked `akashic.cancelled`, yet its span still ends
+					// as ERROR: @hono/otel marks every 5xx, and the 503 it was answered with is one.
 					if (c.error) {
 						const span = trace.getActiveSpan();
 						if (span) recordThrow(span, c.error, c.get('signal'));

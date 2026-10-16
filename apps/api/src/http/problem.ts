@@ -4,6 +4,7 @@ import {
 	AppError,
 	RequestTimeout,
 	RouteNotFound,
+	ServiceUnavailable,
 	UnexpectedError,
 	ValidationFailed,
 } from '@akashic/lib/errors';
@@ -15,6 +16,8 @@ import type { AppEnv } from './env.ts';
 
 // nginx's "client closed request": keeps disconnects out of the 5xx count.
 const CLIENT_CLOSED_REQUEST = 499;
+// Seconds a client cut off by shutdown waits before retrying; another instance takes it by then.
+const SHUTDOWN_RETRY_AFTER = '5';
 
 /** The problem+json response for a failure; also how `respond` renders a returned `err`. */
 export function problemResponse<E extends AppEnv>(c: Context<E>, failure: AppError): Response {
@@ -25,15 +28,21 @@ export function problemResponse<E extends AppEnv>(c: Context<E>, failure: AppErr
 	});
 }
 
-/** The one place a thrown failure becomes a response. */
-export function problemHandler(logger: Logger): ErrorHandler<AppEnv> {
+/**
+ * The one place a thrown failure becomes a response. `shutdown` is the lifecycle's signal: a
+ * handler that throws because it aborted was cut off, not failing, and is told to retry.
+ */
+export function problemHandler(logger: Logger, shutdown?: AbortSignal): ErrorHandler<AppEnv> {
 	const log = logger.child({ component: 'http' });
 	return (error, c) => {
 		if (c.req.raw.signal.aborted) return new Response(null, { status: CLIENT_CLOSED_REQUEST });
 
-		const failure = classify(error, c.get('signal'));
+		const failure = classify(error, c.get('signal'), shutdown);
 		const traceId = c.get('requestId');
-		if (failure.kind === 'internal') {
+		if (failure instanceof ServiceUnavailable) {
+			c.header('retry-after', SHUTDOWN_RETRY_AFTER);
+			log.info({ path: c.req.path, method: c.req.method, traceId }, 'request cut off by shutdown');
+		} else if (failure.kind === 'internal') {
 			log.error({ err: error, path: c.req.path, method: c.req.method, traceId }, 'unhandled error');
 		} else if (failure.kind === 'external') {
 			// A dependency failing is worth a line; a 4xx is the API working.
@@ -51,9 +60,14 @@ export const notFound: NotFoundHandler<AppEnv> = (c) =>
 
 /**
  * Maps whatever escaped a handler onto the error vocabulary. `signal` is the request's: an abort
- * raised because its deadline fired is the timeout it was, not a bug.
+ * raised because its deadline fired is the timeout it was, not a bug, and one raised because
+ * `shutdown` fired is a 503.
  */
-function classify(error: unknown, signal: AbortSignal | undefined): AppError {
+function classify(
+	error: unknown,
+	signal: AbortSignal | undefined,
+	shutdown: AbortSignal | undefined,
+): AppError {
 	if (error instanceof AppError) return error;
 	if (error instanceof HTTPException) {
 		// Hono's own parsing and body-limit failures: the caller's mistake, not our bug.
@@ -71,5 +85,11 @@ function classify(error: unknown, signal: AbortSignal | undefined): AppError {
 	if (timedOut) {
 		return new RequestTimeout();
 	}
+	const cutOff =
+		shutdown?.aborted === true &&
+		(error === shutdown.reason ||
+			error === signal?.reason ||
+			(error instanceof DOMException && error.name === 'AbortError'));
+	if (cutOff) return new ServiceUnavailable(undefined, { cause: error });
 	return new UnexpectedError('Unexpected error', { cause: error });
 }

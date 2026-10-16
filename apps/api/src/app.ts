@@ -80,7 +80,7 @@ export function createApp(deps: AppDeps) {
 	// Routes that own their path, such as the room socket, sit outside both API prefixes.
 	for (const group of deps.modules) if (group.root) app.route('/', group.root);
 
-	app.onError(problemHandler(deps.logger));
+	app.onError(problemHandler(deps.logger, deps.lifecycle.signal));
 	app.notFound(notFound);
 	return app;
 }
