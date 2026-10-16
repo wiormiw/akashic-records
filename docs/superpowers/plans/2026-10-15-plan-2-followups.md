@@ -92,3 +92,14 @@ a realm admin runs one realm. As built in `changeRole`:
 - `/admin/` with a trailing slash no longer matches (the web app calls `/admin`).
 - Tests that commit rows (broker outbox integration, race tests) can be claimed by a running
   `bun run dev` dispatcher.
+
+## Lock-order edges left (from the last review)
+
+- `leave` locks the realm's admin rows in `user_id` order, but it trusts the leaver's role as
+  read at request start. When a demotion commits first and two or more admins remain, the DELETE
+  then locks the leaver's own row after the admin rows, and that can deadlock with a concurrent
+  `changeRole` involving them. Fix: lock `role = admin OR user_id = <self>` in the one sorted
+  statement, and run the sole-admin check on the locked role.
+- `removeModerator` and recalls check the subject's seat outside the transaction. If the subject
+  is promoted to admin in between, `unseat` demotes an admin and locks that row after the
+  non-admin rows (old behaviour). Fix: re-check the subject's role under `lockMembers`.
