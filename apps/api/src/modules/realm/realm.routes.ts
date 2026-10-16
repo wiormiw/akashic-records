@@ -141,7 +141,8 @@ export function createRealmRoutes(deps: RealmRoutesDeps): ModuleRoutes {
 		);
 
 	const privateRoutes = new Hono<AppEnv>()
-		.post('/realms', validate('json', CreateRealmBody), sessions.platformAdmin, async (c) =>
+		// Founding directly is admin surface too: the platform check first, as above (R15).
+		.post('/realms', sessions.platformAdmin, validate('json', CreateRealmBody), async (c) =>
 			respond(c, await realms.found(callerOf(c).id, c.req.valid('json')), FoundedView, 201),
 		)
 		.post('/proposals', validate('json', ProposeRealmBody), async (c) =>

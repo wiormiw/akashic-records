@@ -344,6 +344,8 @@ describe.skipIf(!live)('platform administration routes', () => {
 			for (const [path, body] of [
 				['/api/v1/admin/proposals/not-a-uuid/approve', undefined],
 				[`/api/v1/admin/proposals/${Bun.randomUUIDv7()}/reject`, { note: 42 }],
+				// Founding directly is admin surface as well.
+				['/api/v1/realms', { slug: 42 }],
 			] as const) {
 				const refused = await call('POST', path, { as: someone, body });
 				expect(refused).toEqual({
