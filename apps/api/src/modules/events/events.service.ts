@@ -212,12 +212,14 @@ export function createEventService(deps: EventsDeps) {
 					return err(new EventFull('This event is full.'));
 				}
 
+				// The injected clock for the first answer too, not the column default.
+				const respondedAt = toDate(clock.now());
 				await tx
 					.insert(eventRsvps)
-					.values({ eventId, userId, status })
+					.values({ eventId, userId, status, respondedAt })
 					.onConflictDoUpdate({
 						target: [eventRsvps.eventId, eventRsvps.userId],
-						set: { status, respondedAt: toDate(clock.now()) },
+						set: { status, respondedAt },
 					});
 				return ok({ status });
 			});

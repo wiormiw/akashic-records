@@ -1,12 +1,14 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createDb, events, type Tx } from '@akashic/db';
+import { createDb, eventRsvps, events, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
+import { and, eq } from 'drizzle-orm';
 import { RealmModule, RsvpStatus } from '@akashic/lib/enums';
 import { EventFull, EventNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { isError } from '@akashic/lib/result';
 import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { hasRoomFor } from '@/modules/events/events.service.ts';
+import { toDate } from '@akashic/lib/time';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
 
@@ -208,6 +210,17 @@ describe.skipIf(!live)('RSVPs', () => {
 			expectOk(await w.service.respond(id, eventId, people[0]!, RsvpStatus.declined));
 			expect(await w.rsvpOf(eventId, people[0]!)).toBe(RsvpStatus.declined);
 			expectOk(await w.service.respond(id, eventId, people[1]!, RsvpStatus.going));
+		}));
+
+	test("the first answer is stamped by the service's clock, not the column default", () =>
+		inWorld(async (w, tx) => {
+			const { id, eventId, people } = await capped(w, 2);
+			expectOk(await w.service.respond(id, eventId, people[0]!, RsvpStatus.going));
+			const [row] = await tx
+				.select({ at: eventRsvps.respondedAt })
+				.from(eventRsvps)
+				.where(and(eq(eventRsvps.eventId, eventId), eq(eventRsvps.userId, people[0]!)));
+			expect(row!.at).toEqual(toDate(clock.now()));
 		}));
 
 	test('withdrawing reports whether there was an answer to clear', () =>
