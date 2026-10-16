@@ -5,7 +5,8 @@ import { eq } from 'drizzle-orm';
 import { AuditAction } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { expectErr, expectOk } from '@akashic/lib/testing';
-import { toDate } from '@akashic/lib/time';
+import { fixedClock, toDate } from '@akashic/lib/time';
+import { createCommentService } from '@/modules/comments/comments.service.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
 
 const database = createDb({
@@ -143,6 +144,22 @@ describe.skipIf(!live)('removing a comment', () => {
 					changes: { by: 'moderator' },
 				}),
 			]);
+		}));
+
+	test('removing it again changes nothing: same answer, first time kept, one record', () =>
+		inWorld(async (w, tx) => {
+			const { id: realmId, admin, people } = await w.realm(1);
+			const { event } = await w.postings(realmId, admin);
+			const { id } = expectOk(await w.service.add(realmId, event, people[0]!, 'Rude'));
+
+			expectOk(await w.service.remove(realmId, id, admin));
+			const first = (await w.row(id))?.removedAt;
+			// An hour later, by another moderator's hand.
+			const later = createCommentService({ db: tx, clock: fixedClock('2026-06-01T13:00:00Z') });
+			const other = await w.person('Moderator');
+			expect(expectOk(await later.remove(realmId, id, other))).toEqual({ removed: true });
+			expect((await w.row(id))?.removedAt).toEqual(first!);
+			expect(await w.audits(id)).toHaveLength(1);
 		}));
 
 	test('a comment of another realm is not found and stays', () =>

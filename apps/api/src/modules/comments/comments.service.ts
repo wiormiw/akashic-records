@@ -1,5 +1,5 @@
 import { type CommentEntry, realmEvents } from '@akashic/contracts';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import {
 	audit,
 	comments,
@@ -117,13 +117,19 @@ export function createCommentService(deps: CommentsDeps) {
 		 */
 		remove(realmId: string, commentId: string, actorId: string): Promise<Result<RemovedComment>> {
 			return inTransaction(db, async (tx) => {
+				const ofRealm = and(eq(comments.id, commentId), eq(comments.realmId, realmId));
+				// Only a comment still standing: removing it again keeps the first removal's time
+				// and record.
 				const [removed] = await tx
 					.update(comments)
 					.set({ removedAt: toDate(clock.now()) })
-					.where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
+					.where(and(ofRealm, isNull(comments.removedAt)))
 					.returning({ authorId: comments.authorId });
 				if (!removed) {
-					return err(fail.notFound(ErrorCode.event.notFound, 'No such comment in this realm.'));
+					const [gone] = await tx.select({ id: comments.id }).from(comments).where(ofRealm);
+					return gone
+						? ok({ removed: true as const })
+						: err(fail.notFound(ErrorCode.event.notFound, 'No such comment in this realm.'));
 				}
 				if (removed.authorId !== actorId) {
 					await audit(tx, {
