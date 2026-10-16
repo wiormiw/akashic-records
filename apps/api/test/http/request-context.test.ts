@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { Hono } from "hono";
 import { ErrorCode, fail } from "@akashic/lib/errors";
 import { silentLogger } from "@akashic/lib/log";
@@ -25,6 +26,12 @@ const build = (budgetMs = 1000, logger = silentLogger()) => {
     .get("/slow", async (c) => {
       await Bun.sleep(60);
       return c.text("late");
+    })
+    .get("/wait", async (c) => {
+      // Waits on the request's signal, then throws its reason, as an aborted fetch would.
+      const signal = c.get("signal");
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      throw signal.reason;
     })
     .get("/livez", (c) => c.text("ok"))
     .get("/dup", () => {
@@ -111,6 +118,23 @@ describe("server span errors", () => {
     const span = serverSpan("/refused");
     expect(span?.attributes["error.type"]).toBe(ErrorCode.realm.duplicateSlug);
     expect(span?.events[0]?.attributes?.["exception.message"]).toBe("That name is taken.");
+  });
+});
+
+describe("server span timeouts", () => {
+  test("a request past its budget is an error of type timeout", async () => {
+    await build(10).request("/slow");
+    const span = serverSpan("/slow");
+    expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span?.attributes["error.type"]).toBe("timeout");
+  });
+
+  test("a handler that throws its deadline's TimeoutError is a timeout once", async () => {
+    await build(10).request("/wait");
+    const span = serverSpan("/wait");
+    expect(span?.status.code).toBe(SpanStatusCode.ERROR);
+    expect(span?.attributes["error.type"]).toBe("timeout");
+    expect(span?.events.filter((e) => e.name === "exception")).toHaveLength(1);
   });
 });
 

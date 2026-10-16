@@ -19,21 +19,42 @@ const isFailedResult = (value: unknown): value is { ok: false; error: AppError }
   (value as { ok?: unknown }).ok === false &&
   (value as { error?: unknown }).error instanceof AppError;
 
+/** A deadline's reason, as `AbortSignal.timeout` gives it. */
+export const isTimeout = (error: unknown): boolean =>
+  (error instanceof DOMException || error instanceof Error) && error.name === "TimeoutError";
+
 /**
  * Whether a throw means "told to stop": an AbortError, or the reason of the signal the work was
- * given (a deadline's TimeoutError, a shutdown's Error). Anything else thrown is a failure.
+ * given (a shutdown's Error, say). Anything else thrown is a failure.
  */
 const isCancellation = (error: unknown, signal: AbortSignal | undefined): boolean =>
   (error instanceof DOMException && error.name === "AbortError") ||
   (signal?.aborted === true && error === signal.reason);
 
 /**
- * Marks the span for a throw. A cancellation isn't failing. Otherwise only the error's name and
- * code are recorded: a driver's message can carry row values (an email in a unique violation),
- * and spans leave the process. An AppError's message was written for clients, so it stays.
+ * Marks the span as timed out: work that ran past its deadline failed to answer in time, which
+ * is an error worth seeing, unlike a shutdown asking it to stop.
+ */
+export function recordTimeout(span: Span): void {
+  span.recordException({ name: "TimeoutError", message: "timeout" });
+  span.setAttribute("error.type", "timeout");
+  span.setStatus({ code: SpanStatusCode.ERROR, message: "timeout" });
+}
+
+/**
+ * Marks the span for a throw. A timeout is an error (`recordTimeout`), whether the deadline's
+ * own TimeoutError or an abort raised by a signal a deadline ended. Any other cancellation, a
+ * shutdown say, isn't failing. Otherwise only the error's name and code are recorded: a driver's
+ * message can carry row values (an email in a unique violation), and spans leave the process. An
+ * AppError's message was written for clients, so it stays.
  */
 export function recordThrow(span: Span, error: unknown, signal?: AbortSignal): void {
-  if (isCancellation(error, signal)) {
+  const cancelled = isCancellation(error, signal);
+  if (isTimeout(error) || (cancelled && isTimeout(signal?.reason))) {
+    recordTimeout(span);
+    return;
+  }
+  if (cancelled) {
     span.setAttribute("akashic.cancelled", true);
     return;
   }

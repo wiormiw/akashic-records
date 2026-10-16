@@ -124,7 +124,7 @@ describe("event consumer", () => {
     const [span] = recorder.spans();
     expect(span?.attributes["akashic.cancelled"]).toBeUndefined();
     expect(span?.status.code).toBe(SpanStatusCode.ERROR);
-    expect(span?.attributes["error.type"]).toBe("TimeoutError");
+    expect(span?.attributes["error.type"]).toBe("timeout");
   });
 
   test("a handler cut off by shutdown is cancelled in the trace", async () => {
