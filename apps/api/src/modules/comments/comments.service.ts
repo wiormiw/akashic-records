@@ -42,13 +42,16 @@ async function threadOpen(
 	db: Executor,
 	realmId: string,
 	subject: Subject,
+	lock = false,
 ): Promise<boolean | undefined> {
 	const table = subjectTable[subject.kind];
-	const [row] = await db
+	const query = db
 		.select({ open: table.commentsEnabled })
 		.from(table)
 		.where(and(eq(table.id, subject.id), eq(table.realmId, realmId)))
 		.limit(1);
+	// FOR SHARE: a concurrent switch-off (an UPDATE) waits for this comment, or this waits for it.
+	const [row] = await (lock ? query.for('share') : query);
 	return row?.open;
 }
 
@@ -99,11 +102,11 @@ export function createCommentService(deps: CommentsDeps) {
 			authorId: string,
 			body: string,
 		): Promise<Result<PostedComment, AddCommentError>> {
-			const open = await threadOpen(db, realmId, subject);
-			if (open === undefined) return err(noSubject());
-			if (!open) return err(new RealmForbidden('Comments are off for this.'));
-
 			return inTransaction(db, async (tx) => {
+				// Checked under the posting's lock, so turning comments off can't slip past it.
+				const open = await threadOpen(tx, realmId, subject, true);
+				if (open === undefined) return err(noSubject());
+				if (!open) return err(new RealmForbidden('Comments are off for this.'));
 				const [created] = await tx
 					.insert(comments)
 					.values({ realmId, subjectKind: subject.kind, subjectId: subject.id, authorId, body })
