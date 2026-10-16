@@ -3,17 +3,21 @@ import { type EventDetail, type EventSummary, realmEvents } from '@akashic/contr
 import { eventRsvps, events, type Executor, inTransaction, publish } from '@akashic/db';
 import { RsvpStatus } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { EventFull, EventInPast, EventNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { isBefore, toDate } from '@akashic/lib/time';
 import type {
 	EventsDeps,
 	GoingTally,
 	NewEvent,
+	PostEventError,
 	PostedEvent,
+	ReadEventError,
 	RsvpAnswer,
+	RsvpError,
 	RsvpRequest,
 	Withdrawal,
+	WithdrawError,
 } from './events.types.ts';
 
 // ---- Queries ------------------------------------------------------------
@@ -139,7 +143,7 @@ export function hasRoomFor(
 	return tally.already || Number(tally.going) < capacity;
 }
 
-const notFound = () => fail.notFound(ErrorCode.event.notFound, 'No such event in this realm.');
+const notFound = () => new EventNotFound('No such event in this realm.');
 
 export function createEventService(deps: EventsDeps) {
 	const { db, clock } = deps;
@@ -148,15 +152,19 @@ export function createEventService(deps: EventsDeps) {
 		browse: (realmId: string, upcomingOnly: boolean, limit: number): Promise<EventSummary[]> =>
 			listEvents(db, realmId, upcomingOnly, limit),
 
-		async read(realmId: string, eventId: string, viewerId: string): Promise<Result<EventDetail>> {
+		async read(
+			realmId: string,
+			eventId: string,
+			viewerId: string,
+		): Promise<Result<EventDetail, ReadEventError>> {
 			const event = await findEvent(db, realmId, eventId, viewerId);
 			return event ? ok(event) : err(notFound());
 		},
 
-		async post(event: NewEvent): Promise<Result<PostedEvent>> {
+		async post(event: NewEvent): Promise<Result<PostedEvent, PostEventError>> {
 			const now = clock.now();
 			if (isBefore(event.startsAt, now)) {
-				return err(fail.validation(ErrorCode.event.past, 'An event cannot start in the past.'));
+				return err(new EventInPast('An event cannot start in the past.'));
 			}
 			return inTransaction(db, async (tx) => {
 				const [created] = await tx
@@ -188,11 +196,11 @@ export function createEventService(deps: EventsDeps) {
 			eventId: string,
 			userId: string,
 			status: RsvpStatus,
-		): Promise<Result<RsvpAnswer>> {
+		): Promise<Result<RsvpAnswer, RsvpError>> {
 			if (!(await findEvent(db, realmId, eventId, userId))) return err(notFound());
 			// Its own transaction (a savepoint inside a caller's), because the capacity check needs the
 			// event row locked until the RSVP is written: two people can't take the last place.
-			return inTransaction(db, async (tx) => {
+			return inTransaction<RsvpAnswer, RsvpError>(db, async (tx) => {
 				const [event] = (await tx.execute(
 					sql`SELECT capacity FROM event WHERE id = ${eventId} FOR UPDATE`,
 				)) as unknown as { capacity: number | null }[];
@@ -201,7 +209,7 @@ export function createEventService(deps: EventsDeps) {
 				const { capacity } = event;
 				const tally = await goingTally(tx, { eventId, userId, status, capacity });
 				if (!hasRoomFor(status, capacity, tally)) {
-					return err(fail.conflict(ErrorCode.event.full, 'This event is full.'));
+					return err(new EventFull('This event is full.'));
 				}
 
 				await tx
@@ -215,7 +223,11 @@ export function createEventService(deps: EventsDeps) {
 			});
 		},
 
-		async withdraw(realmId: string, eventId: string, userId: string): Promise<Result<Withdrawal>> {
+		async withdraw(
+			realmId: string,
+			eventId: string,
+			userId: string,
+		): Promise<Result<Withdrawal, WithdrawError>> {
 			if (!(await findEvent(db, realmId, eventId, userId))) return err(notFound());
 			return ok({ cleared: await removeRsvp(db, eventId, userId) });
 		},

@@ -2,11 +2,16 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { createDb, events, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { RealmModule, RsvpStatus } from '@akashic/lib/enums';
+import { EventFull, EventNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
+import { isError } from '@akashic/lib/result';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { hasRoomFor } from '@/modules/events/events.service.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
+
+// Compiles only when `value` is a T: the type assertions below lean on it.
+const expectType = <T>(value: T): T => value;
 
 // The events service on the real database, each test in a transaction that is rolled back.
 
@@ -169,6 +174,25 @@ describe.skipIf(!live)('RSVPs', () => {
 				'event.at_capacity',
 			);
 			expect(await w.rsvpOf(eventId, people[1]!)).toBeNull();
+		}));
+
+	test('a refused RSVP narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const { id, eventId, people } = await capped(w, 1);
+			expectOk(await w.service.respond(id, eventId, people[0]!, RsvpStatus.going));
+			const full = await w.service.respond(id, eventId, people[1]!, RsvpStatus.going);
+			if (!isError(full, EventFull)) throw new Error('expected EventFull');
+			expect(expectType<EventFull>(full.error)).toBeInstanceOf(EventFull);
+			// @ts-expect-error the branch holds only EventFull
+			expectType<EventNotFound>(full.error);
+
+			const missing = await w.service.respond(id, Bun.randomUUIDv7(), people[1]!, RsvpStatus.going);
+			if (isError(missing, EventFull)) throw new Error('expected EventNotFound');
+			if (missing.ok) throw new Error('expected an error');
+			// EventFull is ruled out, so EventNotFound is all that remains.
+			expect(expectType<EventNotFound>(missing.error)).toBeInstanceOf(EventNotFound);
+			// @ts-expect-error EventFull was narrowed away
+			expectType<EventFull>(missing.error);
 		}));
 
 	test('a full event still takes interested and declined, and keeps those going', () =>
