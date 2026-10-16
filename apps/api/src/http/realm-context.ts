@@ -5,7 +5,13 @@ import { matchedRoutes } from 'hono/route';
 import { FgaType, Relation, type Authorizer } from '@akashic/authz';
 import { realmMembers, realmModules, realms, type Executor } from '@akashic/db';
 import { narrow, RealmModule, RealmRole } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import {
+	ModuleDisabled,
+	RealmArchived,
+	RealmForbidden,
+	RealmNotFound,
+	RouteNotFound,
+} from '@akashic/lib/errors';
 import type { AppEnv } from './env.ts';
 
 /** What the caller may do in the realm named by the path, answered by the authorizer. */
@@ -73,17 +79,16 @@ export function realmContext(options: { db: Executor; authorizer: Authorizer }) 
 
 	return createMiddleware<RealmEnv>(async (c, next) => {
 		const slug = c.req.param('slug');
-		if (!slug) throw fail.notFound(ErrorCode.common.routeNotFound, 'No realm in this path.');
+		if (!slug) throw new RouteNotFound('No realm in this path.');
 
 		const realm = await findBySlug(db, slug);
-		if (!realm) throw fail.notFound(ErrorCode.realm.notFound, `No realm called "${slug}".`);
+		if (!realm) throw new RealmNotFound(`No realm called "${slug}".`);
 
 		// The realm root stays writable so an administrator can restore it. Judged on the route's
 		// pattern, not the path: `/realms/join/join` ends with its slug but is the join route.
 		const atRoot = /\/:slug\/?$/.test(handlerPattern(c));
 		if (realm.archivedAt && !SAFE_METHODS.has(c.req.method) && !atRoot) {
-			throw fail.conflict(
-				ErrorCode.realm.archived,
+			throw new RealmArchived(
 				`"${realm.slug}" has been retired. Its contents are readable, but nothing new can be posted.`,
 			);
 		}
@@ -155,7 +160,7 @@ async function permissionsIn(
 export const requirePermission = (permission: keyof RealmPermissions) =>
 	createMiddleware<RealmEnv>(async (c, next) => {
 		if (!c.get('realm').permissions[permission]) {
-			throw fail.forbidden(ErrorCode.realm.forbidden, FORBIDDEN);
+			throw new RealmForbidden(FORBIDDEN);
 		}
 		await next();
 	});
@@ -171,10 +176,7 @@ const MODULE_NAMES: Record<RealmModule, string> = {
 export const requireModule = (module: RealmModule) =>
 	createMiddleware<RealmEnv>(async (c, next) => {
 		if (!c.get('realm').realmModules.includes(module)) {
-			throw fail.notFound(
-				ErrorCode.realm.moduleDisabled,
-				`This realm does not run ${MODULE_NAMES[module]}.`,
-			);
+			throw new ModuleDisabled(`This realm does not run ${MODULE_NAMES[module]}.`);
 		}
 		await next();
 	});
@@ -184,11 +186,11 @@ export const requireOn = (authorizer: Authorizer, relation: string, type: FgaTyp
 	createMiddleware<RealmEnv>(async (c, next) => {
 		const user = c.get('user');
 		const objectId = c.req.param('id');
-		if (!user || !objectId) throw fail.forbidden(ErrorCode.realm.forbidden, FORBIDDEN);
+		if (!user || !objectId) throw new RealmForbidden(FORBIDDEN);
 		const allowed = await authorizer.check(
 			{ userId: user.id, relation, type, objectId },
 			c.get('signal'),
 		);
-		if (!allowed) throw fail.forbidden(ErrorCode.realm.forbidden, FORBIDDEN);
+		if (!allowed) throw new RealmForbidden(FORBIDDEN);
 		await next();
 	});

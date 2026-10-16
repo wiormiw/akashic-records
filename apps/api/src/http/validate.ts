@@ -1,7 +1,7 @@
 import { sValidator } from '@hono/standard-validator';
 import type { ValidationTargets } from 'hono';
 import type * as v from 'valibot';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ValidationFailed } from '@akashic/lib/errors';
 import { problemResponse } from './problem.ts';
 
 /** Validates one part of the request with a contract schema; a failure is the usual problem. */
@@ -13,7 +13,7 @@ export const validate = <T extends keyof ValidationTargets, S extends v.GenericS
 		if (result.success) return;
 		return problemResponse(
 			c as never,
-			fail.validation(ErrorCode.common.validation, 'Invalid request.', {
+			new ValidationFailed('Invalid request.', {
 				details: {
 					issues: result.error.map((issue) => ({
 						path: (issue.path ?? [])

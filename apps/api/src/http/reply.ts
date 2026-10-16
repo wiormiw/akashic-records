@@ -19,11 +19,14 @@ export function reply<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
 	return c.json(v.parse(view, value) as object, status);
 }
 
-/** A service's Result as the answer: the value through `view`, or the problem a throw would be. */
+/**
+ * A service's Result as the answer: the value through `view`, or the problem a throw would be.
+ * The error comes last, so `respond<typeof View, Env>` binds as `reply<typeof View, Env>` does.
+ */
 export function respond<
 	S extends v.GenericSchema,
-	F extends AppError = AppError,
 	E extends AppEnv = AppEnv,
+	F extends AppError = AppError,
 >(
 	c: Context<E>,
 	result: Result<v.InferInput<S>, F>,

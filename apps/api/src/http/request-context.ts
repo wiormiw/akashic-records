@@ -3,7 +3,7 @@ import { trace, type Span } from '@opentelemetry/api';
 import { createMiddleware } from 'hono/factory';
 import type { Lifecycle } from '@akashic/lib/lifecycle';
 import type { Logger } from '@akashic/lib/log';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { RequestTimeout } from '@akashic/lib/errors';
 import { recordThrow, recordTimeout } from '@akashic/lib/tracing';
 import type { AppEnv } from './env.ts';
 import { problemResponse } from './problem.ts';
@@ -56,10 +56,7 @@ export function requestContext(options: {
 		// Checked after the handler rather than raced against it, so nothing keeps running once the
 		// response is sent.
 		if (deadline.aborted && !c.req.raw.signal.aborted && c.res.status < 400) {
-			c.res = problemResponse(
-				c,
-				fail.external(ErrorCode.common.timeout, 'The request took too long.'),
-			);
+			c.res = problemResponse(c, new RequestTimeout());
 			// The server span (none on untraced paths) says so too. A handler that threw instead is
 			// recorded from `c.error` below.
 			const span = trace.getActiveSpan();

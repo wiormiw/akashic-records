@@ -1,6 +1,6 @@
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ContentTooLarge, Forbidden } from '@akashic/lib/errors';
 import type { AppEnv } from './env.ts';
 
 /** "a, b" -> ["a", "b"]. An empty list trusts no browser origin. */
@@ -32,10 +32,7 @@ export function security(options: {
 		// Judged on the declared length, so an oversized body is refused before it is read.
 		const exempt = largeBodyPaths.some((prefix) => c.req.path.startsWith(prefix));
 		if (!exempt && Number(c.req.header('content-length') ?? 0) > maxBodyBytes) {
-			throw fail.validation(
-				ErrorCode.common.payloadTooLarge,
-				`Request body exceeds ${maxBodyBytes} bytes.`,
-			);
+			throw new ContentTooLarge(`Request body exceeds ${maxBodyBytes} bytes.`);
 		}
 
 		// Cookies ride along on cross-site requests; the Origin header is what proves the page is
@@ -43,10 +40,7 @@ export function security(options: {
 		const origin = c.req.header('origin');
 		if (!SAFE_METHODS.has(c.req.method) && allowedOrigins.length > 0 && origin !== undefined) {
 			if (!allowedOrigins.includes(origin)) {
-				throw fail.forbidden(
-					ErrorCode.common.forbidden,
-					'Origin not allowed for a state-changing request.',
-				);
+				throw new Forbidden('Origin not allowed for a state-changing request.');
 			}
 		}
 		await next();

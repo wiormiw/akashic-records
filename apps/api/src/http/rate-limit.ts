@@ -1,7 +1,7 @@
 import { getConnInfo } from 'hono/bun';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { RateLimited } from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import type { RateLimiter, RateLimitRule } from '@/integrations/rate-limit.ts';
 import type { AppEnv } from './env.ts';
@@ -26,7 +26,7 @@ export function rateLimit(
 			if (counter.count > rule.limit) {
 				c.header('retry-after', String(counter.resetSeconds));
 				log.warn({ bucket: rule.bucket, caller, count: counter.count }, 'rate limit exceeded');
-				throw fail.rateLimited(ErrorCode.common.rateLimited, 'Too many requests. Slow down.', {
+				throw new RateLimited('Too many requests. Slow down.', {
 					details: {
 						limit: rule.limit,
 						windowSeconds: rule.windowSeconds,

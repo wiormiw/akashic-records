@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { FgaType, PLATFORM_ID, Relation, type Authorizer } from '@akashic/authz';
 import type { Db } from '@akashic/db';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AccountSuspended, RouteNotFound, Unauthenticated } from '@akashic/lib/errors';
 import type { Auth } from '@/auth/auth.ts';
 import { banMessage, banOf } from '@/auth/bans.ts';
 import type { AppEnv, Caller } from './env.ts';
@@ -13,11 +13,10 @@ import type { AppEnv, Caller } from './env.ts';
 export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }) {
 	async function identify(headers: Headers, signal: AbortSignal): Promise<Caller> {
 		const session = await options.auth.api.getSession({ headers });
-		if (!session)
-			throw fail.unauthorized(ErrorCode.auth.unauthenticated, 'Sign in to access this resource.');
+		if (!session) throw new Unauthenticated();
 
 		const ban = await banOf(options.db, session.user.id, { signal });
-		if (ban) throw fail.forbidden(ErrorCode.auth.banned, banMessage(ban));
+		if (ban) throw new AccountSuspended(banMessage(ban));
 
 		return { id: session.user.id, email: session.user.email };
 	}
@@ -52,7 +51,7 @@ export function sessions(options: { auth: Auth; db: Db; authorizer: Authorizer }
 		const allowed = await isPlatformAdmin(user.id, signal);
 		// Word for word the router's own 404 (http/problem.ts), so the two can't be told apart.
 		if (!allowed) {
-			throw fail.notFound(ErrorCode.common.routeNotFound, `No route for ${c.req.path}.`);
+			throw new RouteNotFound(`No route for ${c.req.path}.`);
 		}
 		c.set('user', user);
 		await next();
