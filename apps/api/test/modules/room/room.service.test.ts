@@ -3,9 +3,10 @@ import { eq, or } from 'drizzle-orm';
 import { createDb, rooms, type Tx, userKeys } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { RoomSubject } from '@akashic/lib/enums';
-import { ErrorCode } from '@akashic/lib/errors';
+import { ErrorCode, NotBothMembers, ValidationFailed } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { isError } from '@akashic/lib/result';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
 import { policy } from '@/config.ts';
 import { createTickets } from '@/modules/room/room.service.ts';
@@ -178,6 +179,29 @@ describe.skipIf(!live)('opening a room', () => {
 				.set({ createdAt: toDate(clock.now().subtract({ hours: 25 })) })
 				.where(or(eq(rooms.lowUserId, ann), eq(rooms.highUserId, ann)));
 			expectOk(await w.rooms.start(ann, about(slug, listing, extra)));
+		}));
+});
+
+describe.skipIf(!live)('a refused room', () => {
+	test('narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const { id, slug, people } = await w.realm(1);
+			const [ann] = people as [string];
+			const outsider = await w.person('Outsider');
+			const listing = await w.listing(id, ann);
+
+			const apart = await w.rooms.start(ann, about(slug, listing, outsider));
+			if (!isError(apart, NotBothMembers)) throw new Error('expected NotBothMembers');
+			expect(expectType<NotBothMembers>(apart.error)).toBeInstanceOf(NotBothMembers);
+			// @ts-expect-error the branch holds only NotBothMembers
+			expectType<ValidationFailed>(apart.error);
+
+			const alone = await w.rooms.start(ann, about(slug, listing, ann));
+			if (alone.ok || isError(alone, NotBothMembers)) throw new Error('expected a refusal');
+			// NotBothMembers is ruled out; the other refusals remain.
+			expect(alone.error).toBeInstanceOf(ValidationFailed);
+			// @ts-expect-error NotBothMembers was narrowed away
+			expectType<NotBothMembers>(alone.error);
 		}));
 });
 

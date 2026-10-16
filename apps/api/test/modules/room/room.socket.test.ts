@@ -3,7 +3,7 @@ import { websocket } from 'hono/bun';
 import type { Authorizer } from '@akashic/authz';
 import { createDb, type Db } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ErrorCode, RealmForbidden } from '@akashic/lib/errors';
 import { createLifecycle } from '@akashic/lib/lifecycle';
 import { silentLogger } from '@akashic/lib/log';
 import { err, ok } from '@akashic/lib/result';
@@ -128,8 +128,7 @@ const scripted = {
 	},
 	messages: {
 		send: async (_roomId: string, senderId: string, message: { body: string }) => {
-			if (message.body === 'refuse')
-				return err(fail.forbidden(ErrorCode.realm.forbidden, 'The room is closed.'));
+			if (message.body === 'refuse') return err(new RealmForbidden('The room is closed.'));
 			if (message.body === 'stale') return ok({ staleDevices: ['device-b'] });
 			if (message.body === 'explode') throw new Error('database down');
 			return ok({

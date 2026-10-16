@@ -9,16 +9,19 @@ import {
 	rooms,
 	userKeys,
 } from '@akashic/db';
-import { ErrorCode, fail } from '@akashic/lib/errors';
-import { err, ok, type Result } from '@akashic/lib/result';
+import { RateLimited, RealmForbidden } from '@akashic/lib/errors';
+import { err, ok, type Result, value } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { policy } from '@/config.ts';
 import { participant } from './room.service.ts';
 import type {
 	Appended,
+	AppendError,
 	OutgoingMessage,
 	RoomAreaDeps,
+	SendError,
 	Sent,
+	TranscriptError,
 	TranscriptOptions,
 } from './room.types.ts';
 
@@ -102,7 +105,7 @@ function append(
 	roomId: string,
 	senderId: string,
 	message: OutgoingMessage,
-): Promise<Result<Appended>> {
+): Promise<Result<Appended, AppendError>> {
 	const { keys, body, iv, signature } = message;
 	return inTransaction(db, async (tx) => {
 		const [stored] = await tx
@@ -137,7 +140,7 @@ export function createMessageService(deps: RoomAreaDeps) {
 			roomId: string,
 			userId: string,
 			options: TranscriptOptions,
-		): Promise<Result<StoredMessage[]>> {
+		): Promise<Result<StoredMessage[], TranscriptError>> {
 			const room = await participant(db, roomId, userId);
 			return room.ok ? ok(await messagesOf(db, roomId, options)) : room;
 		},
@@ -146,17 +149,21 @@ export function createMessageService(deps: RoomAreaDeps) {
 		 * Stores a message if the room is open, the sender isn't flooding it, and the message is
 		 * encrypted for every device of both participants.
 		 */
-		async send(roomId: string, senderId: string, message: OutgoingMessage): Promise<Result<Sent>> {
+		async send(
+			roomId: string,
+			senderId: string,
+			message: OutgoingMessage,
+		): Promise<Result<Sent, SendError>> {
 			const found = await participant(db, roomId, senderId);
 			if (!found.ok) return found;
 			const room = found.value;
 			if (await isBlocked(db, roomId)) {
-				return err(fail.forbidden(ErrorCode.realm.forbidden, 'This conversation has been closed.'));
+				return err(new RealmForbidden('This conversation has been closed.'));
 			}
 
 			const minuteAgo = clock.now().subtract({ minutes: 1 });
 			if ((await messagesSentSince(db, roomId, senderId, minuteAgo)) >= limits.messagesPerMinute) {
-				return err(fail.rateLimited(ErrorCode.common.rateLimited, 'Slow down a moment.'));
+				return err(new RateLimited('Slow down a moment.'));
 			}
 
 			// A device added since the sender last fetched keys would get a message it can't read.
@@ -166,10 +173,9 @@ export function createMessageService(deps: RoomAreaDeps) {
 				return ok({ staleDevices: devices });
 			}
 
-			const stored = await append(db, roomId, senderId, message);
-			if (!stored.ok) return stored;
+			const stored = value(await append(db, roomId, senderId, message));
 			const { body, iv, signature, keys } = message;
-			return ok({ sent: { body, iv, signature, keys, ...stored.value, senderId } });
+			return ok({ sent: { body, iv, signature, keys, ...stored, senderId } });
 		},
 	};
 }

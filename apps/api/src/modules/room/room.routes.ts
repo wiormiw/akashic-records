@@ -29,7 +29,7 @@ import {
 	TranscriptQuery,
 	UserParam,
 } from '@akashic/contracts';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { Unauthenticated } from '@akashic/lib/errors';
 import { mapOk } from '@akashic/lib/result';
 import { type AppEnv, callerOf } from '@/http/env.ts';
 import { problemResponse } from '@/http/problem.ts';
@@ -138,10 +138,7 @@ function createRoomSocket(deps: RoomRoutesDeps): Hono<AppEnv> {
 		const ticket = new URL(c.req.url).searchParams.get('ticket') ?? '';
 		const admitted = await rooms.admit(c.req.param('id') ?? '', ticket);
 		if (!admitted) {
-			return problemResponse(
-				c,
-				fail.unauthorized(ErrorCode.auth.unauthenticated, 'That ticket does not admit you here.'),
-			);
+			return problemResponse(c, new Unauthenticated('That ticket does not admit you here.'));
 		}
 		c.set('admitted', admitted);
 		await next();

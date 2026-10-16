@@ -1,6 +1,15 @@
 import type { SentMessage, WrappedKey } from '@akashic/contracts';
 import type { Executor } from '@akashic/db';
 import type { RoomSubject } from '@akashic/lib/enums';
+import type {
+	EventNotFound,
+	MemberNotFound,
+	NotBothMembers,
+	RateLimited,
+	RealmForbidden,
+	RealmNotFound,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import type { Clock } from '@akashic/lib/time';
 import type { AppEnv } from '@/http/env.ts';
@@ -178,3 +187,23 @@ export interface Agreement {
 	agreedBy: string[];
 	inForce: boolean;
 }
+
+// ---- Errors ----------------------------------------------------------------------------------
+
+// What each room service call can fail with. A room someone isn't in is "no such room".
+export type ParticipantError = EventNotFound;
+export type KeysOfError = MemberNotFound;
+export type StartError =
+	| ValidationFailed
+	| RealmNotFound
+	| NotBothMembers
+	| EventNotFound
+	| RateLimited;
+export type TicketError = ParticipantError;
+export type TranscriptError = ParticipantError;
+export type AppendError = never;
+export type SendError = ParticipantError | RealmForbidden | RateLimited | AppendError;
+export type AgreeRetentionError = never;
+export type BlockError = ParticipantError;
+export type ReportError = ParticipantError | ValidationFailed;
+export type RetentionError = ParticipantError | AgreeRetentionError;

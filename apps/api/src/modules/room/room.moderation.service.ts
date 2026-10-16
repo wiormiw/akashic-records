@@ -7,15 +7,19 @@ import {
 	roomReports,
 	rooms,
 } from '@akashic/db';
-import { ErrorCode, fail } from '@akashic/lib/errors';
-import { err, ok, type Result } from '@akashic/lib/result';
+import { EventNotFound, ValidationFailed } from '@akashic/lib/errors';
+import { err, ok, type Result, value } from '@akashic/lib/result';
 import { participant } from './room.service.ts';
 import type {
 	Agreement,
+	AgreeRetentionError,
 	Blocked,
+	BlockError,
 	MessageReport,
 	Opened,
+	ReportError,
 	Retention,
+	RetentionError,
 	RetentionState,
 	RoomAreaDeps,
 } from './room.types.ts';
@@ -53,7 +57,7 @@ function agreeRetention(
 	roomId: string,
 	userId: string,
 	days: number | null,
-): Promise<Result<boolean>> {
+): Promise<Result<boolean, AgreeRetentionError>> {
 	return inTransaction(db, async (tx) => {
 		// Locked, so two people agreeing at once don't each overwrite the other's agreement.
 		const [room] = await tx
@@ -85,7 +89,7 @@ export function createModerationService(deps: RoomAreaDeps) {
 	const { db } = deps;
 
 	return {
-		async block(roomId: string, userId: string): Promise<Result<Blocked>> {
+		async block(roomId: string, userId: string): Promise<Result<Blocked, BlockError>> {
 			const room = await participant(db, roomId, userId);
 			if (!room.ok) return room;
 			await db.insert(roomBlocks).values({ roomId, blockerId: userId }).onConflictDoNothing();
@@ -93,7 +97,7 @@ export function createModerationService(deps: RoomAreaDeps) {
 		},
 
 		/** Lifts only the caller's own block; the other person's stays. */
-		async unblock(roomId: string, userId: string): Promise<Result<Blocked>> {
+		async unblock(roomId: string, userId: string): Promise<Result<Blocked, BlockError>> {
 			const room = await participant(db, roomId, userId);
 			if (!room.ok) return room;
 			await db
@@ -106,15 +110,15 @@ export function createModerationService(deps: RoomAreaDeps) {
 			roomId: string,
 			reporterId: string,
 			report: MessageReport,
-		): Promise<Result<Opened>> {
+		): Promise<Result<Opened, ReportError>> {
 			const room = await participant(db, roomId, reporterId);
 			if (!room.ok) return room;
 			const accusedId = await senderOf(db, roomId, report.messageId);
 			if (!accusedId) {
-				return err(fail.notFound(ErrorCode.event.notFound, 'No such message in this room.'));
+				return err(new EventNotFound('No such message in this room.'));
 			}
 			if (accusedId === reporterId) {
-				return err(fail.validation(ErrorCode.common.validation, 'That message was sent by you.'));
+				return err(new ValidationFailed('That message was sent by you.'));
 			}
 
 			const [created] = await db
@@ -136,11 +140,11 @@ export function createModerationService(deps: RoomAreaDeps) {
 			roomId: string,
 			userId: string,
 			days: number | null,
-		): Promise<Result<Retention>> {
+		): Promise<Result<Retention, RetentionError>> {
 			const room = await participant(db, roomId, userId);
 			if (!room.ok) return room;
-			const agreed = await agreeRetention(db, roomId, userId, days);
-			return agreed.ok ? ok({ days, inForce: agreed.value }) : agreed;
+			const inForce = value(await agreeRetention(db, roomId, userId, days));
+			return ok({ days, inForce });
 		},
 
 		/** Deletes messages past a retention both participants agreed to; answers how many. */

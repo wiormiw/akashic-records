@@ -12,19 +12,30 @@ import {
 	userKeys,
 } from '@akashic/db';
 import { RoomSubject } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import {
+	EventNotFound,
+	MemberNotFound,
+	NotBothMembers,
+	RateLimited,
+	RealmNotFound,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { policy } from '@/config.ts';
 import type {
+	KeysOfError,
 	NewRoom,
 	Opened,
+	ParticipantError,
 	Published,
 	Room,
 	RoomAccessDeps,
+	StartError,
 	StartRequest,
 	Ticket,
 	TicketClaim,
+	TicketError,
 	TicketOptions,
 	Tickets,
 } from './room.types.ts';
@@ -109,9 +120,9 @@ export async function participant(
 	db: Executor,
 	roomId: string,
 	userId: string,
-): Promise<Result<Room>> {
+): Promise<Result<Room, ParticipantError>> {
 	const room = await findFor(db, roomId, userId);
-	return room ? ok(room) : err(fail.notFound(ErrorCode.event.notFound, 'No such room.'));
+	return room ? ok(room) : err(new EventNotFound('No such room.'));
 }
 
 async function realmIdOf(db: Executor, slug: string): Promise<string | undefined> {
@@ -230,7 +241,7 @@ export function createRoomService(deps: RoomAccessDeps) {
 		},
 
 		/** Every device someone reads on, oldest first. */
-		async keysOf(userId: string): Promise<Result<UserDeviceKey[]>> {
+		async keysOf(userId: string): Promise<Result<UserDeviceKey[], KeysOfError>> {
 			const keys = await db
 				.select({
 					publicKey: userKeys.publicKey,
@@ -241,9 +252,9 @@ export function createRoomService(deps: RoomAccessDeps) {
 				.where(eq(userKeys.userId, userId))
 				.orderBy(asc(userKeys.createdAt));
 			if (keys.length === 0) {
+				// A 404 for someone with no keys: they have not set up encryption, wherever they are a member.
 				return err(
-					fail.notFound(
-						ErrorCode.realm.notMember,
+					new MemberNotFound(
 						'That person has not set up encryption yet, so there is no key to send to.',
 					),
 				);
@@ -252,14 +263,12 @@ export function createRoomService(deps: RoomAccessDeps) {
 		},
 
 		/** Opens (or reopens) a conversation about a posting between two members of its realm. */
-		async start(userId: string, request: StartRequest): Promise<Result<Opened>> {
+		async start(userId: string, request: StartRequest): Promise<Result<Opened, StartError>> {
 			if (request.withUserId === userId) {
-				return err(
-					fail.validation(ErrorCode.common.validation, 'You cannot open a room with yourself.'),
-				);
+				return err(new ValidationFailed('You cannot open a room with yourself.'));
 			}
 			const realmId = await realmIdOf(db, request.realmSlug);
-			if (!realmId) return err(fail.notFound(ErrorCode.realm.notFound, 'No such realm.'));
+			if (!realmId) return err(new RealmNotFound('No such realm.'));
 
 			const [mine, theirs] = await Promise.all([
 				isMember(db, realmId, userId),
@@ -267,25 +276,19 @@ export function createRoomService(deps: RoomAccessDeps) {
 			]);
 			if (!mine || !theirs) {
 				return err(
-					fail.forbidden(
-						ErrorCode.realm.notMember,
-						'Both people have to be in the realm the posting belongs to.',
-					),
+					new NotBothMembers('Both people have to be in the realm the posting belongs to.'),
 				);
 			}
 			// The realm is named in the body: the posting has to be in it, or a room in one realm
 			// could be about another realm's posting.
 			if (!(await subjectIn(db, realmId, request.subjectKind, request.subjectId))) {
-				return err(fail.notFound(ErrorCode.event.notFound, 'No such posting in that realm.'));
+				return err(new EventNotFound('No such posting in that realm.'));
 			}
 
 			const dayAgo = clock.now().subtract({ hours: 24 });
 			if ((await roomsOpenedSince(db, userId, dayAgo)) >= limits.roomsPerDay) {
 				return err(
-					fail.rateLimited(
-						ErrorCode.common.rateLimited,
-						'That is a lot of new conversations for one day. Try again tomorrow.',
-					),
+					new RateLimited('That is a lot of new conversations for one day. Try again tomorrow.'),
 				);
 			}
 
@@ -302,7 +305,7 @@ export function createRoomService(deps: RoomAccessDeps) {
 		/** The caller's rooms, most recently active first. */
 		inbox: (userId: string): Promise<RoomSummary[]> => inbox(db, userId, INBOX_SIZE),
 
-		async ticket(roomId: string, userId: string): Promise<Result<Ticket>> {
+		async ticket(roomId: string, userId: string): Promise<Result<Ticket, TicketError>> {
 			const room = await participant(db, roomId, userId);
 			if (!room.ok) return room;
 			return ok({
