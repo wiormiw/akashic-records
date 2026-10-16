@@ -176,39 +176,28 @@ export async function orElse<T, E>(result: Promise<Result<T, E>>, fallback: T): 
 	return fallback;
 }
 
-/** Wraps a throwing call at an integration edge, so a throw becomes `err(mapError(caught))`. */
+/**
+ * Wraps a throwing call at an integration edge, so a throw becomes `err(mapError(caught))`. The
+ * mapper is required: an edge always says which typed error a throw becomes.
+ */
 export function fn<A extends unknown[], T, E>(
 	inner: (...args: A) => Promise<T>,
 	mapError: (error: unknown, ...args: A) => E,
-): ResultFn<A, T, E>;
-export function fn<A extends unknown[], T>(
-	inner: (...args: A) => Promise<T>,
-): ResultFn<A, T, unknown>;
-export function fn<A extends unknown[], T, E>(
-	inner: (...args: A) => Promise<T>,
-	mapError?: (error: unknown, ...args: A) => E,
-): ResultFn<A, T, E | unknown> {
+): ResultFn<A, T, E> {
 	return async (...args) => {
 		try {
 			return ok(await inner(...args));
 		} catch (caught) {
-			return err(mapError ? mapError(caught, ...args) : caught);
+			return err(mapError(caught, ...args));
 		}
 	};
 }
 
 /** `fn` called at once, for a call made in one place. */
-export function exec<T, E>(
+export const exec = <T, E>(
 	inner: () => Promise<T>,
 	mapError: (error: unknown) => E,
-): Promise<Result<T, E>>;
-export function exec<T>(inner: () => Promise<T>): Promise<Result<T, unknown>>;
-export function exec<T, E>(
-	inner: () => Promise<T>,
-	mapError?: (error: unknown) => E,
-): Promise<Result<T, E | unknown>> {
-	return mapError ? fn(inner, mapError)() : fn(inner)();
-}
+): Promise<Result<T, E>> => fn(inner, mapError)();
 
 /** Runs `work` without waiting for it; a failure is logged, never thrown. */
 export function forget<A extends unknown[]>(
@@ -222,5 +211,7 @@ export function forget<A extends unknown[]>(
 		} catch (error) {
 			log.warn({ err: error }, 'background work failed');
 		}
-	})();
+	})().catch(() => {
+		// The logger itself failed; there is nowhere left to report it, and it must not escape.
+	});
 }

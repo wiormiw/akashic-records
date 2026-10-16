@@ -59,6 +59,7 @@ describe('result', () => {
 	test('mapErr transforms a failure and passes a success through', () => {
 		const mapped = mapErr(lookup(0), () => new Gone());
 		expect(!mapped.ok && mapped.error).toBeInstanceOf(Gone);
+		assertTrue<Equal<typeof mapped, Result<number, Gone>>>();
 		const kept = lookup(5);
 		expect<unknown>(mapErr(kept, () => new Gone())).toBe(kept);
 	});
@@ -92,6 +93,17 @@ describe('result', () => {
 		} else {
 			throw new Error('expected Taken');
 		}
+
+		// The false branch keeps every other error, each still its own branch.
+		const rest = lookup(0);
+		if (isError(rest, Taken)) {
+			throw new Error('expected Missing');
+		} else {
+			assertTrue<Equal<typeof rest, Result<number, Missing>>>();
+		}
+
+		// @ts-expect-error Gone is not one of the errors the result can hold
+		isError(lookup(1), Gone);
 	});
 
 	test('pipe passes values along and stops at the first error', async () => {
@@ -140,7 +152,11 @@ describe('result', () => {
 	});
 
 	test('unwrap returns the value or throws the error', async () => {
-		expect(unwrap(lookup(5))).toBe(5);
+		const plain = unwrap(lookup(5));
+		expect(plain).toBe(5);
+		assertTrue<Equal<typeof plain, number>>();
+		const promised = unwrap(Promise.resolve(lookup(5)));
+		assertTrue<Equal<typeof promised, Promise<number>>>();
 		expect(() => unwrap(lookup(0))).toThrow(Missing);
 		expect(await unwrap(Promise.resolve(lookup(5)))).toBe(5);
 		await expect(unwrap(Promise.resolve(lookup(1)))).rejects.toBeInstanceOf(Taken);
@@ -170,6 +186,13 @@ describe('result', () => {
 		expect(!failed.ok && failed.error).toBeInstanceOf(Gone);
 		expect(!failed.ok && failed.error.message).toBe('-1: negative');
 		assertTrue<Equal<typeof failed, Result<number, Gone>>>();
+	});
+
+	test('fn and exec require an error mapper', () => {
+		// @ts-expect-error an edge wrapper always says which error a throw becomes
+		void fn(async () => 1);
+		// @ts-expect-error an edge wrapper always says which error a throw becomes
+		void exec(async () => 1).catch(() => {});
 	});
 
 	test('exec runs the call once and maps a throw', async () => {
@@ -210,6 +233,39 @@ describe('result', () => {
 			msg: 'background work failed',
 			err: { message: 'boom' },
 		});
+	});
+
+	test('forget catches and logs a synchronous throw from work', async () => {
+		const { logger, lines } = captureLogger();
+		const work = (): Promise<unknown> => {
+			throw new Error('sync boom');
+		};
+		expect(() => forget(logger, work)).not.toThrow();
+		await Bun.sleep(0);
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toMatchObject({ level: 40, err: { message: 'sync boom' } });
+	});
+
+	test('forget never escapes when the logger itself throws', async () => {
+		let rejected = false;
+		const onRejection = () => {
+			rejected = true;
+		};
+		process.on('unhandledRejection', onRejection);
+		try {
+			const log = {
+				warn: () => {
+					throw new Error('logger down');
+				},
+			};
+			forget(log, async () => {
+				throw new Error('boom');
+			});
+			await Bun.sleep(0);
+			expect(rejected).toBe(false);
+		} finally {
+			process.off('unhandledRejection', onRejection);
+		}
 	});
 
 	test('forget logs nothing when the work succeeds', async () => {
