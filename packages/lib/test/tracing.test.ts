@@ -40,16 +40,45 @@ describe('traced', () => {
 		expect(recorder.spans()[0]?.events[0]?.name).toBe('exception');
 	});
 
-	test('an abort is cancelled, not an error', async () => {
+	test("an AbortError is cancelled once the work's signal has aborted", async () => {
+		const controller = new AbortController();
+		controller.abort(new Error('shutting down: SIGTERM'));
 		const reason = new DOMException('stop', 'AbortError');
 		await expect(
-			traced('authz.check', {}, async () => {
-				throw reason;
-			}),
+			traced(
+				'authz.check',
+				{},
+				async () => {
+					throw reason;
+				},
+				{ signal: controller.signal },
+			),
 		).rejects.toBe(reason);
 		const [span] = recorder.spans();
 		expect(span?.attributes['akashic.cancelled']).toBe(true);
 		expect(span?.status.code).not.toBe(SpanStatusCode.ERROR);
+	});
+
+	test('an AbortError with no aborted signal behind it is an error', async () => {
+		const reason = new DOMException('stop', 'AbortError');
+		const live = new AbortController();
+		for (const signal of [undefined, live.signal]) {
+			await expect(
+				traced(
+					'x',
+					{},
+					async () => {
+						throw reason;
+					},
+					{ signal },
+				),
+			).rejects.toBe(reason);
+		}
+		for (const span of recorder.spans()) {
+			expect(span.attributes['akashic.cancelled']).toBeUndefined();
+			expect(span.status.code).toBe(SpanStatusCode.ERROR);
+			expect(span.attributes['error.type']).toBe('AbortError');
+		}
 	});
 
 	test('a TimeoutError is an error of type timeout, with or without its signal', async () => {
@@ -181,6 +210,25 @@ describe('withConsumerSpan', () => {
 		const [span] = recorder.spans();
 		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
 		expect(span?.attributes['error.type']).toBe('timeout');
+	});
+
+	test("an AbortError while shutdown hasn't begun is the handler's error", async () => {
+		const shutdown = new AbortController();
+		const aborted = new DOMException('aborted', 'AbortError');
+		await expect(
+			withConsumerSpan(
+				'consume x',
+				undefined,
+				async () => {
+					throw aborted;
+				},
+				{},
+				shutdown.signal,
+			),
+		).rejects.toBe(aborted);
+		const [span] = recorder.spans();
+		expect(span?.attributes['akashic.cancelled']).toBeUndefined();
+		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
 	});
 
 	test('a handler stopped by shutdown is cancelled, not an error', async () => {

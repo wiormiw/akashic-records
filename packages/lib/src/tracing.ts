@@ -24,12 +24,13 @@ export const isTimeout = (error: unknown): boolean =>
 	(error instanceof DOMException || error instanceof Error) && error.name === 'TimeoutError';
 
 /**
- * Whether a throw means "told to stop": an AbortError, or the reason of the signal the work was
- * given (a shutdown's Error, say). Anything else thrown is a failure.
+ * Whether a throw means "told to stop": the signal the work was given (a shutdown's, say) has
+ * aborted, and the throw is its reason or an AbortError. An AbortError with no such signal behind
+ * it was something else giving up, which is a failure like any other throw.
  */
 const isCancellation = (error: unknown, signal: AbortSignal | undefined): boolean =>
-	(error instanceof DOMException && error.name === 'AbortError') ||
-	(signal?.aborted === true && error === signal.reason);
+	signal?.aborted === true &&
+	(error === signal.reason || (error instanceof DOMException && error.name === 'AbortError'));
 
 /**
  * Marks the span as timed out: work that ran past its deadline failed to answer in time, which
