@@ -124,7 +124,8 @@ describe('app', () => {
 });
 
 describe('an oversized upload', () => {
-	test('streamed with no declared length, it is a 413 problem with CORS and a request id', async () => {
+	/** The app with the real upload routes, over a store that remembers what reached it. */
+	const withUploads = () => {
 		const { store, stored } = memoryStore();
 		const app = build(
 			{ user: { id: 'u1', email: 'u1@x.test' } },
@@ -139,6 +140,39 @@ describe('an oversized upload', () => {
 				],
 			},
 		);
+		return { app, stored };
+	};
+
+	const expectTooLarge = async (res: Response, requestId: string) => {
+		expect(res.status).toBe(413);
+		expect(res.headers.get('content-type')).toContain('application/problem+json');
+		expect(res.headers.get('x-request-id')).toBe(requestId);
+		expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+		expect(await res.json()).toMatchObject({
+			status: 413,
+			code: 'common.request.payload_too_large',
+			traceId: requestId,
+		});
+	};
+
+	test('declared too long, it is refused unread as a 413 problem with CORS and a request id', async () => {
+		const { app, stored } = withUploads();
+		const res = await app.request('/api/v1/uploads/avatar', {
+			method: 'POST',
+			headers: {
+				origin: ORIGIN,
+				'x-request-id': 'req-declared',
+				'content-type': 'multipart/form-data; boundary=x',
+				'content-length': String(UPLOAD_BODY_BYTES + 1),
+			},
+			body: 'x',
+		});
+		await expectTooLarge(res, 'req-declared');
+		expect(stored).toEqual([]);
+	});
+
+	test('streamed with no declared length, it is a 413 problem with CORS and a request id', async () => {
+		const { app, stored } = withUploads();
 		// Chunked, so only counting the stream can catch it: there is no content-length to judge.
 		const chunk = new Uint8Array(64 * 1024);
 		let sent = 0;
@@ -160,15 +194,7 @@ describe('an oversized upload', () => {
 			duplex: 'half',
 		} as RequestInit);
 
-		expect(res.status).toBe(413);
-		expect(res.headers.get('content-type')).toContain('application/problem+json');
-		expect(res.headers.get('x-request-id')).toBe('req-big');
-		expect(res.headers.get('access-control-allow-origin')).toBe(ORIGIN);
-		expect(await res.json()).toMatchObject({
-			status: 413,
-			code: 'common.request.payload_too_large',
-			traceId: 'req-big',
-		});
+		await expectTooLarge(res, 'req-big');
 		expect(stored).toEqual([]);
 	});
 });
