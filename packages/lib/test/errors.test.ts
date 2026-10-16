@@ -18,7 +18,7 @@ import { expectErr } from '@akashic/lib/testing';
 /**
  * Every class, with the code and status it answers with today. Written out rather than derived,
  * so a class whose kind changes fails here instead of silently moving a status on the wire.
- * The statuses come from the `fail.<kind>(ErrorCode…)` pairs in the code on 2026-10-16.
+ * The statuses come from the `fail.<kind>(ErrorCode…)` pairs the code used on 2026-10-16, before the classes.
  */
 const catalogue: Record<string, readonly [code: string, status: number]> = {
 	AccountSuspended: ['auth.account.suspended', 403],

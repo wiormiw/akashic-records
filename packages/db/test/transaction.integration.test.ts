@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { AuditAction } from '@akashic/lib/enums';
-import { DuplicateSlug, ErrorCode, RealmNotFound, fail } from '@akashic/lib/errors';
+import { DuplicateSlug, RealmNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { audit, auditEntries, createDb, inTransaction, outboxMessages, publish } from '@akashic/db';
@@ -24,7 +24,7 @@ describe.skipIf(!live)('inTransaction', () => {
 		const result = await inTransaction(database.db, async (tx) => {
 			await publish(tx, [{ type: 'test.rolled_back', payload: { entityId } }], now);
 			await audit(tx, { actorId: null, entityType: 'test', entityId, action: AuditAction.created });
-			return err(fail.conflict(ErrorCode.realm.duplicateSlug, 'Taken.'));
+			return err(new DuplicateSlug('Taken.'));
 		});
 		expect(result.ok).toBe(false);
 		expect(

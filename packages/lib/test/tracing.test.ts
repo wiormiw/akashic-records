@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { DuplicateSlug, ErrorCode, RealmNotFound, fail } from '@akashic/lib/errors';
+import { DuplicateSlug, ErrorCode, RealmNotFound, RequestTimeout } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { currentTraceparent, traced, withConsumerSpan } from '@akashic/lib/tracing';
 import { recordSpans } from '@akashic/lib/testing';
@@ -22,9 +22,7 @@ describe('traced', () => {
 	});
 
 	test('a returned err marks the span with its code, without throwing', async () => {
-		const result = await traced('realm.approve', {}, async () =>
-			err(fail.conflict(ErrorCode.realm.duplicateSlug, 'Taken.')),
-		);
+		const result = await traced('realm.approve', {}, async () => err(new DuplicateSlug('Taken.')));
 		expect(result.ok).toBe(false);
 		const [span] = recorder.spans();
 		expect(span?.status.code).toBe(SpanStatusCode.ERROR);
@@ -168,7 +166,7 @@ describe('traced', () => {
 	});
 
 	test('an AppError keeps its message: it was written for clients', async () => {
-		const failure = fail.external(ErrorCode.common.timeout, 'The request took too long.');
+		const failure = new RequestTimeout('The request took too long.');
 		await expect(
 			traced('x', {}, async () => {
 				throw failure;

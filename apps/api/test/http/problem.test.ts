@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { ErrorCode, Forbidden } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import type { AppEnv } from '@/http/env.ts';
 import { notFound, problemHandler } from '@/http/problem.ts';
@@ -13,7 +13,7 @@ const app = new Hono<AppEnv>()
 		await next();
 	})
 	.get('/refuse', () => {
-		throw fail.forbidden(ErrorCode.common.forbidden, 'Nope.');
+		throw new Forbidden('Nope.');
 	})
 	.get('/aborted', () => {
 		abort.abort();

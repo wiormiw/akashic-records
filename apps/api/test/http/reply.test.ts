@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 import * as v from 'valibot';
-import { ErrorCode, NotBothMembers, RealmNotFound, fail } from '@akashic/lib/errors';
+import { DuplicateSlug, NotBothMembers, RealmNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { err, ok, type Result } from '@akashic/lib/result';
 import type { AppEnv } from '@/http/env.ts';
@@ -22,9 +22,7 @@ const app = new Hono<AppEnv>()
 	.get('/leaky', (c) => reply(c, View, { id: 'a', status: 0, email: 'x@y.z' } as never))
 	.get('/bad', (c) => reply(c, View, { id: 'a', status: 9 } as never))
 	.get('/created', (c) => respond(c, ok({ id: 'a', status: 1 as const }), View, 201))
-	.get('/refused', (c) =>
-		respond(c, err(fail.conflict(ErrorCode.realm.duplicateSlug, 'Taken.')), View),
-	)
+	.get('/refused', (c) => respond(c, err(new DuplicateSlug('Taken.')), View))
 	.get('/typed', (c) => respond(c, refusedTyped(), View));
 app.onError(problemHandler(silentLogger()));
 

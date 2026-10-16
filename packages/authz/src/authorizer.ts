@@ -4,7 +4,7 @@ import {
 	OpenFgaClient,
 	type TupleKey,
 } from '@openfga/sdk';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AuthzUnavailable } from '@akashic/lib/errors';
 import { isAbortOf, untilAborted } from '@akashic/lib/abort';
 import { traced } from '@akashic/lib/tracing';
 import type { Logger } from '@akashic/lib/log';
@@ -56,11 +56,7 @@ export function createAuthorizer(options: OpenFgaOptions): Authorizer {
 			// The caller gave up (deadline, disconnect, shutdown): not an outage, so not logged as one.
 			if (isAbortOf(error, signal)) throw error;
 			log.error({ err: error, operation }, 'openfga call failed');
-			throw fail.external(
-				ErrorCode.external.authzUnavailable,
-				'Could not check your permissions just now.',
-				{ cause: error },
-			);
+			throw new AuthzUnavailable('Could not check your permissions just now.', { cause: error });
 		}
 	}
 

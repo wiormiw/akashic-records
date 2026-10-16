@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Hono } from 'hono';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { DuplicateSlug, ErrorCode } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { createLifecycle } from '@akashic/lib/lifecycle';
 import { captureLogger, recordSpans } from '@akashic/lib/testing';
@@ -44,7 +44,7 @@ const build = (budgetMs = 1000, logger = silentLogger()) => {
 			throw Object.assign(new Error('dup key (email)=(ann@example.test)'), { code: '23505' });
 		})
 		.get('/refused', () => {
-			throw fail.conflict(ErrorCode.realm.duplicateSlug, 'That name is taken.');
+			throw new DuplicateSlug('That name is taken.');
 		});
 	app.onError(problemHandler(logger));
 	return app;

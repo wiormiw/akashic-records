@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { AuditAction } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { DuplicateSlug } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { err, ok } from '@akashic/lib/result';
 import { audit, auditEntries, createDb, inTransaction } from '@akashic/db';
@@ -28,7 +28,7 @@ describe.skipIf(!live)('withRollback', () => {
 					entityId,
 					action: AuditAction.created,
 				});
-				return err(fail.conflict(ErrorCode.realm.duplicateSlug, 'x'));
+				return err(new DuplicateSlug('x'));
 			});
 			expect(inner.ok).toBe(false);
 			// The savepoint rolled back the inner write; the outer transaction is still usable.

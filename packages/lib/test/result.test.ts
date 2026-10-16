@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AlreadyMember } from '@akashic/lib/errors';
 import {
 	all,
 	andThen,
@@ -50,7 +50,7 @@ describe('result', () => {
 	});
 
 	test('mapOk passes a failure through untouched', () => {
-		const failure = err(fail.conflict(ErrorCode.realm.alreadyMember, 'Already in.'));
+		const failure = err(new AlreadyMember('Already in.'));
 		const mapped = mapOk(failure, () => 1);
 		expect(mapped).toBe(failure);
 		expectErr(mapped, 'realm.already_member');

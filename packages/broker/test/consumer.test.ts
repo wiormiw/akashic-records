@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { ConsumerStatus } from 'rabbitmq-client';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { AuthzUnavailable, ErrorCode } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { recordSpans } from '@akashic/lib/testing';
 import { attemptOf, createDeliveryHandler, type Delivery } from '../src/consumer.ts';
@@ -149,7 +149,7 @@ describe('event consumer', () => {
 
 	test("an AppError's client-facing message is kept on the retry copy", async () => {
 		const w = world(async () => {
-			throw fail.external(ErrorCode.external.authzUnavailable, 'Could not check permissions.');
+			throw new AuthzUnavailable('Could not check permissions.');
 		});
 		await w.handle(delivery());
 		expect(w.copies[0]?.headers['x-last-error']).toBe(
