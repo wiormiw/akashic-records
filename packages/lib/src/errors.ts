@@ -58,21 +58,6 @@ export class AppError extends Error {
 	}
 }
 
-const make = (kind: ErrorKind) => (code: string, message: string, options?: ErrorOptions) =>
-	new AppError(kind, code, message, options);
-
-/** `throw fail.conflict(code, message)`: the constructor picks the kind. */
-export const fail = {
-	validation: make('validation'),
-	notFound: make('not_found'),
-	conflict: make('conflict'),
-	unauthorized: make('unauthorized'),
-	forbidden: make('forbidden'),
-	rateLimited: make('rate_limited'),
-	external: make('external'),
-	internal: make('internal'),
-} as const;
-
 /** Stable, client-facing codes. Clients switch on these; never rename one. */
 export const ErrorCode = {
 	...base,

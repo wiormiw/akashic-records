@@ -1,11 +1,10 @@
-import type { AppError } from './errors.ts';
 import type { Logger } from './log.ts';
 
 /**
  * What a service returns when it can fail in a way the caller should handle: a value, or one of
  * the errors its type names. `throw` is left for bugs and infrastructure failing.
  */
-export type Result<T, E = AppError> = Ok<T> | Err<E>;
+export type Result<T, E> = Ok<T> | Err<E>;
 export type Ok<T> = { readonly ok: true; readonly value: T };
 // One `{ ok: false }` branch per error, so narrowing on one error leaves the rest.
 export type Err<E> = E extends unknown ? { readonly ok: false; readonly error: E } : never;

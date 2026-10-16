@@ -47,10 +47,15 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
   `outbox`; `app.ts`: the fake-authorizer route scaffold). A module's own `world()` stays in its
   `test/modules/<m>/fixtures.ts`. `test/contract.test.ts` holds every response view to the web
   app's schemas (`test/fixtures/web-schemas.ts`, deleted in Plan 3): add a new view there.
-- **One error funnel.** Services return `err(...)` Results; routes hand them to `reply` (success,
-  through a view) or `respond`, and `http/problem.ts` renders errors.
-  `throw` is for bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it
-  rolls back.
+- **One error funnel.** Every deliberate failure is a class from `@akashic/lib/errors`, made with
+  `defineError` (one per code; `realm.not_member` has one per status). Services return
+  `err(new RealmNotFound(...))`, and each names its error union in `<m>.types.ts`
+  (`type JoinError = RealmNotFound | AlreadyMember`): `Result<Joined, JoinError>`, never
+  `Result<T>` or `Result<T, AppError>`. A caller that treats one error specially narrows with
+  `isError(result, Class)`, not by comparing `error.code`. Routes hand Results to `reply`
+  (success, through a view) or `respond`, and `http/problem.ts` renders errors. `throw` is for
+  bugs and infrastructure failing. Inside `inTransaction`, return the `err`: it rolls back.
+  `structure.test.ts` keeps `fail.` out of source and AppError out of module results.
 - **Events and audits only inside `inTransaction`**, via `publish(tx, ...)` and `audit(tx, ...)`.
   Every membership change publishes `realm.member_changed`, or OpenFGA drifts from Postgres.
 - **Outbox handlers are idempotent.** Write the complete answer, don't apply a delta. The outbox

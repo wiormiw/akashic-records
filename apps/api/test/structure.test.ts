@@ -173,6 +173,59 @@ describe('structure', () => {
 		expect(inline).toEqual([]);
 	});
 
+	// Errors are classes now (`new RealmNotFound(...)`); `fail.<kind>(code, ...)` is gone, and a
+	// copy of it pasted back would build an untyped AppError. Comment lines are skipped.
+	test('no source builds an error with fail.<kind>', async () => {
+		const using: string[] = [];
+		for (const f of scan('apps/api/src/**/*.ts', 'packages/*/src/**/*.ts')) {
+			const lines = (await read(f)).split('\n');
+			lines.forEach((line, n) => {
+				if (/^\s*(?:\/\/|\/?\*)/.test(line)) return;
+				if (/\bfail\.[A-Za-z_]/.test(line)) using.push(`${f}:${n + 1}`);
+			});
+		}
+		expect(using).toEqual([]);
+	});
+
+	// A module's results name their errors: `Result<T, JoinError>`, never `Result<T>` (the
+	// compiler refuses that too, now `E` has no default) nor `Result<T, AppError>`, which would
+	// let any error through. A text heuristic: it reads each `Result<...>` (balanced brackets,
+	// `=>` skipped) outside comment lines and splits its top-level arguments.
+	test('module results name their error union, never AppError or nothing', async () => {
+		const loose: string[] = [];
+		for (const f of scan('apps/api/src/modules/**/*.ts')) {
+			const src = (await read(f))
+				.split('\n')
+				.map((line) => (/^\s*(?:\/\/|\/?\*)/.test(line) ? '' : line))
+				.join('\n');
+			for (const m of src.matchAll(/\bResult<\s*/g)) {
+				let depth = 1;
+				let i = m.index + m[0].length;
+				const args: string[] = [''];
+				while (i < src.length && depth > 0) {
+					const ch = src[i++]!;
+					if (ch === '=' && src[i] === '>') {
+						args[args.length - 1] += '=>';
+						i++;
+						continue;
+					}
+					if ('<([{'.includes(ch)) depth++;
+					else if ('>)]}'.includes(ch)) depth--;
+					if (depth === 0) break;
+					if (ch === ',' && depth === 1) args.push('');
+					else args[args.length - 1] += ch;
+				}
+				const errors = args[1]?.trim();
+				const members = errors?.split('|').map((part) => part.trim()) ?? [];
+				if (!errors || members.includes('AppError')) {
+					const line = src.slice(0, m.index).split('\n').length;
+					loose.push(`${f}:${line}: Result<${args.join(',').replace(/\s+/g, ' ').trim()}>`);
+				}
+			}
+		}
+		expect(loose).toEqual([]);
+	});
+
 	test('nothing but main.ts starts the process', async () => {
 		const starting: string[] = [];
 		// lifecycle.ts defines handleSignals; main.ts is the one place that calls it.

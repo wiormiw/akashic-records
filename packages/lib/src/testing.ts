@@ -9,7 +9,7 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import { expect } from 'bun:test';
 import { pino } from 'pino';
-import type { AppError } from './errors.ts';
+import { AppError } from './errors.ts';
 import type { Logger } from './log.ts';
 import type { ErrorOf, Result } from './result.ts';
 
@@ -43,9 +43,12 @@ export function captureLogger(): { logger: Logger; lines: Record<string, unknown
 }
 
 /** The value of a Result that must have succeeded; fails the test with the error otherwise. */
-export function expectOk<T>(result: Result<T>): T {
-	if (!result.ok) throw new Error(`expected ok, got ${result.error.code}: ${result.error.message}`);
-	return result.value;
+export function expectOk<T>(result: Result<T, unknown>): T {
+	if (result.ok) return result.value;
+	const { error } = result;
+	// Any error type: a result built from bare `ok(...)` has none to infer.
+	const said = error instanceof AppError ? `${error.code}: ${error.message}` : String(error);
+	throw new Error(`expected ok, got ${said}`);
 }
 
 type Ctor<T> = abstract new (...args: never[]) => T;

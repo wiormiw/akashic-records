@@ -18,7 +18,7 @@ import { expectErr } from '@akashic/lib/testing';
 /**
  * Every class, with the code and status it answers with today. Written out rather than derived,
  * so a class whose kind changes fails here instead of silently moving a status on the wire.
- * The statuses come from the `fail.<kind>(ErrorCode…)` pairs the code used on 2026-10-16, before the classes.
+ * The statuses come from the `fail.<kind>(ErrorCode…)` pairs the code used on 2026-10-16.
  */
 const catalogue: Record<string, readonly [code: string, status: number]> = {
 	AccountSuspended: ['auth.account.suspended', 403],
@@ -141,7 +141,7 @@ describe('expectErr', () => {
 	});
 
 	test('still takes any code for an untyped result', () => {
-		const untyped: Result<number> = err(new RealmNotFound());
+		const untyped: Result<number, AppError> = err(new RealmNotFound());
 		expect(expectErr(untyped, ErrorCode.realm.notFound)).toBeInstanceOf(RealmNotFound);
 	});
 
