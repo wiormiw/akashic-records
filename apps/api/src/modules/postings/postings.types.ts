@@ -2,6 +2,13 @@ import type { MiddlewareHandler } from 'hono';
 import type { Authorizer } from '@akashic/authz';
 import type { Executor, Tx } from '@akashic/db';
 import type { CommentSubject, JobStatus, JobType, ListingStatus } from '@akashic/lib/enums';
+import type {
+	EventNotFound,
+	MemberNotFound,
+	PostingSettled,
+	RealmForbidden,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import type { Logger } from '@akashic/lib/log';
 import type { Clock } from '@akashic/lib/time';
 import type { RealmEnv } from '@/http/realm-context.ts';
@@ -152,3 +159,25 @@ export interface DecidedEntry {
 	subjectId: string;
 	embedding: number[] | null;
 }
+
+// ---- Errors ----------------------------------------------------------------------------------
+
+// What each postings service call can fail with.
+export type RequireMemberError = MemberNotFound;
+export type CheckFitError = ValidationFailed;
+export type PostError = CheckFitError;
+export type DecideFitError = EventNotFound;
+export type ReadJobError = EventNotFound;
+export type SetJobStatusError = EventNotFound;
+export type HireError =
+	| EventNotFound
+	| RealmForbidden
+	| PostingSettled
+	| RequireMemberError
+	| ValidationFailed;
+export type ReadListingError = EventNotFound;
+export type SetListingStatusError = RealmForbidden | EventNotFound;
+export type DealError = HireError;
+export type ShowInterestError = EventNotFound | RealmForbidden;
+export type DropInterestError = EventNotFound;
+export type ListInterestError = EventNotFound | RealmForbidden;

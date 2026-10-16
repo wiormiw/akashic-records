@@ -2,8 +2,10 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { InterestStatus } from '@akashic/lib/enums';
+import { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { expectErr, expectOk } from '@akashic/lib/testing';
+import { isError } from '@akashic/lib/result';
+import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import { databaseUrl } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
 
@@ -50,6 +52,27 @@ describe.skipIf(!live)('interest', () => {
 				'realm.forbidden',
 			);
 			expectErr(await w.interest.show(realm.id, event, realm.admin, undefined), 'event.not_found');
+		}));
+
+	test('a refused show narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const realm = await w.realm();
+			const { listing } = await w.seed(realm.id, realm.admin);
+			const event = await w.event(realm.id, realm.admin);
+
+			const own = await w.interest.show(realm.id, listing, realm.admin, undefined);
+			if (!isError(own, RealmForbidden)) throw new Error('expected RealmForbidden');
+			expect(expectType<RealmForbidden>(own.error)).toBeInstanceOf(RealmForbidden);
+			// @ts-expect-error the branch holds only RealmForbidden
+			expectType<EventNotFound>(own.error);
+
+			const none = await w.interest.show(realm.id, event, realm.admin, undefined);
+			if (isError(none, RealmForbidden)) throw new Error('expected EventNotFound');
+			if (none.ok) throw new Error('expected an error');
+			// RealmForbidden is ruled out, so EventNotFound is all that remains.
+			expect(expectType<EventNotFound>(none.error)).toBeInstanceOf(EventNotFound);
+			// @ts-expect-error RealmForbidden was narrowed away
+			expectType<RealmForbidden>(none.error);
 		}));
 
 	test('the owner and a moderator see who is interested, oldest first; others may not', () =>

@@ -2,15 +2,24 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Interest } from '@akashic/contracts';
 import { type Executor, jobs, listings, postingInterests, realmMembers, user } from '@akashic/db';
 import { CommentSubject, InterestStatus } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { EventNotFound, MemberNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
-import type { InterestDeps, Posted, Subject, Withdrawn } from './postings.types.ts';
+import type {
+	DropInterestError,
+	InterestDeps,
+	ListInterestError,
+	Posted,
+	RequireMemberError,
+	ShowInterestError,
+	Subject,
+	Withdrawn,
+} from './postings.types.ts';
 
 const ofSubject = (subject: Subject) =>
 	and(eq(postingInterests.subjectKind, subject.kind), eq(postingInterests.subjectId, subject.id));
 
-const noPosting = () => fail.notFound(ErrorCode.event.notFound, 'No such posting in this realm.');
+const noPosting = () => new EventNotFound('No such posting in this realm.');
 
 // ---- Queries the jobs and listings services share --------------------------------------------
 
@@ -53,14 +62,13 @@ export async function requireMember(
 	db: Executor,
 	realmId: string,
 	userId: string,
-): Promise<Result<void>> {
+): Promise<Result<void, RequireMemberError>> {
 	const [row] = await db
 		.select({ role: realmMembers.role })
 		.from(realmMembers)
 		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
 		.limit(1);
-	if (!row)
-		return err(fail.notFound(ErrorCode.realm.notMember, 'That person is not in this realm.'));
+	if (!row) return err(new MemberNotFound('That person is not in this realm.'));
 	return ok(undefined);
 }
 
@@ -101,11 +109,11 @@ export function createInterestService(deps: InterestDeps) {
 			subject: Subject,
 			userId: string,
 			note: string | undefined,
-		): Promise<Result<Posted>> {
+		): Promise<Result<Posted, ShowInterestError>> {
 			const owner = await ownerOf(realmId, subject);
 			if (owner === undefined) return err(noPosting());
 			if (owner === userId) {
-				return err(fail.forbidden(ErrorCode.realm.forbidden, 'That posting is yours.'));
+				return err(new RealmForbidden('That posting is yours.'));
 			}
 			const [row] = await db
 				.insert(postingInterests)
@@ -131,7 +139,11 @@ export function createInterestService(deps: InterestDeps) {
 		},
 
 		/** A posting of another realm is not found, so nobody withdraws across realms. */
-		async drop(realmId: string, subject: Subject, userId: string): Promise<Result<Withdrawn>> {
+		async drop(
+			realmId: string,
+			subject: Subject,
+			userId: string,
+		): Promise<Result<Withdrawn, DropInterestError>> {
 			if ((await ownerOf(realmId, subject)) === undefined) return err(noPosting());
 			const withdrawn = await db
 				.update(postingInterests)
@@ -153,13 +165,11 @@ export function createInterestService(deps: InterestDeps) {
 			subject: Subject,
 			actorId: string,
 			canModerate: boolean,
-		): Promise<Result<Interest[]>> {
+		): Promise<Result<Interest[], ListInterestError>> {
 			const owner = await ownerOf(realmId, subject);
 			if (owner === undefined) return err(noPosting());
 			if (owner !== actorId && !canModerate) {
-				return err(
-					fail.forbidden(ErrorCode.realm.forbidden, 'Only the person who posted it can see that.'),
-				);
+				return err(new RealmForbidden('Only the person who posted it can see that.'));
 			}
 			const rows = await db
 				.select({

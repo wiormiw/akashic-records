@@ -12,18 +12,21 @@ import {
 } from '@akashic/db';
 import { centroidFrom, parseVector, pgVector } from '@akashic/db/sql';
 import { CommentSubject, JobStatus, ListingStatus } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { EventNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { policy } from '@/config.ts';
 import type {
 	AfterStored,
 	Centroid,
+	CheckFitError,
 	DecidedEntry,
+	DecideFitError,
 	Fit,
 	FitDecision,
 	InsertPosting,
 	Posted,
+	PostError,
 	PostingDraft,
 	PostingsDeps,
 	Subject,
@@ -175,7 +178,7 @@ export function createFitService(deps: PostingsDeps) {
 	 * Refuses a posting that clearly doesn't belong, and returns what to do once it is stored:
 	 * teach a young realm's centroid, or queue an uncertain posting for a moderator.
 	 */
-	async function check(draft: PostingDraft): Promise<Result<AfterStored>> {
+	async function check(draft: PostingDraft): Promise<Result<AfterStored, CheckFitError>> {
 		const { realmId, kind } = draft;
 		const nothing = ok<AfterStored>(async () => {});
 		const { centroid, samples } = await centroidOf(db, realmId);
@@ -186,8 +189,7 @@ export function createFitService(deps: PostingsDeps) {
 		const fit = judge(distance, samples);
 		if (fit === 'doesNotBelong') {
 			return err(
-				fail.validation(
-					ErrorCode.common.validation,
+				new ValidationFailed(
 					'This does not look like it belongs in this realm. Post it where its readers are, ' +
 						'or ask a moderator if you think this is wrong.',
 				),
@@ -215,7 +217,7 @@ export function createFitService(deps: PostingsDeps) {
 
 	return {
 		/** Stores a posting that fits its realm, announces it, then acts on what the check found. */
-		async admit(draft: PostingDraft, insert: InsertPosting): Promise<Result<Posted>> {
+		async admit(draft: PostingDraft, insert: InsertPosting): Promise<Result<Posted, PostError>> {
 			const { realmId, authorId } = draft;
 			const fit = await check(draft);
 			if (!fit.ok) return fit;
@@ -262,18 +264,13 @@ export function createFitService(deps: PostingsDeps) {
 			entryId: string,
 			moderatorId: string,
 			kept: boolean,
-		): Promise<Result<FitDecision>> {
+		): Promise<Result<FitDecision, DecideFitError>> {
 			// One transaction, so a decision never stands without what it does to the posting.
 			return inTransaction(db, async (tx) => {
 				const now = toDate(clock.now());
 				const decided = await decideReview(tx, realmId, entryId, moderatorId, kept, now);
 				if (!decided) {
-					return err(
-						fail.notFound(
-							ErrorCode.event.notFound,
-							'Nothing waiting under that id. Already decided?',
-						),
-					);
+					return err(new EventNotFound('Nothing waiting under that id. Already decided?'));
 				}
 				if (kept) await learn(tx, realmId, decided.embedding);
 				else await takeDown[decided.subjectKind]?.(tx, realmId, decided.subjectId, now);

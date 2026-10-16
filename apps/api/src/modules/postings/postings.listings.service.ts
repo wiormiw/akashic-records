@@ -2,22 +2,30 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Listing, ListingSummary } from '@akashic/contracts';
 import { type Executor, inTransaction, listings, user } from '@akashic/db';
 import { CommentSubject, ListingStatus } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import {
+	EventNotFound,
+	PostingSettled,
+	RealmForbidden,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { hasOpenInterest, requireMember, settleInterest } from './postings.interest.service.ts';
 import type {
+	DealError,
 	Dealt,
 	ListingForViewer,
 	ListingStatusSet,
 	NewListing,
 	Posted,
+	PostError,
 	PostingAreaDeps,
+	ReadListingError,
+	SetListingStatusError,
 } from './postings.types.ts';
 
-const noListing = () => fail.notFound(ErrorCode.event.notFound, 'No such posting in this realm.');
-const settled = () =>
-	fail.conflict(ErrorCode.event.alreadySettled, 'This listing is no longer available.');
+const noListing = () => new EventNotFound('No such posting in this realm.');
+const settled = () => new PostingSettled('This listing is no longer available.');
 
 /** One listing of the realm; undefined for another realm's. */
 async function findListing(
@@ -80,14 +88,14 @@ export function createListingService(deps: PostingAreaDeps) {
 			realmId: string,
 			listingId: string,
 			viewerId: string,
-		): Promise<Result<ListingForViewer>> {
+		): Promise<Result<ListingForViewer, ReadListingError>> {
 			const listing = await findListing(db, realmId, listingId);
 			if (!listing) return err(noListing());
 			const subject = { kind: CommentSubject.listing, id: listingId };
 			return ok({ ...listing, viewerInterested: await hasOpenInterest(db, subject, viewerId) });
 		},
 
-		post: (listing: NewListing): Promise<Result<Posted>> =>
+		post: (listing: NewListing): Promise<Result<Posted, PostError>> =>
 			fit.admit(
 				{ ...listing, type: 'listing', kind: CommentSubject.listing, authorId: listing.sellerId },
 				async (tx) => {
@@ -105,11 +113,9 @@ export function createListingService(deps: PostingAreaDeps) {
 			listingId: string,
 			status: ListingStatus,
 			canModerate: boolean,
-		): Promise<Result<ListingStatusSet>> {
+		): Promise<Result<ListingStatusSet, SetListingStatusError>> {
 			if (status === ListingStatus.removed && !canModerate) {
-				return err(
-					fail.forbidden(ErrorCode.realm.forbidden, "Removing a listing is a moderator's call."),
-				);
+				return err(new RealmForbidden("Removing a listing is a moderator's call."));
 			}
 			const updated = await db
 				.update(listings)
@@ -125,23 +131,18 @@ export function createListingService(deps: PostingAreaDeps) {
 			listingId: string,
 			actorId: string,
 			buyerId: string,
-		): Promise<Result<Dealt>> {
+		): Promise<Result<Dealt, DealError>> {
 			const listing = await findListing(db, realmId, listingId);
 			if (!listing) return err(noListing());
 			if (listing.sellerId !== actorId) {
-				return err(fail.forbidden(ErrorCode.realm.forbidden, 'Only the seller can close a deal.'));
+				return err(new RealmForbidden('Only the seller can close a deal.'));
 			}
 			if (listing.status !== ListingStatus.active) return err(settled());
 			const member = await requireMember(db, realmId, buyerId);
 			if (!member.ok) return member;
 			const subject = { kind: CommentSubject.listing, id: listingId };
 			if (!(await hasOpenInterest(db, subject, buyerId))) {
-				return err(
-					fail.validation(
-						ErrorCode.common.validation,
-						'That buyer has not offered, or has withdrawn.',
-					),
-				);
+				return err(new ValidationFailed('That buyer has not offered, or has withdrawn.'));
 			}
 
 			return inTransaction(db, async (tx) => {

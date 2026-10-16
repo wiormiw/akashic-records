@@ -2,22 +2,30 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { Job, JobSummary } from '@akashic/contracts';
 import { type Executor, inTransaction, jobs, user } from '@akashic/db';
 import { CommentSubject, JobStatus } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import {
+	EventNotFound,
+	PostingSettled,
+	RealmForbidden,
+	ValidationFailed,
+} from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { hasOpenInterest, requireMember, settleInterest } from './postings.interest.service.ts';
 import type {
 	Hired,
+	HireError,
 	JobForViewer,
 	JobStatusSet,
 	NewJob,
 	Posted,
+	PostError,
 	PostingAreaDeps,
+	ReadJobError,
+	SetJobStatusError,
 } from './postings.types.ts';
 
-const noJob = () => fail.notFound(ErrorCode.event.notFound, 'No such posting in this realm.');
-const settled = () =>
-	fail.conflict(ErrorCode.event.alreadySettled, 'This posting is no longer available.');
+const noJob = () => new EventNotFound('No such posting in this realm.');
+const settled = () => new PostingSettled('This posting is no longer available.');
 
 /** One job of the realm; undefined for another realm's. */
 async function findJob(db: Executor, realmId: string, jobId: string): Promise<Job | undefined> {
@@ -70,14 +78,18 @@ export function createJobService(deps: PostingAreaDeps) {
 			return rows.map((row) => ({ ...row, createdAt: fromDate(row.createdAt) }));
 		},
 
-		async read(realmId: string, jobId: string, viewerId: string): Promise<Result<JobForViewer>> {
+		async read(
+			realmId: string,
+			jobId: string,
+			viewerId: string,
+		): Promise<Result<JobForViewer, ReadJobError>> {
 			const job = await findJob(db, realmId, jobId);
 			if (!job) return err(noJob());
 			const subject = { kind: CommentSubject.job, id: jobId };
 			return ok({ ...job, viewerInterested: await hasOpenInterest(db, subject, viewerId) });
 		},
 
-		post: (job: NewJob): Promise<Result<Posted>> =>
+		post: (job: NewJob): Promise<Result<Posted, PostError>> =>
 			fit.admit({ ...job, type: 'job', kind: CommentSubject.job }, async (tx) => {
 				const [created] = await tx.insert(jobs).values(job).returning({ id: jobs.id });
 				if (!created) throw new Error('job insert returned no row');
@@ -88,7 +100,7 @@ export function createJobService(deps: PostingAreaDeps) {
 			realmId: string,
 			jobId: string,
 			status: JobStatus,
-		): Promise<Result<JobStatusSet>> {
+		): Promise<Result<JobStatusSet, SetJobStatusError>> {
 			const updated = await db
 				.update(jobs)
 				.set({ status, updatedAt: toDate(clock.now()) })
@@ -103,25 +115,18 @@ export function createJobService(deps: PostingAreaDeps) {
 			jobId: string,
 			actorId: string,
 			hiredUserId: string,
-		): Promise<Result<Hired>> {
+		): Promise<Result<Hired, HireError>> {
 			const job = await findJob(db, realmId, jobId);
 			if (!job) return err(noJob());
 			if (job.authorId !== actorId) {
-				return err(
-					fail.forbidden(ErrorCode.realm.forbidden, 'Only the person who posted it can hire.'),
-				);
+				return err(new RealmForbidden('Only the person who posted it can hire.'));
 			}
 			if (job.status !== JobStatus.open) return err(settled());
 			const member = await requireMember(db, realmId, hiredUserId);
 			if (!member.ok) return member;
 			const subject = { kind: CommentSubject.job, id: jobId };
 			if (!(await hasOpenInterest(db, subject, hiredUserId))) {
-				return err(
-					fail.validation(
-						ErrorCode.common.validation,
-						'That person has not applied, or has withdrawn.',
-					),
-				);
+				return err(new ValidationFailed('That person has not applied, or has withdrawn.'));
 			}
 
 			return inTransaction(db, async (tx) => {
