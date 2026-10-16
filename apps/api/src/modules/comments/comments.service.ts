@@ -12,10 +12,18 @@ import {
 	user,
 } from '@akashic/db';
 import { AuditAction, CommentSubject } from '@akashic/lib/enums';
-import { ErrorCode, fail } from '@akashic/lib/errors';
+import { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
-import type { CommentsDeps, PostedComment, RemovedComment, Subject } from './comments.types.ts';
+import type {
+	AddCommentError,
+	CommentsDeps,
+	PostedComment,
+	RemoveCommentError,
+	RemovedComment,
+	Subject,
+	ThreadError,
+} from './comments.types.ts';
 
 const THREAD_LIMIT = 200;
 
@@ -73,14 +81,14 @@ async function listThread(db: Executor, subject: Subject, limit: number): Promis
 	}));
 }
 
-const noSubject = () => fail.notFound(ErrorCode.event.notFound, 'No such thing in this realm.');
+const noSubject = () => new EventNotFound('No such thing in this realm.');
 
 export function createCommentService(deps: CommentsDeps) {
 	const { db, clock } = deps;
 
 	return {
 		/** The thread under a posting of this realm; a posting of another realm is not found. */
-		async thread(realmId: string, subject: Subject): Promise<Result<CommentEntry[]>> {
+		async thread(realmId: string, subject: Subject): Promise<Result<CommentEntry[], ThreadError>> {
 			if ((await threadOpen(db, realmId, subject)) === undefined) return err(noSubject());
 			return ok(await listThread(db, subject, THREAD_LIMIT));
 		},
@@ -90,11 +98,10 @@ export function createCommentService(deps: CommentsDeps) {
 			subject: Subject,
 			authorId: string,
 			body: string,
-		): Promise<Result<PostedComment>> {
+		): Promise<Result<PostedComment, AddCommentError>> {
 			const open = await threadOpen(db, realmId, subject);
 			if (open === undefined) return err(noSubject());
-			if (!open)
-				return err(fail.forbidden(ErrorCode.realm.forbidden, 'Comments are off for this.'));
+			if (!open) return err(new RealmForbidden('Comments are off for this.'));
 
 			return inTransaction(db, async (tx) => {
 				const [created] = await tx
@@ -115,7 +122,11 @@ export function createCommentService(deps: CommentsDeps) {
 		 * Soft delete: the comment keeps its place in the thread. The route has checked the actor may
 		 * (its author, or a moderator); a moderator removing someone else's is recorded.
 		 */
-		remove(realmId: string, commentId: string, actorId: string): Promise<Result<RemovedComment>> {
+		remove(
+			realmId: string,
+			commentId: string,
+			actorId: string,
+		): Promise<Result<RemovedComment, RemoveCommentError>> {
 			return inTransaction(db, async (tx) => {
 				const ofRealm = and(eq(comments.id, commentId), eq(comments.realmId, realmId));
 				// Only a comment still standing: removing it again keeps the first removal's time
@@ -129,7 +140,7 @@ export function createCommentService(deps: CommentsDeps) {
 					const [gone] = await tx.select({ id: comments.id }).from(comments).where(ofRealm);
 					return gone
 						? ok({ removed: true as const })
-						: err(fail.notFound(ErrorCode.event.notFound, 'No such comment in this realm.'));
+						: err(new EventNotFound('No such comment in this realm.'));
 				}
 				if (removed.authorId !== actorId) {
 					await audit(tx, {

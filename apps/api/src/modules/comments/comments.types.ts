@@ -4,6 +4,7 @@ import type { RealmEnv } from '@/http/realm-context.ts';
 import type { CommentService } from './comments.service.ts';
 import type { Executor } from '@akashic/db';
 import type { CommentSubject } from '@akashic/lib/enums';
+import type { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
 
 export interface CommentsDeps {
@@ -26,6 +27,11 @@ export interface PostedComment {
 export interface RemovedComment {
 	removed: true;
 }
+
+// What each comment service call can fail with. event.not_found stands for any missing posting.
+export type ThreadError = EventNotFound;
+export type AddCommentError = EventNotFound | RealmForbidden;
+export type RemoveCommentError = EventNotFound;
 
 /** What the comments routes are built from. */
 export interface CommentsRoutesDeps {

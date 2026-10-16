@@ -3,7 +3,9 @@ import { comments, createDb, type Tx } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { eq } from 'drizzle-orm';
 import { AuditAction } from '@akashic/lib/enums';
+import { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
+import { isError } from '@akashic/lib/result';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { fixedClock, toDate } from '@akashic/lib/time';
 import { createCommentService } from '@/modules/comments/comments.service.ts';
@@ -19,6 +21,9 @@ const database = createDb({
 const live = await database.ping();
 afterAll(() => database[Symbol.asyncDispose]());
 import { world } from './fixtures.ts';
+
+// Compiles only when `value` is a T: the type assertions below lean on it.
+const expectType = <T>(value: T): T => value;
 
 // The comments service on the real database, each test in a transaction that is rolled back.
 
@@ -76,6 +81,26 @@ describe.skipIf(!live)('adding a comment', () => {
 			const { event } = await w.postings(realmId, admin, false);
 			expectErr(await w.service.add(realmId, event, people[0]!, 'Hi'), 'realm.forbidden');
 			expect(await w.rows(event.id)).toEqual([]);
+		}));
+
+	test('a refused comment narrows to the one error, leaving the rest', () =>
+		inWorld(async (w) => {
+			const { id: realmId, admin, people } = await w.realm(1);
+			const { event } = await w.postings(realmId, admin, false);
+			const closed = await w.service.add(realmId, event, people[0]!, 'Hi');
+			if (!isError(closed, RealmForbidden)) throw new Error('expected RealmForbidden');
+			expect(expectType<RealmForbidden>(closed.error)).toBeInstanceOf(RealmForbidden);
+			// @ts-expect-error the branch holds only RealmForbidden
+			expectType<EventNotFound>(closed.error);
+
+			const nowhere = { kind: event.kind, id: Bun.randomUUIDv7() };
+			const missing = await w.service.add(realmId, nowhere, people[0]!, 'Hi');
+			if (isError(missing, RealmForbidden)) throw new Error('expected EventNotFound');
+			if (missing.ok) throw new Error('expected an error');
+			// RealmForbidden is ruled out, so EventNotFound is all that remains.
+			expect(expectType<EventNotFound>(missing.error)).toBeInstanceOf(EventNotFound);
+			// @ts-expect-error RealmForbidden was narrowed away
+			expectType<RealmForbidden>(missing.error);
 		}));
 });
 
