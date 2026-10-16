@@ -17,9 +17,10 @@ import { iso, ListLimit, oneOf, Timestamp, trimmedAsSent, Uuid } from "./common.
 const title = trimmedAsSent({ minLength: 3, maxLength: 140 });
 const description = trimmedAsSent({ minLength: 1, maxLength: 8000 });
 const currency = trimmedAsSent({ minLength: 3, maxLength: 3 });
-// The money columns are int4: a larger amount is a 400 here, not a 500 from the database.
-const INT4_MAX = 2_147_483_647;
-const money = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(INT4_MAX));
+// The money columns are bigint, read as JS numbers: past the largest safe integer an amount would
+// lose cents on the round trip, so it is a 400 here.
+const MAX_SAFE_CENTS = Number.MAX_SAFE_INTEGER;
+const money = v.pipe(v.number(), v.integer(), v.minValue(0), v.maxValue(MAX_SAFE_CENTS));
 const Integer = v.pipe(v.number(), v.integer());
 
 export const CreateJobBody = v.object({

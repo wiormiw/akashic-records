@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -123,7 +124,7 @@ export const jobs = pgTable(
   {
     ...postingColumns(),
     type: smallint("type").notNull().default(JobType.commission),
-    budgetCents: integer("budget_cents"),
+    budgetCents: bigint("budget_cents", { mode: "number" }),
     currency: text("currency").notNull().default("IDR"),
     status: smallint("status").notNull().default(JobStatus.open),
     hiringFlow: text("hiring_flow"),
@@ -144,7 +145,7 @@ export const listings = pgTable(
     sellerId: cascadeTo("seller_id", () => user.id),
     title: text("title").notNull(),
     description: text("description").notNull(),
-    priceCents: integer("price_cents").notNull(),
+    priceCents: bigint("price_cents", { mode: "number" }).notNull(),
     currency: text("currency").notNull().default("IDR"),
     imageUrl: text("image_url"),
     status: smallint("status").notNull().default(ListingStatus.active),

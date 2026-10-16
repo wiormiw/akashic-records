@@ -306,16 +306,17 @@ describe.skipIf(!live)("listings", () => {
 });
 
 describe.skipIf(!live)("money", () => {
-  test("an amount past the int4 columns is 400; the largest that fits is 201", () =>
+  test("an amount past the largest safe integer is 400; past int4 is kept to the cent", () =>
     scenario(async ({ call, grant, w }) => {
       const realm = await w.realm();
-      grant(realm.admin, postJob, post);
+      grant(realm.admin, participate, postJob, post);
       const jobs = `/api/v1/realms/${realm.slug}/jobs`;
       const listings = `/api/v1/realms/${realm.slug}/listings`;
+      const unsafe = Number.MAX_SAFE_INTEGER + 1;
 
       for (const [path, body] of [
-        [jobs, { ...newJob, budgetCents: 2_147_483_648 }],
-        [listings, { ...newListing, priceCents: 2_147_483_648 }],
+        [jobs, { ...newJob, budgetCents: unsafe }],
+        [listings, { ...newListing, priceCents: unsafe }],
       ] as const) {
         const over = await call("POST", path, { as: realm.admin, body });
         expect(over.status).toBe(400);
@@ -323,18 +324,28 @@ describe.skipIf(!live)("money", () => {
       }
       expect(await w.jobsIn(realm.id)).toEqual([]);
 
-      const job = await call("POST", jobs, {
-        as: realm.admin,
-        body: { ...newJob, budgetCents: 2_147_483_647 },
-      });
-      expect(job.status).toBe(201);
-      expect((await w.job(job.body.id))?.budgetCents).toBe(2_147_483_647);
-      const listing = await call("POST", listings, {
-        as: realm.admin,
-        body: { ...newListing, priceCents: 2_147_483_647 },
-      });
-      expect(listing.status).toBe(201);
-      expect((await w.listing(listing.body.id))?.priceCents).toBe(2_147_483_647);
+      // One past the old int4 columns' limit, and the largest amount accepted.
+      for (const amount of [2_147_483_648, Number.MAX_SAFE_INTEGER]) {
+        const job = await call("POST", jobs, {
+          as: realm.admin,
+          body: { ...newJob, budgetCents: amount },
+        });
+        expect(job.status).toBe(201);
+        expect((await w.job(job.body.id))?.budgetCents).toBe(amount);
+        const jobRead = await call("GET", `${jobs}/${job.body.id}`, { as: realm.admin });
+        expect(jobRead.body.budgetCents).toBe(amount);
+
+        const listing = await call("POST", listings, {
+          as: realm.admin,
+          body: { ...newListing, priceCents: amount },
+        });
+        expect(listing.status).toBe(201);
+        expect((await w.listing(listing.body.id))?.priceCents).toBe(amount);
+        const listingRead = await call("GET", `${listings}/${listing.body.id}`, {
+          as: realm.admin,
+        });
+        expect(listingRead.body.priceCents).toBe(amount);
+      }
     }));
 });
 

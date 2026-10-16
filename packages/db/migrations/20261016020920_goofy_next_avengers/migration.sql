@@ -1,0 +1,2 @@
+ALTER TABLE "job" ALTER COLUMN "budget_cents" SET DATA TYPE bigint USING "budget_cents"::bigint;--> statement-breakpoint
+ALTER TABLE "listing" ALTER COLUMN "price_cents" SET DATA TYPE bigint USING "price_cents"::bigint;
