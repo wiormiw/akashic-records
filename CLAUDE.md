@@ -40,7 +40,7 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
   "Inside a module" in `docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md`.
 - **Routes validate first, then guard, per route.** `validate(...)` comes before `realmContext`,
   `requireModule` and `requirePermission`, so a malformed request is a 400 for everyone. The
-  exception is the admin surface (`/admin/*`, `/admin/proposals`): `platformAdmin` runs first
+  exception is the admin surface (`/admin/*`, `/admin/proposals`, `POST /realms`): `platformAdmin` runs first
   there, so anyone else gets the router's own 404, malformed request or not. Guards go on each route, never `use`d on a shared prefix. Transports (routes,
   consumers, later grpc/graphql) call services and hold no business logic.
 - **Shared test support lives in `test/support/`** (`fixtures.ts`: `person`, `uniqueSlug`,
