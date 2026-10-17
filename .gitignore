@@ -5,3 +5,5 @@ logs/
 .svelte-kit/
 build/
 .superpowers/
+apps/web/.svelte-kit
+apps/web/build

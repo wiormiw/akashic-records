@@ -1,1 +1,3 @@
-{ "ignorePatterns": ["**/migrations/**", "**/node_modules/**"] }
+{
+  "ignorePatterns": ["**/migrations/**", "**/node_modules/**", "apps/web/.svelte-kit/**", "apps/web/build/**"]
+}

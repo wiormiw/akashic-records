@@ -57,7 +57,7 @@ jobs:
       - run: bun run typecheck
       # The integration suites need a migrated database and an OpenFGA; without them they skip.
       - run: bun apps/api/scripts/migrate.ts
-      - run: bun test
+      - run: bun run test
       # The generated migrations must match the schema.
       # drizzle-kit writes each migration as a new folder, which `git diff` ignores, so look at
       # the status instead: any untracked or modified file means db:generate was forgotten.

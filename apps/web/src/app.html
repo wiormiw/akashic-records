@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<!--
+			Applies the stored theme before first paint, so a dark reader never sees a light flash.
+
+			The nonce is required, not decorative. This script is written here by hand rather than
+			injected by SvelteKit, so SvelteKit does not know to allow it — under the Content Security
+			Policy a browser blocks it, and the flash this exists to prevent comes back. The policy
+			found that; nothing else would have.
+
+			%sveltekit.nonce% forbids prerendering, which costs nothing today because no route here
+			prerenders. If one ever does, this becomes a hash in the policy instead.
+		-->
+		<script nonce="%sveltekit.nonce%">
+			try {
+				const stored = localStorage.getItem('theme');
+				if (stored === 'dark' || stored === 'light')
+					document.documentElement.dataset.theme = stored;
+			} catch {}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>
