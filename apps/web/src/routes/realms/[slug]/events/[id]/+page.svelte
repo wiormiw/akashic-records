@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { RsvpStatus } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
 	import { RSVP_LABELS, rsvp } from '$lib/api/realms';
 	import { SITE_NAME } from '$lib/config';
@@ -28,7 +29,7 @@
 	 *
 	 * @param status The answer clicked.
 	 */
-	async function answer(status: number): Promise<void> {
+	async function answer(status: RsvpStatus): Promise<void> {
 		error = '';
 		working = true;
 

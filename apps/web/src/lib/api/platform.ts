@@ -1,4 +1,12 @@
 import * as v from 'valibot';
+import {
+	AccountView,
+	AuditView,
+	CountsView,
+	PlatformRealmView,
+	ReportView,
+} from '@akashic/contracts';
+import { AuditAction } from '@akashic/lib/enums';
 
 /**
  * The platform tier: running the deployment rather than running a community.
@@ -9,88 +17,29 @@ import * as v from 'valibot';
  * returning null is the normal answer for almost everyone, not an error to report.
  */
 
-/** An account, wherever one is attached to something. */
-const Account = v.object({
-	id: v.string(),
-	name: v.string(),
-	email: v.string(),
-});
-
 /** What is in the deployment, and what is waiting. */
-export const Overview = v.object({
-	realms: v.number(),
-	archived: v.number(),
-	/** Realms with nobody holding admin. The one figure here that is a call to action. */
-	orphaned: v.number(),
-	members: v.number(),
-	openReports: v.number(),
-	auditEntries: v.number(),
-});
+export const Overview = CountsView;
 export type Overview = v.InferOutput<typeof Overview>;
 
 /** A realm as the administrative list shows it — archived ones included. */
-export const PlatformRealm = v.object({
-	id: v.string(),
-	slug: v.string(),
-	name: v.string(),
-	category: v.nullable(v.string()),
-	memberCount: v.number(),
-	adminCount: v.number(),
-	archivedAt: v.nullable(v.string()),
-	createdAt: v.string(),
-	createdBy: v.nullable(Account),
-});
+export const PlatformRealm = PlatformRealmView;
 export type PlatformRealm = v.InferOutput<typeof PlatformRealm>;
 
-/**
- * What happened to something.
- *
- * Mirrors `AuditAction` in the API. Duplicated rather than shared because the two repositories
- * do not share a package — and the mapping is checked by the fallback below, which renders an
- * unknown number as itself rather than as a confident wrong word.
- */
-export const AUDIT_ACTION: Record<number, string> = {
-	0: 'created',
-	1: 'updated',
-	2: 'deleted',
-	3: 'role changed',
-	4: 'moderated',
+/** What happened to something, in words. Keyed by the API's `AuditAction`. */
+export const AUDIT_ACTION: Record<AuditAction, string> = {
+	[AuditAction.created]: 'created',
+	[AuditAction.updated]: 'updated',
+	[AuditAction.deleted]: 'deleted',
+	[AuditAction.roleChanged]: 'role changed',
+	[AuditAction.moderated]: 'moderated',
 };
 
 /** One administrative act. */
-export const AuditEntry = v.object({
-	id: v.string(),
-	actor: v.nullable(Account),
-	entityType: v.string(),
-	entityId: v.string(),
-	action: v.number(),
-	changes: v.nullable(v.record(v.string(), v.unknown())),
-	traceId: v.nullable(v.string()),
-	occurredAt: v.string(),
-});
+export const AuditEntry = AuditView;
 export type AuditEntry = v.InferOutput<typeof AuditEntry>;
 
 /** One report against a direct message. */
-export const Report = v.object({
-	id: v.string(),
-	roomId: v.string(),
-	messageId: v.nullable(v.string()),
-	reason: v.string(),
-	/** What the reporter says was said. Their claim, never the server's knowledge. */
-	disclosedText: v.nullable(v.string()),
-	reporter: v.nullable(Account),
-	accused: v.nullable(Account),
-	/**
-	 * Whether the reported message really came from the accused.
-	 *
-	 * The server holds only ciphertext, so it cannot check the words. It can check the envelope,
-	 * which catches a report naming the wrong person — the one abuse the reporting feature itself
-	 * makes possible. Null when no message is attached, or it has since been deleted.
-	 */
-	senderMatches: v.nullable(v.boolean()),
-	reviewedAt: v.nullable(v.string()),
-	createdAt: v.string(),
-});
+export const Report = ReportView;
 export type Report = v.InferOutput<typeof Report>;
 
 /** Reads one administrative endpoint, or null when the caller is not a platform administrator. */
@@ -189,19 +138,7 @@ export async function grantRealmAdmin(slug: string, email: string): Promise<void
  * ---------------------------------------------------------------------------------------- */
 
 /** An account as the people list shows it. */
-export const PlatformAccount = v.object({
-	id: v.string(),
-	name: v.string(),
-	email: v.string(),
-	emailVerified: v.boolean(),
-	createdAt: v.string(),
-	/** Null for an account in good standing. */
-	bannedAt: v.nullable(v.string()),
-	banReason: v.nullable(v.string()),
-	/** Null on an indefinite ban, and meaningless when `bannedAt` is null. */
-	bannedUntil: v.nullable(v.string()),
-	realmCount: v.number(),
-});
+export const PlatformAccount = AccountView;
 export type PlatformAccount = v.InferOutput<typeof PlatformAccount>;
 
 /** The accounts, suspended ones first. */

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { PROPOSAL_STATUS, PROPOSAL_STATUS_LABEL } from '$lib/api/proposals';
+	import { ProposalStatus } from '@akashic/lib/enums';
+	import { PROPOSAL_STATUS_LABEL } from '$lib/api/proposals';
 	import { MODULE_LABELS } from '$lib/api/realms';
 	import { SITE_NAME } from '$lib/config';
 	import Alert from '$lib/ui/Alert.svelte';
@@ -16,7 +17,7 @@
 		new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 	const waiting = $derived(
-		data.proposals.some((proposal) => proposal.status === PROPOSAL_STATUS.pending),
+		data.proposals.some((proposal) => proposal.status === ProposalStatus.pending),
 	);
 </script>
 
@@ -59,9 +60,9 @@
 							<div class="flex flex-wrap items-center gap-2">
 								<span class="text-lg font-medium">{proposal.name}</span>
 
-								{#if proposal.status === PROPOSAL_STATUS.approved}
+								{#if proposal.status === ProposalStatus.approved}
 									<Badge variant="primary">{PROPOSAL_STATUS_LABEL[proposal.status]}</Badge>
-								{:else if proposal.status === PROPOSAL_STATUS.rejected}
+								{:else if proposal.status === ProposalStatus.rejected}
 									<Badge variant="accent">{PROPOSAL_STATUS_LABEL[proposal.status]}</Badge>
 								{:else}
 									<Badge variant="outline">{PROPOSAL_STATUS_LABEL[proposal.status]}</Badge>
@@ -88,7 +89,7 @@
 						</div>
 					</div>
 
-					{#if proposal.status === PROPOSAL_STATUS.approved}
+					{#if proposal.status === ProposalStatus.approved}
 						<Alert variant="success" class="mt-4">
 							Approved{proposal.decidedAt ? ` on ${when(proposal.decidedAt)}` : ''}. You are its
 							first admin.
@@ -96,7 +97,7 @@
 								Open it
 							</a>.
 						</Alert>
-					{:else if proposal.status === PROPOSAL_STATUS.rejected}
+					{:else if proposal.status === ProposalStatus.rejected}
 						<!-- The note is the whole point of showing a refusal rather than a status. It is also
 						     the only way somebody learns what a proposal that would succeed looks like. -->
 						<Alert variant="warning" class="mt-4">

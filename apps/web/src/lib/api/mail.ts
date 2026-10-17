@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { MailStatusView } from '@akashic/contracts';
 import { API_BASE } from '$lib/config';
 
 /**
@@ -8,12 +9,7 @@ import { API_BASE } from '$lib/config';
  * saying it when nothing was sent. It describes the deployment, never an address, so it is safe
  * to read while signed out — which is exactly when it matters.
  */
-export const MailStatus = v.object({
-	configured: v.boolean(),
-	healthy: v.boolean(),
-	lastFailure: v.nullable(v.string()),
-	failedAt: v.nullable(v.string()),
-});
+export const MailStatus = MailStatusView;
 export type MailStatus = v.InferOutput<typeof MailStatus>;
 
 /**

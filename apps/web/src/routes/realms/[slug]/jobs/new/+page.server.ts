@@ -1,5 +1,5 @@
+import { RealmModule } from '@akashic/lib/enums';
 import { requirePoster } from '$lib/api/guard';
-import { REALM_MODULE } from '$lib/api/realms';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -11,4 +11,4 @@ import type { PageServerLoad } from './$types';
  * const { realm } = $derived(data);
  */
 export const load: PageServerLoad = async (event) =>
-	requirePoster(event, REALM_MODULE.jobs, 'realm.post_job');
+	requirePoster(event, RealmModule.jobs, 'realm.post_job');

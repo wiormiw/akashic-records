@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { RealmModule } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
-	import { MODULE_LABELS, REALM_MODULE, membership } from '$lib/api/realms';
+	import { MODULE_LABELS, membership } from '$lib/api/realms';
 	import { SITE_NAME, SITE_URL } from '$lib/config';
 	import { identityOf } from '$lib/realm-identity';
 	import { countUp, revealOnView, staggerChildren } from '$lib/motion';
@@ -160,7 +161,7 @@
 	{#if isMember}
 		<nav class="mt-3 flex flex-wrap gap-1">
 			<Button variant="ghost" size="sm" href="/realms/{realm.slug}/members">Members</Button>
-			{#if realm.modules.includes(REALM_MODULE.election)}
+			{#if realm.modules.includes(RealmModule.election)}
 				<Button variant="ghost" size="sm" href="/realms/{realm.slug}/election">
 					Moderator seats
 				</Button>
@@ -237,7 +238,7 @@
 	</Alert>
 {/if}
 
-{#if realm.modules.includes(REALM_MODULE.events)}
+{#if realm.modules.includes(RealmModule.events)}
 	<Section
 		title="Upcoming events"
 		count={data.events.length}
@@ -264,7 +265,7 @@
 	</Section>
 {/if}
 
-{#if realm.modules.includes(REALM_MODULE.jobs)}
+{#if realm.modules.includes(RealmModule.jobs)}
 	<Section
 		title="Work"
 		count={data.jobs.length}
@@ -291,7 +292,7 @@
 	</Section>
 {/if}
 
-{#if realm.modules.includes(REALM_MODULE.market)}
+{#if realm.modules.includes(RealmModule.market)}
 	<Section
 		title="Marketplace"
 		count={data.listings.length}

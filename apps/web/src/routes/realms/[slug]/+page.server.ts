@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import type { RealmModule } from '@akashic/lib/enums';
 import { getRealm, getStanding, listPostings, listRealmEvents } from '$lib/api/realms';
 import type { PageServerLoad } from './$types';
 
@@ -17,7 +18,7 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const realm = await getRealm(params.slug, { fetch });
 	if (!realm) error(404, 'No such realm.');
 
-	const runs = (module: number) => realm.modules.includes(module);
+	const runs = (module: RealmModule) => realm.modules.includes(module);
 
 	const [standing, events, jobs, listings] = await Promise.all([
 		locals.user

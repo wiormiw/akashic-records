@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { RecallView, StandingsView, TakedownView } from '@akashic/contracts';
 
 /**
  * Realm self-government: the standings that decide moderator seats, and the votes that take them
@@ -8,64 +9,19 @@ import * as v from 'valibot';
  * own permission checks decide who may do what; this module only shapes the requests.
  */
 
-/** Which electorate votes on a recall, and therefore which threshold applies. */
-export const RECALL_KIND = { members: 0, moderators: 1 } as const;
-
-/** Where a vote sits. Shared by takedowns and recalls. */
-export const VOTE_STATUS = { open: 0, carried: 1, refused: 2 } as const;
-
-/** One member's position in the standings. */
-export const Standing = v.object({
-	userId: v.string(),
-	name: v.string(),
-	/** Their rank: 0 member, 1 verified, 2 moderator, 3 admin. */
-	role: v.number(),
-	upvotes: v.number(),
-	/** Whether they currently hold one of the elected seats. */
-	seated: v.boolean(),
-	joinedAt: v.string(),
-});
-export type Standing = v.InferOutput<typeof Standing>;
-
 /** The standings, plus what it takes to hold a seat. */
-export const Standings = v.object({
-	/** How many seats the realm has, from its member count. */
-	seats: v.number(),
-	/** Upvotes needed to hold one at all. */
-	minimum: v.number(),
-	members: v.array(Standing),
-});
+export const Standings = StandingsView;
 export type Standings = v.InferOutput<typeof Standings>;
 
+/** One member's position in the standings. */
+export type Standing = Standings['members'][number];
+
 /** A move to take a moderator's seat away. */
-export const Recall = v.object({
-	id: v.string(),
-	realmId: v.string(),
-	subject: v.nullable(v.object({ id: v.string(), name: v.string() })),
-	kind: v.number(),
-	reason: v.string(),
-	proposedBy: v.nullable(v.object({ id: v.string(), name: v.string() })),
-	status: v.number(),
-	agrees: v.number(),
-	refusals: v.number(),
-	createdAt: v.string(),
-});
+export const Recall = RecallView;
 export type Recall = v.InferOutput<typeof Recall>;
 
 /** A proposal to remove a comment. */
-export const Takedown = v.object({
-	id: v.string(),
-	realmId: v.string(),
-	subjectKind: v.number(),
-	subjectId: v.string(),
-	reason: v.string(),
-	proposedBy: v.nullable(v.object({ id: v.string(), name: v.string() })),
-	status: v.number(),
-	agrees: v.number(),
-	refusals: v.number(),
-	needed: v.number(),
-	createdAt: v.string(),
-});
+export const Takedown = TakedownView;
 export type Takedown = v.InferOutput<typeof Takedown>;
 
 /** Reads one realm endpoint, or null when the caller may not see it. */

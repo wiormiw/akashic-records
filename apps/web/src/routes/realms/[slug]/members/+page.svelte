@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { RealmRole } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
 	import { ROLE_LABELS, setRole, type Member } from '$lib/api/realms';
 	import { SITE_NAME } from '$lib/config';
@@ -20,7 +21,13 @@
 	// A moderator moves people between member and verified; the two staff ranks are an admin's to
 	// grant. The API refuses the rest either way — this only decides what to offer.
 	const grantable = $derived(
-		[0, 1, ...(isAdmin ? [2, 3] : [])].map((role) => ({
+		(
+			[
+				RealmRole.member,
+				RealmRole.verified,
+				...(isAdmin ? [RealmRole.moderator, RealmRole.admin] : []),
+			] satisfies RealmRole[]
+		).map((role) => ({
 			value: String(role),
 			label: ROLE_LABELS[role] ?? 'Member',
 		})),
@@ -38,7 +45,7 @@
 		error = '';
 
 		try {
-			await setRole(data.realm.slug, member.userId, Number(role));
+			await setRole(data.realm.slug, member.userId, Number(role) as RealmRole); // the select offers only RealmRole values
 			await invalidateAll();
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not change that.';

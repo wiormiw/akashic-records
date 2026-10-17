@@ -1,4 +1,26 @@
 import * as v from 'valibot';
+import {
+	CommentView,
+	EventSummaryView,
+	EventView,
+	FitReviewView,
+	InterestView,
+	JobSummaryView,
+	JobView,
+	ListingSummaryView,
+	ListingView,
+	MemberView,
+	RealmSummaryView,
+	StandingView,
+} from '@akashic/contracts';
+import {
+	JobStatus,
+	JobType,
+	ListingStatus,
+	RealmModule,
+	RealmRole,
+	RsvpStatus,
+} from '@akashic/lib/enums';
 import { API_BASE } from '$lib/config';
 
 /**
@@ -8,39 +30,20 @@ import { API_BASE } from '$lib/config';
  * first — so this reads the API's public router rather than going through the BFF.
  */
 
-/** Modules a realm can switch on. Values are the API's smallints. */
-export const REALM_MODULE = { jobs: 0, events: 1, market: 2, election: 3 } as const;
-
 /** Labels in the order a realm card lists them. */
-export const MODULE_LABELS: Record<number, string> = {
-	[REALM_MODULE.jobs]: 'Jobs',
-	[REALM_MODULE.events]: 'Events',
-	[REALM_MODULE.market]: 'Marketplace',
-	[REALM_MODULE.election]: 'Elections',
+export const MODULE_LABELS: Record<RealmModule, string> = {
+	[RealmModule.jobs]: 'Jobs',
+	[RealmModule.events]: 'Events',
+	[RealmModule.market]: 'Marketplace',
+	[RealmModule.election]: 'Elections',
 };
 
 /** A realm as the directory shows it. */
-export const RealmSummary = v.object({
-	id: v.string(),
-	slug: v.string(),
-	name: v.string(),
-	description: v.nullable(v.string()),
-	category: v.nullable(v.string()),
-	memberCount: v.number(),
-	modules: v.array(v.number()),
-});
+export const RealmSummary = RealmSummaryView;
 export type RealmSummary = v.InferOutput<typeof RealmSummary>;
 
 /** One event, as the public listing shows it — enough to decide whether to open it. */
-export const EventTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	startsAt: v.string(),
-	capacity: v.nullable(v.number()),
-	/** Banner, or null for an event that has none. */
-	imageUrl: v.nullable(v.string()),
-	goingCount: v.number(),
-});
+export const EventTeaser = EventSummaryView;
 export type EventTeaser = v.InferOutput<typeof EventTeaser>;
 
 /**
@@ -103,33 +106,18 @@ export async function listRealmEvents(
 }
 
 /** What the signed-in caller may do in a realm. `role` is null when they are not a member. */
-export const Standing = v.object({
-	role: v.nullable(v.number()),
-	permissions: v.array(v.string()),
-});
+export const Standing = StandingView;
 export type Standing = v.InferOutput<typeof Standing>;
 
 /** One event in full, for a member. */
-export const EventDetail = v.object({
-	...EventTeaser.entries,
-	description: v.string(),
-	endsAt: v.nullable(v.string()),
-	location: v.nullable(v.string()),
-	authorId: v.string(),
-	authorName: v.string(),
-	commentsEnabled: v.boolean(),
-	yourRsvp: v.nullable(v.number()),
-});
+export const EventDetail = EventView;
 export type EventDetail = v.InferOutput<typeof EventDetail>;
 
-/** RSVP answers, in the order they are offered. */
-export const RSVP = { going: 0, interested: 1, declined: 2 } as const;
-
-/** Labels for the three answers. */
-export const RSVP_LABELS: { value: number; label: string }[] = [
-	{ value: RSVP.going, label: 'Going' },
-	{ value: RSVP.interested, label: 'Interested' },
-	{ value: RSVP.declined, label: 'Not going' },
+/** Labels for the three answers, in the order they are offered. */
+export const RSVP_LABELS: { value: RsvpStatus; label: string }[] = [
+	{ value: RsvpStatus.going, label: 'Going' },
+	{ value: RsvpStatus.interested, label: 'Interested' },
+	{ value: RsvpStatus.declined, label: 'Not going' },
 ];
 
 /**
@@ -252,15 +240,15 @@ export async function getEvent(
  *
  * @param slug The realm.
  * @param id The event.
- * @param status One of {@link RSVP}, or null to withdraw an answer entirely.
+ * @param status One of {@link RsvpStatus}, or null to withdraw an answer entirely.
  * @returns Nothing.
  * @throws {Error} `This event is full.` when the last seat went to somebody else.
  *
  * @example
- * await rsvp('weaboo', id, RSVP.going);
+ * await rsvp('weaboo', id, RsvpStatus.going);
  * await rsvp('weaboo', id, null); // changed my mind about answering at all
  */
-export async function rsvp(slug: string, id: string, status: number | null): Promise<void> {
+export async function rsvp(slug: string, id: string, status: RsvpStatus | null): Promise<void> {
 	// null is "ignore me" — different from declining, and it has to give the seat back.
 	const response = await fetch(`/bff/api/v1/realms/${slug}/events/${id}/rsvp`, {
 		method: status === null ? 'DELETE' : 'PUT',
@@ -274,88 +262,44 @@ export async function rsvp(slug: string, id: string, status: number | null): Pro
 	}
 }
 
-/** What kind of arrangement a job is. */
 /** What a job's status is called. Filled and closed are both shut, for different reasons. */
-export const JOB_STATUS_LABELS: Record<number, string> = {
-	1: 'Closed',
-	2: 'Filled',
+export const JOB_STATUS_LABELS: Partial<Record<JobStatus, string>> = {
+	[JobStatus.closed]: 'Closed',
+	[JobStatus.filled]: 'Filled',
 };
 
-export const JOB_TYPE_LABELS: Record<number, string> = {
-	0: 'Commission',
-	1: 'Freelance',
-	2: 'Full-time',
+/** What kind of arrangement a job is. */
+export const JOB_TYPE_LABELS: Record<JobType, string> = {
+	[JobType.commission]: 'Commission',
+	[JobType.freelance]: 'Freelance',
+	[JobType.fullTime]: 'Full-time',
 };
 
 /** Where a listing is in its life. */
-export const LISTING_STATUS_LABELS: Record<number, string> = {
-	0: 'Available',
-	1: 'Sold',
-	2: 'Removed',
+export const LISTING_STATUS_LABELS: Record<ListingStatus, string> = {
+	[ListingStatus.active]: 'Available',
+	[ListingStatus.sold]: 'Sold',
+	[ListingStatus.removed]: 'Removed',
 };
 
 /** One job as the public listing shows it. */
-export const JobTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	type: v.number(),
-	budgetCents: v.nullable(v.number()),
-	currency: v.string(),
-	status: v.number(),
-	createdAt: v.string(),
-});
+export const JobTeaser = JobSummaryView;
 export type JobTeaser = v.InferOutput<typeof JobTeaser>;
 
 /** The full posting, for a member. */
-export const JobDetail = v.object({
-	...JobTeaser.entries,
-	description: v.string(),
-	authorId: v.string(),
-	authorName: v.string(),
-	commentsEnabled: v.boolean(),
-	hiringFlow: v.nullable(v.string()),
-	hiredUserId: v.nullable(v.string()),
-	/** Whether the reader currently has their hand up for it. */
-	viewerInterested: v.boolean(),
-});
+export const JobDetail = JobView;
 export type JobDetail = v.InferOutput<typeof JobDetail>;
 
 /** One listing as the public marketplace shows it. */
-export const ListingTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	priceCents: v.number(),
-	currency: v.string(),
-	status: v.number(),
-	/** Picture of the thing, or null. */
-	imageUrl: v.nullable(v.string()),
-	createdAt: v.string(),
-});
+export const ListingTeaser = ListingSummaryView;
 export type ListingTeaser = v.InferOutput<typeof ListingTeaser>;
 
 /** The full listing, for a member. */
-export const ListingDetail = v.object({
-	...ListingTeaser.entries,
-	description: v.string(),
-	sellerId: v.string(),
-	sellerName: v.string(),
-	commentsEnabled: v.boolean(),
-	buyerId: v.nullable(v.string()),
-	/** Whether the reader currently has their hand up for it. */
-	viewerInterested: v.boolean(),
-});
+export const ListingDetail = ListingView;
 export type ListingDetail = v.InferOutput<typeof ListingDetail>;
 
 /** One comment. A removed one keeps its place and loses its body. */
-export const Comment = v.object({
-	id: v.string(),
-	body: v.string(),
-	authorId: v.string(),
-	authorName: v.string(),
-	authorImage: v.nullable(v.string()),
-	removed: v.boolean(),
-	createdAt: v.string(),
-});
+export const Comment = CommentView;
 export type Comment = v.InferOutput<typeof Comment>;
 
 /**
@@ -635,14 +579,7 @@ export async function settle(
 }
 
 /** One person with their hand up for a posting. */
-export const Interest = v.object({
-	id: v.string(),
-	userId: v.string(),
-	userName: v.string(),
-	note: v.nullable(v.string()),
-	status: v.number(),
-	createdAt: v.string(),
-});
+export const Interest = InterestView;
 export type Interest = v.InferOutput<typeof Interest>;
 
 /**
@@ -717,23 +654,15 @@ export async function setInterest(
 }
 
 /** One member as the roster shows them. Never an email — a roster says who is here. */
-export const Member = v.object({
-	userId: v.string(),
-	name: v.string(),
-	/** What they chose to be called in this realm, if anything. */
-	displayName: v.nullable(v.string()),
-	image: v.nullable(v.string()),
-	role: v.number(),
-	joinedAt: v.string(),
-});
+export const Member = MemberView;
 export type Member = v.InferOutput<typeof Member>;
 
 /** What each rank is called, in rank order. */
-export const ROLE_LABELS: Record<number, string> = {
-	0: 'Member',
-	1: 'Verified',
-	2: 'Moderator',
-	3: 'Admin',
+export const ROLE_LABELS: Record<RealmRole, string> = {
+	[RealmRole.member]: 'Member',
+	[RealmRole.verified]: 'Verified',
+	[RealmRole.moderator]: 'Moderator',
+	[RealmRole.admin]: 'Admin',
 };
 
 /**
@@ -798,9 +727,9 @@ async function moderate(path: string, method: string, body?: unknown): Promise<v
  * @throws {Error} When the caller may not grant that rank, or is changing their own.
  *
  * @example
- * await setRole('weaboo', userId, 1);
+ * await setRole('weaboo', userId, RealmRole.verified);
  */
-export async function setRole(slug: string, userId: string, role: number): Promise<void> {
+export async function setRole(slug: string, userId: string, role: RealmRole): Promise<void> {
 	return moderate(`${slug}/members/${userId}`, 'PATCH', { role });
 }
 
@@ -845,14 +774,7 @@ export async function setPostingStatus(
 }
 
 /** One posting the automated fit check could not decide. */
-export const Review = v.object({
-	id: v.string(),
-	subjectKind: v.number(),
-	subjectId: v.string(),
-	/** Cosine distance from the realm's centroid when it was queued. Lower is a better fit. */
-	distance: v.number(),
-	createdAt: v.string(),
-});
+export const Review = FitReviewView;
 export type Review = v.InferOutput<typeof Review>;
 
 /**

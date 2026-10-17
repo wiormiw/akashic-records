@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { LimitsView } from '@akashic/contracts';
 
 /**
  * Uploading a picture.
@@ -9,11 +10,7 @@ import * as v from 'valibot';
  */
 
 /** What this deployment accepts. */
-export const UploadPolicy = v.object({
-	enabled: v.boolean(),
-	imageTypes: v.array(v.string()),
-	maxBytes: v.number(),
-});
+export const UploadPolicy = LimitsView;
 export type UploadPolicy = v.InferOutput<typeof UploadPolicy>;
 
 /**

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
+import { RealmModule } from '@akashic/lib/enums';
 import { getRecalls, getStandings } from '$lib/api/governance';
 import { getRealm, getStanding } from '$lib/api/realms';
-import { REALM_MODULE } from '$lib/api/realms';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -16,7 +16,7 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const realm = await getRealm(params.slug, { fetch });
 
-	if (!realm || !realm.modules.includes(REALM_MODULE.election)) {
+	if (!realm || !realm.modules.includes(RealmModule.election)) {
 		error(404, 'This realm does not hold elections.');
 	}
 

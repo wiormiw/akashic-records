@@ -1,7 +1,7 @@
 <script lang="ts">
+	import { RecallKind } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
 	import {
-		RECALL_KIND,
 		proposeRecall,
 		removeSeat,
 		upvote,
@@ -27,7 +27,7 @@
 	/** Which member's recall form is open. */
 	let recalling = $state('');
 	let reason = $state('');
-	let kind = $state(String(RECALL_KIND.members));
+	let kind = $state(String(RecallKind.members));
 
 	const slug = $derived(data.realm.slug);
 	const canAdminister = $derived(data.standing.permissions.includes('realm.administer'));
@@ -60,8 +60,8 @@
 	}
 
 	const recallLabels = [
-		{ value: String(RECALL_KIND.members), label: 'The members decide — simple majority' },
-		{ value: String(RECALL_KIND.moderators), label: 'The other moderators decide — 80% agree' },
+		{ value: String(RecallKind.members), label: 'The members decide — simple majority' },
+		{ value: String(RecallKind.moderators), label: 'The other moderators decide — 80% agree' },
 	];
 
 	const when = (iso: string): string =>
@@ -110,7 +110,7 @@
 								<div class="flex flex-wrap items-center gap-2">
 									<span class="font-medium">{recall.subject?.name ?? 'A moderator'}</span>
 									<Badge variant="accent">
-										{recall.kind === RECALL_KIND.members ? 'members vote' : 'moderators vote'}
+										{recall.kind === RecallKind.members ? 'members vote' : 'moderators vote'}
 									</Badge>
 									<span class="text-sm text-muted tabular-nums">
 										{recall.agrees} for · {recall.refusals} against

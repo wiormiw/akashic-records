@@ -1,4 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
+import type { RealmModule } from '@akashic/lib/enums';
 import { getRealm, getStanding, type RealmSummary, type Standing } from '$lib/api/realms';
 import type { ServerLoadEvent } from '@sveltejs/kit';
 
@@ -16,12 +17,12 @@ import type { ServerLoadEvent } from '@sveltejs/kit';
  *   sign-in, or back to the realm when the caller may not post.
  *
  * @example
- * const { realm } = await requirePoster(event, REALM_MODULE.market);
+ * const { realm } = await requirePoster(event, RealmModule.market);
  */
 export async function requirePoster(
 	event: ServerLoadEvent,
-	module: number,
-	permission = 'realm.post',
+	module: RealmModule,
+	permission: Standing['permissions'][number] = 'realm.post',
 ): Promise<{ realm: RealmSummary; standing: Standing }> {
 	const { params, url, locals, fetch } = event;
 	const slug = params.slug as string;

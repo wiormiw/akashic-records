@@ -1,4 +1,6 @@
 import * as v from 'valibot';
+import { ProposalView } from '@akashic/contracts';
+import { ProposalStatus } from '@akashic/lib/enums';
 
 /**
  * Asking to found a realm, and hearing back.
@@ -8,35 +10,15 @@ import * as v from 'valibot';
  * about who it is for, and an administrator approves or refuses with a reason the proposer reads.
  */
 
-/** Where a proposal sits. */
-export const PROPOSAL_STATUS = { pending: 0, approved: 1, rejected: 2 } as const;
-
 /** What each status is called in the interface. */
-export const PROPOSAL_STATUS_LABEL: Record<number, string> = {
-	0: 'Waiting for a decision',
-	1: 'Approved',
-	2: 'Not approved',
+export const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
+	[ProposalStatus.pending]: 'Waiting for a decision',
+	[ProposalStatus.approved]: 'Approved',
+	[ProposalStatus.rejected]: 'Not approved',
 };
 
 /** A request to found a realm, and what came of it. */
-export const Proposal = v.object({
-	id: v.string(),
-	slug: v.string(),
-	name: v.string(),
-	description: v.nullable(v.string()),
-	category: v.nullable(v.string()),
-	modules: v.array(v.number()),
-	/** Who it is for and what would be posted there, in the proposer's words. */
-	rationale: v.string(),
-	proposedBy: v.nullable(v.object({ id: v.string(), name: v.string(), email: v.string() })),
-	status: v.number(),
-	/** Why it was refused. Null while pending, and on approval. */
-	decisionNote: v.nullable(v.string()),
-	decidedAt: v.nullable(v.string()),
-	/** The realm it became, once approved. */
-	realmId: v.nullable(v.string()),
-	createdAt: v.string(),
-});
+export const Proposal = ProposalView;
 export type Proposal = v.InferOutput<typeof Proposal>;
 
 /** What a proposal asks for. */

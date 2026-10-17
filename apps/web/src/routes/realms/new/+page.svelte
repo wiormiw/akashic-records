@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { RealmModule } from '@akashic/lib/enums';
 	import { goto } from '$app/navigation';
-	import { MODULE_LABELS, REALM_MODULE } from '$lib/api/realms';
+	import { MODULE_LABELS } from '$lib/api/realms';
 	import { propose } from '$lib/api/proposals';
 	import { SITE_NAME } from '$lib/config';
 	import { identityOf } from '$lib/realm-identity';
@@ -18,7 +19,7 @@
 	let description = $state('');
 	let category = $state('');
 	let rationale = $state('');
-	let modules = $state<number[]>([REALM_MODULE.events]);
+	let modules = $state<number[]>([RealmModule.events]);
 	let touchedSlug = $state(false);
 	let busy = $state(false);
 	let error = $state('');
@@ -196,7 +197,7 @@
 			<fieldset>
 				<legend class="mb-1.5 text-sm font-medium">What it would run</legend>
 				<div class="flex flex-wrap gap-2">
-					{#each [REALM_MODULE.events, REALM_MODULE.jobs, REALM_MODULE.market, REALM_MODULE.election] as module (module)}
+					{#each [RealmModule.events, RealmModule.jobs, RealmModule.market, RealmModule.election] as module (module)}
 						{@const on = modules.includes(module)}
 						<button
 							type="button"
