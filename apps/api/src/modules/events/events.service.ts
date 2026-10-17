@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { type EventDetail, type EventSummary, realmEvents } from '@akashic/contracts';
+import type { EventDetail, EventSummary } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import { eventRsvps, events, type Executor, inTransaction, publish } from '@akashic/db';
 import { RsvpStatus } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';

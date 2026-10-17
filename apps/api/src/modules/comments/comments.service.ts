@@ -1,4 +1,5 @@
-import { type CommentEntry, realmEvents } from '@akashic/contracts';
+import type { CommentEntry } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import {
 	audit,

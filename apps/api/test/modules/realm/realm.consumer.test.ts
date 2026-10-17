@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Authorizer, Tuple } from '@akashic/authz';
-import { realmEvents } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import { RealmRole } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { createRealmConsumer } from '@/modules/realm/realm.consumer.ts';

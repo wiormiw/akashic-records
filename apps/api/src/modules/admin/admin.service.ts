@@ -7,7 +7,7 @@ import type {
 	PlatformRealm,
 	Report,
 } from '@akashic/contracts';
-import { realmEvents } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import {
 	audit,
 	auditEntries,

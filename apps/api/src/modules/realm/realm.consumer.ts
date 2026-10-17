@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { FgaType, PLATFORM_ID, RANK_RELATION, type Tuple } from '@akashic/authz';
 import type { EventHandler } from '@akashic/broker';
-import { type PostingKind, RealmEvent, RealmEventPayload } from '@akashic/contracts';
+import { type PostingKind, RealmEvent, RealmEventPayload } from '@akashic/contracts/events';
 import type { RealmConsumerDeps } from './realm.types.ts';
 
 const POSTING_TYPE: Record<PostingKind, FgaType> = {

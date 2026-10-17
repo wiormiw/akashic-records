@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { realmEvents } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import {
 	auditEntries,
 	createDb,

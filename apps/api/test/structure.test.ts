@@ -350,4 +350,37 @@ describe('structure', () => {
 		for (const f of files) for (const at of orderViolations(await read(f))) out.push(`${f}: ${at}`);
 		expect(out).toEqual([]);
 	});
+
+	// The web app parses with the contracts index, so everything it reaches ships to the browser.
+	// Server-only schemas live in outbox-events.ts, on a subpath the index does not re-export.
+	test('the contracts index reaches only valibot and lib/enums|errors', async () => {
+		const allowed = new Set(['valibot', '@akashic/lib/enums', '@akashic/lib/errors']);
+		const bare = new Set<string>();
+		const seen = new Set<string>();
+		const queue = ['packages/contracts/src/index.ts'];
+		while (queue.length) {
+			const f = queue.pop()!;
+			if (seen.has(f)) continue;
+			seen.add(f);
+			for (const s of specifiers(await read(f))) {
+				if (s.startsWith('.')) queue.push(posix.join(posix.dirname(f), s));
+				else bare.add(s);
+			}
+		}
+		expect(seen.size).toBeGreaterThan(1);
+		expect([...bare].filter((s) => !allowed.has(s))).toEqual([]);
+	});
+
+	// The browser may use the wire contracts and the enums they are built from. Anything else in the
+	// workspace (db, authz, the server-only events) is code that must never reach a bundle.
+	test('the web app imports only contracts and lib/enums from the workspace', async () => {
+		const allowed = new Set(['@akashic/contracts', '@akashic/lib/enums']);
+		const bad: string[] = [];
+		for (const f of scan('apps/web/src/**/*.ts', 'apps/web/src/**/*.svelte')) {
+			for (const s of specifiers(await read(f))) {
+				if (s.startsWith('@akashic/') && !allowed.has(s)) bad.push(`${f}: ${s}`);
+			}
+		}
+		expect(bad).toEqual([]);
+	});
 });

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, or, type SQL, sql } from 'drizzle-orm';
-import { type Member, type RealmEdit, realmEvents, type RealmSummary } from '@akashic/contracts';
+import type { Member, RealmEdit, RealmSummary } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import {
 	audit,
 	type Executor,

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
 import type { Proposal } from '@akashic/contracts';
-import { realmEvents } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import {
 	audit,
 	inTransaction,

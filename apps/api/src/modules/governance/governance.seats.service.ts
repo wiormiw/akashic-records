@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
-import { realmEvents, type SeatStanding } from '@akashic/contracts';
+import type { SeatStanding } from '@akashic/contracts';
+import { realmEvents } from '@akashic/contracts/events';
 import {
 	audit,
 	type Executor,
