@@ -17,7 +17,7 @@
 - **D1: the web app parses with the contracts views as they are.** It doesn't use looser copies. An enum value the deployed web doesn't know fails its parse, and the helper falls back as it does today on any bad response. The split-deploy rule gains one line: *a new enum value ships in the web app first, then the API sends it.* Looser read views would double the contract and let drift through.
 - **D2: Temporal stays in `contracts`.** It is only used in presenter signatures. TypeScript 6 ships `lib.esnext.temporal.d.ts`, so svelte-check can type it, and the browser never calls a presenter.
 - **D3: `realmEvents` and `mailRequested` move to `@akashic/contracts/events`.** `RoomFrameLimits` stays in the index: it is plain numbers the room composer uses.
-- **D4: the web's Dockerfile and its own CI are not carried over.** The web deploys on Vercel; a container build, if one is ever wanted, is Plan 5's call. `adapter-node` stays the fallback, so `bun run build && node build` still works anywhere.
+- **D4: the web's Dockerfile comes along, for any host besides Vercel; its separate CI does not.** It builds from the repository root, so the workspace packages resolve, sets `ADAPTER=node`, and runs `build/index.js` with Bun. CI doesn't build the image yet (Plan 5 decides).
 - **D5: one formatter per file type.** `oxfmt` formats every `.ts`/`.js` in the repo, the web's included. Prettier, with `prettier-plugin-svelte`, formats only `apps/web/**/*.svelte` (and `app.css`/`app.html`). Both use tabs, single quotes and width 100.
 
 ## Global Constraints
@@ -47,7 +47,7 @@
 ### Task 1: Move the web app in
 
 **Files:**
-- Create: `apps/web/**`, copied from `../akashic_records_fe`. Copy `src/`, `static/`, `vite.config.ts`, `tsconfig.json`, `.env.example`, `.prettierrc`, `README.md` and `package.json`. Do not copy `Dockerfile`, `.dockerignore`, `.github/`, `.npmrc`, `.vscode/`, `bun.lock`, `.env`, `node_modules/` or `.svelte-kit/`.
+- Create: `apps/web/**`, copied from `../akashic_records_fe`. Copy `src/`, `static/`, `vite.config.ts`, `tsconfig.json`, `.env.example`, `.prettierrc`, `README.md` and `package.json`. Do not copy `Dockerfile` or `.dockerignore` yet (Task 5 brings them), nor `.github/`, `.npmrc`, `.vscode/`, `bun.lock`, `.env`, `node_modules/` or `.svelte-kit/`.
 - Modify: `package.json` (root scripts), `.oxlintrc.json`, `.gitignore`, `bun.lock`, `.github/workflows/ci.yml`, `apps/web/package.json`, `apps/web/README.md`, `apps/web/src/lib/config.ts` (its doc comment still says "animerec API").
 
 **Interfaces:**
@@ -141,6 +141,7 @@
 
 **Files:**
 - Create: `apps/web/build-config.ts` and `apps/web/build-config.test.ts`.
+- Create: `apps/web/Dockerfile`, adapted from `../akashic_records_fe/Dockerfile`, and a root `.dockerignore` (or extend one if it exists) that keeps `node_modules`, `.svelte-kit`, `build`, `.env*` and `.superpowers` out of the context.
 - Modify: `apps/web/vite.config.ts`, `apps/web/package.json` (add `@sveltejs/adapter-vercel`), `apps/web/.env.example`.
 
 **Interfaces:**
@@ -172,6 +173,14 @@
   - `bun --filter @akashic/web build` gives node output.
   - `VERCEL=1 bun --filter @akashic/web build` gives `.vercel/output`; delete it afterwards and add `apps/web/.vercel` to `.gitignore`.
   - Commit `feat(web): adapter and CSP origins chosen per build`.
+- [ ] **Step 4: Bring the Dockerfile (D4).**
+  - Keep its three stages and comments.
+  - The context is the repository root (`docker build -f apps/web/Dockerfile .`). The deps stage copies the root `package.json` and `bun.lock` plus every workspace `package.json`, so the install layer stays cached.
+  - The build stage sets `ENV ADAPTER=node` and runs `bun --filter @akashic/web build`.
+  - The runtime stage copies `apps/web/build` and the production dependencies only.
+  - `PUBLIC_API_BASE` and `PUBLIC_MEDIA_ORIGIN` are build args, because they shape the CSP.
+  - Verify: `docker build -f apps/web/Dockerfile -t akashic-web:plan4 .` succeeds. Run the image with `-p 3001:3000`; `curl -sf localhost:3001/` answers 200. Then stop and remove the container and the image.
+  - Commit `build(web): the Dockerfile builds from the workspace root`.
 
 ### Task 6: One source of truth, and close-out
 
