@@ -269,4 +269,72 @@ describe('structure', () => {
 		}
 		expect(inline).toEqual([]);
 	});
+
+	// Routes validate first, then guard, so a malformed request is a 400 for everyone. A text
+	// heuristic over each route's argument list (`.get(`, `.post(`, ... up to its handler arrow):
+	// a `validate(` may not follow `realmContext`, `requirePermission(`, `requireModule(`,
+	// `requireOn(`, or a name bound to one of those (`const eventsModule = requireModule(...)`).
+	// It does not look inside handlers or across files. `platformAdmin` is not on the guard list, so
+	// the admin surface (`/admin/*`, `/admin/proposals`, `POST /realms`), where it runs before
+	// `validate` so a stranger gets the router's 404, passes without a special case.
+	const guardPattern = (src: string) => {
+		const aliases = [
+			...src.matchAll(/const\s+(\w+)\s*=[^;\n]*\b(?:requireModule|requireOn|requirePermission)\b/g),
+		].map((m) => m[1]!);
+		return new RegExp(
+			`\\b(?:realmContext|requirePermission|requireModule|requireOn|${aliases.join('|') || '(?!)'})\\b`,
+		);
+	};
+	const orderViolations = (src: string) => {
+		const guard = guardPattern(src);
+		const bad: string[] = [];
+		for (const route of src.matchAll(/\.(?:get|post|put|patch|delete)\(/g)) {
+			// Walk to the matching paren, skipping string literals; the handler starts at its arrow.
+			let depth = 0;
+			let quote = '';
+			let end = src.length;
+			for (let i = route.index + route[0].length - 1; i < src.length; i++) {
+				const ch = src[i]!;
+				if (quote) {
+					if (ch === quote) quote = '';
+				} else if (ch === "'" || ch === '"' || ch === '`') quote = ch;
+				else if (ch === '(') depth++;
+				else if (ch === ')' && --depth === 0) {
+					end = i;
+					break;
+				}
+			}
+			const args = src.slice(route.index, end);
+			const chain = args.slice(0, args.includes('=>') ? args.indexOf('=>') : undefined);
+			const firstGuard = chain.search(guard);
+			const lastValidate = chain.lastIndexOf('validate(');
+			if (firstGuard !== -1 && lastValidate > firstGuard) {
+				bad.push(`line ${src.slice(0, route.index).split('\n').length}`);
+			}
+		}
+		return bad;
+	};
+
+	test('the route-order rule catches a validate after a guard, and lets platformAdmin lead', () => {
+		const route = (args: string) => `new Hono().post(${args}, async (c) => c.json(validate('x')))`;
+		expect(orderViolations(route("'/a', realmContext, validate('json', B)"))).toHaveLength(1);
+		expect(
+			orderViolations(route("'/a', requirePermission('x'), validate('json', B)")),
+		).toHaveLength(1);
+		expect(orderViolations(route("'/a', requireOn(a, r, t), validate('json', B)"))).toHaveLength(1);
+		expect(
+			orderViolations(
+				'const inRealm = requireModule(1);\n' + route("'/a', inRealm, validate('json', B)"),
+			),
+		).toHaveLength(1);
+		expect(orderViolations(route("'/a', validate('json', B), realmContext"))).toEqual([]);
+		expect(orderViolations(route("'/a', sessions.platformAdmin, validate('json', B)"))).toEqual([]);
+	});
+
+	test('routes validate before they guard', async () => {
+		const files = scan('apps/api/src/modules/*/*.routes.ts');
+		const out: string[] = [];
+		for (const f of files) for (const at of orderViolations(await read(f))) out.push(`${f}: ${at}`);
+		expect(out).toEqual([]);
+	});
 });
