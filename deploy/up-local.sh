@@ -50,6 +50,8 @@ echo "== 3. data services"
 # made by a one-shot run, since `up --wait` treats a service that exits as a failure.
 dc up -d --wait postgres openfga-db openfga redis rabbitmq minio
 dc run --rm -T minio-init
+# On the VPS a plain `up -d` runs this one-shot; naming services here skips it.
+dc run --rm -T rabbitmq-policy
 
 echo "== 4. migrate"
 dc run --rm --no-deps -T api bun apps/api/scripts/migrate.ts

@@ -20,7 +20,11 @@ bun run db:generate    migration from a schema change; never hand-edit packages/
 bun run db:migrate / authz:push / authz:backfill / events:replay
 bun run admin:grant <email> [--revoke]   make (or stop) someone a platform admin
 bun run realm:centroids                  recompute each realm's fit centroid from its postings
+deploy/up-local.sh [--web]               the production stack here (project akashic-prod, :8300/:8301)
 ```
+
+Deployment: [deploy/README.md](deploy/README.md). Tear the local stack down with `down -v` on
+project `akashic-prod`; never touch project `akashic` (dev, holds real data).
 
 ## Rules
 
@@ -116,3 +120,12 @@ they differ from the schema.
 15. **`realm_member` rows are locked in one statement, ordered by `user_id`.** Locking them one at
     a time, or re-reading a role outside the lock, is how `changeRole`, `leave` and unseating
     deadlocked or acted on a stale role.
+16. **First boot is ordered.** Migrate, then `authz-push` (prints `FGA_STORE_ID`/`FGA_MODEL_ID`),
+    then `up`. Paste the ids into the `API_ENV` secret too, or the next deploy overwrites `.env`
+    with empty ones.
+17. **`admin-grant` and sign-in need a verified email**, and with no `RESEND_API_KEY` no mail is
+    sent: verify the first account in SQL (deploy/README.md, "First admin").
+18. **`DEPLOY_HOST` is a repository variable**: the deploy job's `if` cannot see environment
+    variables. `up -d` without `API_IMAGE` runs `:latest`.
+19. **Restore needs the API stopped**, and only the app database is dumped: run `authz-backfill`
+    after it.
