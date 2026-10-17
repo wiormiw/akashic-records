@@ -44,9 +44,8 @@ spec:
 
       containers:
         - name: web
-          # Built from the front end's own repository and its own workflow. The two deploy
-          # together; they are not tested together, and pretending otherwise in CI would report
-          # green for work it never did.
+          # Built from apps/web/Dockerfile. CI builds it (web-image.yml) but does not push it yet
+          # (D8), so this name does not exist in the registry until a push step is added.
           image: ghcr.io/wiormiw/akashic-web:latest
 
           ports:
