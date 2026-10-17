@@ -11,16 +11,26 @@ on:
       - packages/broker/**
       - packages/contracts/**
       - bun.lock
-      - deploy/**
+      - package.json
+      - tsconfig.base.json
+      # Only what the deploy copies and runs: README and k8s edits must not deploy.
+      - deploy/compose.prod.yaml
+      - deploy/Caddyfile
+      - deploy/backup/**
       - .github/workflows/api.yml
   push:
     branches: [main]
     paths: *paths
 
-# A deploy must not be cancelled half-way, so unlike ci.yml this queues instead of cancelling.
+# Jobs widen this only where they need to.
+permissions:
+  contents: read
+
+# A deploy must not be cancelled half-way, so only a PR run is cancelled by a newer push; main
+# runs queue.
 concurrency:
   group: api-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Deploys wait for the full check: the tests run twice on a main push, which is the price of
@@ -111,8 +121,32 @@ jobs:
           API_ENV: ${{ secrets.API_ENV }}
         run: |
           # shellcheck disable=SC2029  # expanding on this side is the point
-          # umask first, so the file is never readable by others, even briefly.
-          printf '%s\n' "$API_ENV" | ssh vps "umask 077 && cat > $DEPLOY_DIR/.env && chmod 600 $DEPLOY_DIR/.env"
+          # umask first, so the file is never readable by others, even briefly. Written beside
+          # the live .env and moved over it only once it passes, so a bad secret leaves the
+          # running deploy's env alone.
+          printf '%s\n' "$API_ENV" | ssh vps "umask 077 && cat > $DEPLOY_DIR/.env.new"
+          # shellcheck disable=SC2029
+          ssh vps "IMAGE='$IMAGE' DEPLOY_DIR='$DEPLOY_DIR' sh -s" <<'REMOTE'
+          set -eu
+          umask 077
+          cd "$DEPLOY_DIR"
+          if grep -v '^[[:space:]]*#' .env.new | grep -Eq 'CHANGE_ME|replace-me'; then
+            echo 'API_ENV still holds a CHANGE_ME or replace-me placeholder' >&2
+            rm -f .env.new
+            exit 1
+          fi
+          # What ran before, for a rollback. A redeploy of the same image keeps the older one.
+          prev=$(sed -n 's/^API_IMAGE=//p' .env 2>/dev/null | tail -1 || true)
+          prev_prev=$(sed -n 's/^PREVIOUS_API_IMAGE=//p' .env 2>/dev/null | tail -1 || true)
+          [ "$prev" != "$IMAGE" ] || prev=$prev_prev
+          # Replace, not append blindly: a stray line from API_ENV or an earlier deploy goes.
+          sed -i '/^API_IMAGE=/d;/^PREVIOUS_API_IMAGE=/d' .env.new
+          # In .env so a manual `docker compose` later runs what is deployed, never :latest.
+          printf 'API_IMAGE=%s\n' "$IMAGE" >> .env.new
+          [ -z "$prev" ] || printf 'PREVIOUS_API_IMAGE=%s\n' "$prev" >> .env.new
+          chmod 600 .env.new
+          mv .env.new .env
+          REMOTE
       - name: release
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -122,9 +156,11 @@ jobs:
           printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u $GHCR_USER --password-stdin"
           # shellcheck disable=SC2029
           # Migrations run once, before the new containers take traffic, never on container start.
+          # API_IMAGE comes from .env (written above). The backup image is built on the box, so
+          # build it explicitly: `up -d` would keep a stale one when backup.sh changed.
           ssh vps "set -e; cd $DEPLOY_DIR
-            export API_IMAGE=$IMAGE
             docker compose -p akashic-prod -f compose.prod.yaml pull api
+            docker compose -p akashic-prod -f compose.prod.yaml build backup
             docker compose -p akashic-prod -f compose.prod.yaml run --rm api bun apps/api/scripts/migrate.ts
             docker compose -p akashic-prod -f compose.prod.yaml up -d"
       # Through Caddy, so a broken proxy or certificate fails the deploy too. --resolve keeps the
