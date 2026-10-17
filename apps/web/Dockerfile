@@ -49,9 +49,9 @@ COPY --from=deps /app/apps apps
 COPY --from=deps /app/packages packages
 COPY . .
 
-# Baked in at build time, because SvelteKit inlines PUBLIC_ values into the client bundle and the
-# CSP. A runtime environment variable cannot reach code already sent to a browser, so an image is
-# built for the origins it will serve. Getting this wrong is invisible until the browser calls the
+# The CSP is baked at build time from these, so an image is built for the origins it will serve.
+# The app reads them at run time through $env/dynamic/public (not inlined), which is why the
+# runtime stage sets them again. Getting this wrong is invisible until the browser calls the
 # wrong API and CORS or CSP refuses it.
 ARG PUBLIC_API_BASE=""
 ARG PUBLIC_MEDIA_ORIGIN=""
@@ -79,6 +79,11 @@ COPY --from=build /app/apps/web/build build
 COPY --from=build /app/apps/web/package.json package.json
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=prod-deps /app/apps/web/node_modules node_modules
+
+# The origins the CSP above was built for, as the run-time defaults for $env/dynamic/public.
+ARG PUBLIC_API_BASE=""
+ARG PUBLIC_MEDIA_ORIGIN=""
+ENV PUBLIC_API_BASE=${PUBLIC_API_BASE} PUBLIC_MEDIA_ORIGIN=${PUBLIC_MEDIA_ORIGIN}
 
 ARG VERSION=dev
 ENV APP_VERSION=${VERSION} NODE_ENV=production PORT=3000
