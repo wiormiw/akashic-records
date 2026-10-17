@@ -370,6 +370,8 @@ already running:
   longer reads it.
 - Valibot's `v.object` ignores keys it doesn't declare, so an API that sends more is always safe.
 - For an additive change, deploy the API first. For a removal, deploy the web app first.
+- The web app parses with the contracts views as they are, so a new enum value ships in the web
+  app first, then the API sends it. An unknown value fails the parse and the page falls back.
 
 ## Configuration and secrets
 

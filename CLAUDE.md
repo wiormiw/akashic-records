@@ -3,7 +3,8 @@
 A TypeScript API in a Bun monorepo: Bun 1.4, Hono, Valibot, Drizzle 1.0 rc, Postgres 17, OpenFGA,
 InferDI. The design is in
 [docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md](docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md);
-read it once. Layout: `apps/api` (src, scripts, test) and `packages/{lib,db,contracts,authz,broker}`.
+read it once. Layout: `apps/api` (src, scripts, test), `apps/web` (SvelteKit) and
+`packages/{lib,db,contracts,authz,broker}`.
 
 Bun is usually off PATH here: `export PATH="$HOME/.bun/bin:$PATH"`.
 
@@ -12,7 +13,9 @@ Bun is usually off PATH here: `export PATH="$HOME/.bun/bin:$PATH"`.
 ```
 bun run dev            API with reload (needs postgres, redis, rabbitmq, openfga from compose)
 bun run check          format:check, lint, typecheck, test: what CI runs
-bun run format         oxfmt apps packages
+bun run format         oxfmt apps packages, then prettier on the web's .svelte files
+bun run dev:web        web app with reload (API at PUBLIC_API_BASE)
+bun --filter @akashic/web build   production build (ADAPTER=node|vercel picks the adapter)
 bun run db:generate    migration from a schema change; never hand-edit packages/db/migrations/
 bun run db:migrate / authz:push / authz:backfill / events:replay
 bun run admin:grant <email> [--revoke]   make (or stop) someone a platform admin
@@ -46,8 +49,11 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
   call services and hold no business logic.
 - **Shared test support lives in `test/support/`** (`fixtures.ts`: `person`, `uniqueSlug`,
   `outbox`; `app.ts`: the fake-authorizer route scaffold). A module's own `world()` stays in its
-  `test/modules/<m>/fixtures.ts`. `test/contract.test.ts` holds every response view to the web
-  app's schemas (`test/fixtures/web-schemas.ts`, deleted in Plan 3): add a new view there.
+  `test/modules/<m>/fixtures.ts`. `test/contract.test.ts` needs a sample for every `*View` export
+  of `@akashic/contracts`; add one with a new view. The web parses with those same views.
+- **The web app imports only `@akashic/contracts` and `@akashic/lib/enums`** (never the API, db or
+  other packages). The browser talks only to the web's own `/bff`, except the room socket, which
+  goes to the API with a ticket. A new enum value ships in the web app first, then the API sends it.
 - **One error funnel.** Every deliberate failure is a class from `@akashic/lib/errors`, made with
   `defineError` (one per code; `realm.not_member` has one per status). Services return
   `err(new RealmNotFound(...))`, and each names its error union in `<m>.types.ts`
@@ -65,8 +71,9 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
 - **Realm-scoped actions check the realm.** An id in the body or path must belong to the realm in
   the URL; otherwise a member of one realm can act in another.
 - **Comments say why, briefly.**
-- **One code style, the web app's:** tabs, single quotes, 100 columns (`.oxfmtrc.json`);
-  `bun run format` applies it.
+- **One code style:** tabs, single quotes, 100 columns. `oxfmt` formats every `.ts`/`.js`
+  (`.oxfmtrc.json`); prettier formats only the web's `.svelte`, `app.css` and `app.html`.
+  `bun run format` applies both.
 
 ## Testing
 

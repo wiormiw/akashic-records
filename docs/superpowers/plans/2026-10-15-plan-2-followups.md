@@ -1,8 +1,8 @@
 # Plan 2 follow-ups
 
-What the module port's reviews deferred, and what Plan 4 (web app, deployment) must know. Written
-from the execution ledger when Plan 2 finished (2026-10-15); updated when Plan 3 (typed errors and
-hardening) closed (2026-10-17).
+What the module port's reviews deferred, and what Plan 4 (web app) and Plan 5 (deployment) must
+know. Written from the execution ledger when Plan 2 finished (2026-10-15); updated when Plan 3
+(typed errors and hardening) closed (2026-10-17).
 
 ## Settled before merging `feat/modules` (2026-10-16)
 
@@ -61,24 +61,24 @@ a realm admin runs one realm. As built in `changeRole`:
   argument list; `platformAdmin` isn't a guard to it, so the admin surface passes); scripts pick
   from `Env`.
 
-## Plan 4 must decide
+## Settled by Plan 4
 
-- **Contracts in the web app:**
-  - `common.ts` and `events-api.ts` use the global `Temporal` type; check `svelte-check` early, or
-    give presenters a separate subpath.
-  - The index exports server-only names (`realmEvents`, `mailRequested`, `RoomFrameLimits`):
-    consider a separate `@akashic/contracts/events` export.
-  - Use one Valibot version across the workspace (contracts pins 1.5.0, the web declares ^1.4.2).
-- **Split deploys:** the web app parses with loose schemas today. Once it parses with contracts'
-  enum and picklist views, an API that adds an enum value breaks an older web build. Decide
-  whether the web parses with tolerant views.
-- Delete `apps/api/test/fixtures/web-schemas.ts` and the per-module web-schema copies once the web
-  app imports contracts; the contract test then compares one source.
+- [x] **Contracts in the web app:** Temporal types check under TypeScript 6; server-only schemas
+  moved to `@akashic/contracts/events`; one Valibot version (1.5.0) across the workspace.
+- [x] **Split deploys:** the web parses with the contracts views as they are; a new enum value
+  ships in the web app first, then the API sends it (spec, "Keeping split deploys compatible").
+- [x] Deleted `apps/api/test/fixtures/web-schemas.ts` and the per-module copies (room's `Web`
+  remains); the contract test holds every view to one source.
+
+## Plan 5 (deployment)
+
 - Add MinIO to compose and CI so the storage round-trip test runs.
 - Mail payloads (address and reset link) sit in `outbox_messages`, RabbitMQ and the dead queue.
   Decide their retention, or carry a reference instead.
-- Deployment: Dockerfile, the web adapter, CI deploy; `deploy/k8s/10-migrate.yaml` still runs the
-  old migrate job.
+- Deployment: CI deploy; `deploy/k8s/10-migrate.yaml` still runs the old migrate job.
+- The Vercel project must pin a Node version `adapter-vercel` 6 supports (24 or lower); local
+  Node 26 can't run `VERCEL=1` builds. `adapter-vercel` 7 needs SvelteKit 3.
+- Decide whether CI builds the web image (`apps/web/Dockerfile`).
 
 ## Can wait
 
