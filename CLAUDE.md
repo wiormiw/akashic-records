@@ -126,6 +126,9 @@ they differ from the schema.
 17. **`admin-grant` and sign-in need a verified email**, and with no `RESEND_API_KEY` no mail is
     sent: verify the first account in SQL (deploy/README.md, "First admin").
 18. **`DEPLOY_HOST` is a repository variable**: the deploy job's `if` cannot see environment
-    variables. `up -d` without `API_IMAGE` runs `:latest`.
-19. **Restore needs the API stopped**, and only the app database is dumped: run `authz-backfill`
-    after it.
+    variables. CI writes `API_IMAGE` into `.env`;
+    without it `up -d` runs `:latest`.
+19. **Backups are a pair, and restore drops both databases.** The app database and OpenFGA's are
+    dumped under one timestamp, because `authz-backfill` rebuilds neither the posting tuples nor
+    the platform admin. `restore.sh <stamp>` needs the API and OpenFGA stopped, recreates both
+    databases, and is followed by `migrate` (deploy/README.md, section 5).
