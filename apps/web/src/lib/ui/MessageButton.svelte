@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { openRoom } from '$lib/api/rooms';
+	import type { RoomSubject } from '@akashic/lib/enums';
 	import Button from '$lib/ui/Button.svelte';
 
 	/**
@@ -18,7 +19,7 @@
 		viewerId,
 	}: {
 		realmSlug: string;
-		subjectKind: number;
+		subjectKind: RoomSubject;
 		subjectId: string;
 		ownerId: string;
 		ownerName: string;

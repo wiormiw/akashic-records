@@ -10,7 +10,7 @@
 		report,
 		send,
 		setBlocked,
-		StoredMessage,
+		LiveMessage,
 		type PublicKeys,
 		type ReadMessage,
 	} from '$lib/api/rooms';
@@ -138,7 +138,7 @@
 				return;
 			}
 
-			const parsed = v.safeParse(StoredMessage, frame.message);
+			const parsed = v.safeParse(LiveMessage, frame.message);
 			if (!parsed.success || !keyring) return;
 
 			// The sender sees their own message come back through the socket, which is what

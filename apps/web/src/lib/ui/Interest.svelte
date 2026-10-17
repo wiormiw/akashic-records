@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { listInterest, setInterest, settle, type Interest } from '$lib/api/realms';
-	import { openRoom, SUBJECT_KIND } from '$lib/api/rooms';
+	import { openRoom } from '$lib/api/rooms';
+	import { RoomSubject } from '@akashic/lib/enums';
 	import { goto } from '$app/navigation';
 	import Alert from '$lib/ui/Alert.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
@@ -95,7 +96,7 @@
 		try {
 			const { id: roomId } = await openRoom(
 				slug,
-				kind === 'jobs' ? SUBJECT_KIND.job : SUBJECT_KIND.listing,
+				kind === 'jobs' ? RoomSubject.job : RoomSubject.listing,
 				id,
 				applicant.userId,
 			);

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { JOB_STATUS_LABELS, JOB_TYPE_LABELS, money, type JobDetail } from '$lib/api/realms';
-	import { SUBJECT_KIND } from '$lib/api/rooms';
+	import { RoomSubject } from '@akashic/lib/enums';
 	import { SITE_NAME } from '$lib/config';
 	import { revealOnView } from '$lib/motion';
 	import Badge from '$lib/ui/Badge.svelte';
@@ -83,7 +83,7 @@
 			<div class="mt-4">
 				<MessageButton
 					realmSlug={data.realm.slug}
-					subjectKind={SUBJECT_KIND.job}
+					subjectKind={RoomSubject.job}
 					subjectId={job.id}
 					ownerId={job.authorId}
 					ownerName={job.authorName}

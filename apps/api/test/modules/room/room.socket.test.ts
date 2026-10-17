@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { websocket } from 'hono/bun';
 import * as v from 'valibot';
 import type { Authorizer } from '@akashic/authz';
+import { MessageFrameView } from '@akashic/contracts';
 import { createDb, type Db } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { ErrorCode, RealmForbidden } from '@akashic/lib/errors';
@@ -19,7 +20,7 @@ import { createRoomRoutes } from '@/modules/room/room.routes.ts';
 import { createTickets } from '@/modules/room/room.service.ts';
 import type { RoomServices } from '@/modules/room/room.types.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
-import { outgoing, TICKET_SECRET, Web, world } from './fixtures.ts';
+import { outgoing, TICKET_SECRET, world } from './fixtures.ts';
 
 // The room socket over real WebSockets, served as main.ts serves the app: the whole app, through
 // Bun.serve with Hono's `websocket` handler.
@@ -119,8 +120,8 @@ async function expectRefused(url: string) {
 	await expect(connect(url)).rejects.toThrow('refused');
 }
 
-// What the web app parses a live frame with (the same schema as its transcript, plus `keys`).
-const LiveFrame = v.object({ type: v.literal('message'), message: Web.StoredMessage });
+// What the web app parses a live frame with: the contracts view itself.
+const LiveFrame = MessageFrameView;
 
 // ---- The handler's branches, with a scripted service -----------------------------------------
 

@@ -1,4 +1,13 @@
 import * as v from 'valibot';
+import {
+	Created,
+	DeviceKeyView,
+	MessageFrameView,
+	MessageView,
+	RoomSummaryView,
+	TicketView,
+} from '@akashic/contracts';
+import type { RoomSubject } from '@akashic/lib/enums';
 import { exportPublic, loadKeyring, type Keyring } from '$lib/crypto/keys';
 import { open, seal, verify } from '$lib/crypto/messages';
 import { API_BASE } from '$lib/config';
@@ -11,57 +20,28 @@ import { API_BASE } from '$lib/config';
  * sealed before it leaves and opened after it arrives.
  */
 
-/** What a room is about. Mirrors `RoomSubject` on the API — the wire carries the number. */
-export const SUBJECT_KIND = { job: 0, listing: 1 } as const;
-
 /** Somebody's published keys. `signingKey` is null for keys published before signing existed. */
-export const PublicKeys = v.object({
-	userId: v.string(),
-	publicKey: v.string(),
-	signingKey: v.nullable(v.string()),
-	fingerprint: v.string(),
-});
-export type PublicKeys = v.InferOutput<typeof PublicKeys>;
+export const PublicKeys = DeviceKeyView;
+export type PublicKeys = v.InferOutput<typeof DeviceKeyView>;
 
 /** One room in the inbox. */
-export const RoomSummary = v.object({
-	id: v.string(),
-	realmId: v.string(),
-	subjectKind: v.number(),
-	subjectId: v.string(),
-	otherId: v.string(),
-	otherName: v.string(),
-	lastMessageAt: v.nullable(v.string()),
-	createdAt: v.string(),
-});
-export type RoomSummary = v.InferOutput<typeof RoomSummary>;
+export const RoomSummary = RoomSummaryView;
+export type RoomSummary = v.InferOutput<typeof RoomSummaryView>;
 
-/** One stored message, still sealed. */
-export const StoredMessage = v.object({
-	id: v.string(),
-	senderId: v.string(),
-	body: v.string(),
-	iv: v.string(),
-	signature: v.nullable(v.string()),
-	createdAt: v.string(),
-	/** The content key wrapped for this device, or null when it was sent before this one existed. */
-	wrappedKey: v.nullable(v.string()),
-	keyIv: v.nullable(v.string()),
-	/**
-	 * Every device's envelope. Present on a live socket frame and absent from the transcript,
-	 * which addresses the asking device directly.
-	 */
-	keys: v.optional(
-		v.array(
-			v.object({
-				fingerprint: v.string(),
-				wrappedKey: v.string(),
-				iv: v.string(),
-			}),
-		),
-	),
-});
-export type StoredMessage = v.InferOutput<typeof StoredMessage>;
+/** One stored message, still sealed, as the transcript returns it for the asking device. */
+export const StoredMessage = MessageView;
+export type StoredMessage = v.InferOutput<typeof MessageView>;
+
+/**
+ * What the socket sends when a message is stored. It carries every device's envelope, which the
+ * transcript does not: that addresses the asking device directly.
+ */
+export const LiveFrame = MessageFrameView;
+export type LiveFrame = v.InferOutput<typeof MessageFrameView>;
+
+/** The message inside a live frame. */
+export const LiveMessage = MessageFrameView.entries.message;
+export type LiveMessage = LiveFrame['message'];
 
 /** A message after the browser has opened it. */
 export interface ReadMessage {
@@ -174,14 +154,14 @@ export async function listRooms(): Promise<RoomSummary[]> {
  */
 export async function openRoom(
 	realmSlug: string,
-	subjectKind: number,
+	subjectKind: RoomSubject,
 	subjectId: string,
 	withUserId: string,
 ): Promise<{ id: string }> {
 	const created = await call(
 		'',
 		{ method: 'POST', body: JSON.stringify({ realmSlug, subjectKind, subjectId, withUserId }) },
-		v.object({ id: v.string() }),
+		Created,
 	);
 
 	if (!created) throw new Error('Could not open that conversation.');
@@ -253,7 +233,7 @@ export async function readTranscript(
  * const read = await decode(stored, keyring, devices, fingerprint);
  */
 export async function decode(
-	message: StoredMessage,
+	message: StoredMessage | LiveMessage,
 	keyring: Keyring,
 	devices: PublicKeys[],
 	fingerprint: string,
@@ -266,7 +246,9 @@ export async function decode(
 
 	// A live frame carries every device's envelope, because one frame is published to both people.
 	// A transcript row carries only this device's, already chosen by the query.
-	const own = message.keys?.find((key) => key.fingerprint === fingerprint);
+	const own = ('keys' in message ? message.keys : undefined)?.find(
+		(key) => key.fingerprint === fingerprint,
+	);
 	const wrappedKey = own?.wrappedKey ?? message.wrappedKey;
 	const keyIv = own?.iv ?? message.keyIv;
 
@@ -316,11 +298,7 @@ export async function decode(
  * const socket = await connect(roomId);
  */
 export async function connect(roomId: string): Promise<WebSocket> {
-	const issued = await call(
-		`/${roomId}/ticket`,
-		{ method: 'POST' },
-		v.object({ ticket: v.string(), expiresInSeconds: v.number() }),
-	);
+	const issued = await call(`/${roomId}/ticket`, { method: 'POST' }, TicketView);
 
 	if (!issued) throw new Error('Could not join that conversation.');
 

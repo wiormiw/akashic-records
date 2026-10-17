@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { LISTING_STATUS_LABELS, money, type ListingDetail } from '$lib/api/realms';
-	import { SUBJECT_KIND } from '$lib/api/rooms';
+	import { RoomSubject } from '@akashic/lib/enums';
 	import { SITE_NAME } from '$lib/config';
 	import { identityOf } from '$lib/realm-identity';
 	import { revealOnView } from '$lib/motion';
@@ -90,7 +90,7 @@
 			<div class="mt-4 flex flex-col gap-2">
 				<MessageButton
 					realmSlug={data.realm.slug}
-					subjectKind={SUBJECT_KIND.listing}
+					subjectKind={RoomSubject.listing}
 					subjectId={listing.id}
 					ownerId={listing.sellerId}
 					ownerName={listing.sellerName}
