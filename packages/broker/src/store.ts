@@ -11,7 +11,7 @@ import { claimUntil, revive } from './event.ts';
 
 // The mail event's type (`MAIL_REQUESTED` in @akashic/contracts). Stored in rows: never rename it.
 // The broker doesn't depend on contracts, so it is spelled out here.
-const MAIL_TOPIC = 'mail.requested';
+export const MAIL_TOPIC = 'mail.requested';
 
 type Row = typeof outboxMessages.$inferSelect;
 

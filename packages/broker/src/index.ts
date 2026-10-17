@@ -9,7 +9,7 @@ export {
 	type EventHandler,
 	type HandlerMeta,
 } from './consumer.ts';
-export { createOutboxStore, type OutboxStore, type OutboxRecovery } from './store.ts';
+export { createOutboxStore, MAIL_TOPIC, type OutboxStore, type OutboxRecovery } from './store.ts';
 export {
 	createOutbox,
 	type Outbox,
