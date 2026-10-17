@@ -8,7 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test src build-config.test.ts",
+		"test": "bun test src build-config.test.ts scripts/vercel-ignore.test.ts",
 		"format": "prettier --write 'src/**/*.svelte' src/app.css src/app.html",
 		"format:check": "prettier --check 'src/**/*.svelte' src/app.css src/app.html",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"

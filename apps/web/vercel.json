@@ -1,0 +1,6 @@
+{
+	"$schema": "https://openapi.vercel.sh/vercel.json",
+	"framework": "sveltekit",
+	"regions": ["sin1"],
+	"ignoreCommand": "bash scripts/vercel-ignore.sh"
+}
