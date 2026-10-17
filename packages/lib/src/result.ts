@@ -52,52 +52,103 @@ export function isError<R extends Result<unknown, unknown>, C extends ErrorOf<R>
 	return !result.ok && result.error instanceof ctor;
 }
 
+/*
+ * The combinators below are generic over the whole result: what `isError` leaves behind, or a
+ * callback's inferred return type, is a union of branches that inference through `Result<T, E>`
+ * would reduce to one error.
+ */
+
 /** Transforms a success, passing a failure through untouched. */
-export const mapOk = <T, U, E>(result: Result<T, E>, transform: (value: T) => U): Result<U, E> =>
-	result.ok ? ok(transform(result.value)) : result;
+export const mapOk = <R extends Result<unknown, unknown>, U>(
+	result: R,
+	transform: (value: ValueOf<R>) => U,
+): Result<U, ErrorOf<R>> =>
+	result.ok ? ok(transform(result.value as ValueOf<R>)) : (result as unknown as Err<ErrorOf<R>>);
 
 /** Transforms a failure, passing a success through untouched. */
-export const mapErr = <T, E, F>(result: Result<T, E>, transform: (error: E) => F): Result<T, F> =>
-	result.ok ? result : err(transform(result.error));
+export const mapErr = <R extends Result<unknown, unknown>, F>(
+	result: R,
+	transform: (error: ErrorOf<R>) => F,
+): Result<ValueOf<R>, F> =>
+	result.ok ? (result as Ok<ValueOf<R>>) : err(transform(result.error as ErrorOf<R>));
 
 /** Runs `next` on a success; a failure skips it. */
-export const andThen = async <T, E, U, F>(
-	result: Result<T, E>,
-	next: (value: T) => Promise<Result<U, F>>,
-): Promise<Result<U, E | F>> => (result.ok ? next(result.value) : result);
+export const andThen = async <R extends Result<unknown, unknown>, U, F>(
+	result: R,
+	next: (value: ValueOf<R>) => Promise<Result<U, F>>,
+): Promise<Result<U, ErrorOf<R> | F>> =>
+	result.ok ? next(result.value as ValueOf<R>) : (result as unknown as Err<ErrorOf<R>>);
 
-/** Chains result-returning steps, each taking the value before it; the first error stops it. */
-export function pipe<A extends unknown[], T, E>(first: ResultFn<A, T, E>): ResultFn<A, T, E>;
-export function pipe<A extends unknown[], T, E, T1, E1>(
-	first: ResultFn<A, T, E>,
-	step1: Step<T, T1, E1>,
-): ResultFn<A, T1, E | E1>;
-export function pipe<A extends unknown[], T, E, T1, E1, T2, E2>(
-	first: ResultFn<A, T, E>,
-	step1: Step<T, T1, E1>,
+/**
+ * Chains result-returning steps, each taking the value before it; the first error stops it. The
+ * first function is generic over its whole result, like the combinators above.
+ */
+export function pipe<A extends unknown[], R extends Result<unknown, unknown>>(
+	first: (...args: A) => Promise<R>,
+): ResultFn<A, ValueOf<R>, ErrorOf<R>>;
+export function pipe<A extends unknown[], R extends Result<unknown, unknown>, T1, E1>(
+	first: (...args: A) => Promise<R>,
+	step1: Step<ValueOf<R>, T1, E1>,
+): ResultFn<A, T1, ErrorOf<R> | E1>;
+export function pipe<A extends unknown[], R extends Result<unknown, unknown>, T1, E1, T2, E2>(
+	first: (...args: A) => Promise<R>,
+	step1: Step<ValueOf<R>, T1, E1>,
 	step2: Step<T1, T2, E2>,
-): ResultFn<A, T2, E | E1 | E2>;
-export function pipe<A extends unknown[], T, E, T1, E1, T2, E2, T3, E3>(
-	first: ResultFn<A, T, E>,
-	step1: Step<T, T1, E1>,
+): ResultFn<A, T2, ErrorOf<R> | E1 | E2>;
+export function pipe<
+	A extends unknown[],
+	R extends Result<unknown, unknown>,
+	T1,
+	E1,
+	T2,
+	E2,
+	T3,
+	E3,
+>(
+	first: (...args: A) => Promise<R>,
+	step1: Step<ValueOf<R>, T1, E1>,
 	step2: Step<T1, T2, E2>,
 	step3: Step<T2, T3, E3>,
-): ResultFn<A, T3, E | E1 | E2 | E3>;
-export function pipe<A extends unknown[], T, E, T1, E1, T2, E2, T3, E3, T4, E4>(
-	first: ResultFn<A, T, E>,
-	step1: Step<T, T1, E1>,
+): ResultFn<A, T3, ErrorOf<R> | E1 | E2 | E3>;
+export function pipe<
+	A extends unknown[],
+	R extends Result<unknown, unknown>,
+	T1,
+	E1,
+	T2,
+	E2,
+	T3,
+	E3,
+	T4,
+	E4,
+>(
+	first: (...args: A) => Promise<R>,
+	step1: Step<ValueOf<R>, T1, E1>,
 	step2: Step<T1, T2, E2>,
 	step3: Step<T2, T3, E3>,
 	step4: Step<T3, T4, E4>,
-): ResultFn<A, T4, E | E1 | E2 | E3 | E4>;
-export function pipe<A extends unknown[], T, E, T1, E1, T2, E2, T3, E3, T4, E4, T5, E5>(
-	first: ResultFn<A, T, E>,
-	step1: Step<T, T1, E1>,
+): ResultFn<A, T4, ErrorOf<R> | E1 | E2 | E3 | E4>;
+export function pipe<
+	A extends unknown[],
+	R extends Result<unknown, unknown>,
+	T1,
+	E1,
+	T2,
+	E2,
+	T3,
+	E3,
+	T4,
+	E4,
+	T5,
+	E5,
+>(
+	first: (...args: A) => Promise<R>,
+	step1: Step<ValueOf<R>, T1, E1>,
 	step2: Step<T1, T2, E2>,
 	step3: Step<T2, T3, E3>,
 	step4: Step<T3, T4, E4>,
 	step5: Step<T4, T5, E5>,
-): ResultFn<A, T5, E | E1 | E2 | E3 | E4 | E5>;
+): ResultFn<A, T5, ErrorOf<R> | E1 | E2 | E3 | E4 | E5>;
 export function pipe(
 	first: AnyResultFn,
 	...rest: Array<(value: never) => Promise<Result<unknown, unknown>>>

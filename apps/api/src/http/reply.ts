@@ -21,17 +21,13 @@ export function reply<S extends v.GenericSchema, E extends AppEnv = AppEnv>(
 
 /**
  * A service's Result as the answer: the value through `view`, or the problem a throw would be.
- * The error comes last, so `respond<typeof View, Env>` binds as `reply<typeof View, Env>` does.
+ * Generic over the whole result, so what `isError` leaves behind is accepted. The result type
+ * comes last, so `respond<typeof View, Env>` binds as `reply<typeof View, Env>` does.
  */
 export function respond<
 	S extends v.GenericSchema,
 	E extends AppEnv = AppEnv,
-	F extends AppError = AppError,
->(
-	c: Context<E>,
-	result: Result<v.InferInput<S>, F>,
-	view: S,
-	status: ContentfulStatusCode = 200,
-): Response {
+	R extends Result<v.InferInput<S>, AppError> = Result<v.InferInput<S>, AppError>,
+>(c: Context<E>, result: R, view: S, status: ContentfulStatusCode = 200): Response {
 	return result.ok ? reply(c, view, result.value, status) : problemResponse(c, result.error);
 }

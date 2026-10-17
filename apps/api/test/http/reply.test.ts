@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import * as v from 'valibot';
 import { DuplicateSlug, NotBothMembers, RealmNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
-import { err, ok, type Result } from '@akashic/lib/result';
+import { err, isError, ok, type Result } from '@akashic/lib/result';
 import type { AppEnv } from '@/http/env.ts';
 import { problemHandler } from '@/http/problem.ts';
 import { reply, respond } from '@/http/reply.ts';
@@ -13,6 +13,18 @@ const View = v.object({ id: v.string(), status: v.picklist([0, 1]) });
 // A service result with a named error union, as migrated services return.
 const refusedTyped = (): Result<v.InferInput<typeof View>, RealmNotFound | NotBothMembers> =>
 	err(new NotBothMembers());
+
+// What is left after isError narrows has no alias, yet respond must take it.
+const threeErrors = (): Result<
+	v.InferInput<typeof View>,
+	RealmNotFound | NotBothMembers | DuplicateSlug
+> => err(new DuplicateSlug('Taken.'));
+const narrowed = (c: Context<AppEnv>): Response | undefined => {
+	const r = threeErrors();
+	if (isError(r, DuplicateSlug)) return undefined;
+	return respond(c, r, View);
+};
+void narrowed;
 
 const app = new Hono<AppEnv>()
 	.use(async (c, next) => {

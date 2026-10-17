@@ -106,6 +106,48 @@ describe('result', () => {
 		isError(lookup(1), Gone);
 	});
 
+	test('what is left after isError narrows flows into the combinators', async () => {
+		const three = (n: number): Result<number, Missing | Taken | Gone> =>
+			n === 0 ? err(new Missing()) : n === 1 ? err(new Taken()) : ok(n);
+		const r = three(1);
+		if (isError(r, Missing)) throw new Error('expected Taken');
+
+		const mapped = mapOk(r, (n) => String(n));
+		assertTrue<Equal<ErrorOf<typeof mapped>, Taken | Gone>>();
+		assertTrue<Equal<ValueOf<typeof mapped>, string>>();
+
+		const renamed = mapErr(r, (e) => e.message);
+		assertTrue<Equal<typeof renamed, Result<number, string>>>();
+
+		const chained = await andThen(r, async (n): Promise<Result<string, Missing>> => ok(String(n)));
+		assertTrue<Equal<ErrorOf<typeof chained>, Taken | Gone | Missing>>();
+
+		type Rest = typeof r;
+		const through = pipe(
+			async (): Promise<Rest> => r,
+			async (n): Promise<Result<string, Gone>> => ok(String(n)),
+		);
+		assertTrue<Equal<ErrorOf<Awaited<ReturnType<typeof through>>>, Taken | Gone>>();
+		expect(await through()).toEqual(err(new Taken()));
+	});
+
+	test('a result whose type is inferred keeps every error through the combinators', async () => {
+		// Like inTransaction: generic over the whole result, so the return type has no alias.
+		const run = async <R extends Result<unknown, Missing | Taken | Gone>>(
+			work: () => Promise<R>,
+		): Promise<R> => work();
+		const r = await run(async () => {
+			if (Math.random() > 2) return err(new Missing());
+			if (Math.random() > 2) return err(new Taken());
+			return ok(1);
+		});
+		const renamed = mapErr(r, (e) => e.message);
+		assertTrue<Equal<typeof renamed, Result<number, string>>>();
+		const bumped = mapOk(r, (n) => n + 1);
+		assertTrue<Equal<ErrorOf<typeof bumped>, Missing | Taken>>();
+		expect(bumped).toEqual(ok(2));
+	});
+
 	test('pipe passes values along and stops at the first error', async () => {
 		const parse = async (s: string): Promise<Result<number, Missing>> =>
 			s === '' ? err(new Missing()) : ok(Number(s));
