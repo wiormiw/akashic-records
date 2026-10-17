@@ -1,0 +1,138 @@
+---
+name: api
+
+on:
+  pull_request:
+    paths: &paths
+      - apps/api/**
+      - packages/db/**
+      - packages/lib/**
+      - packages/authz/**
+      - packages/broker/**
+      - packages/contracts/**
+      - bun.lock
+      - deploy/**
+      - .github/workflows/api.yml
+  push:
+    branches: [main]
+    paths: *paths
+
+# A deploy must not be cancelled half-way, so unlike ci.yml this queues instead of cancelling.
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Deploys wait for the full check: the tests run twice on a main push, which is the price of
+  # never shipping an unchecked commit.
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/wiormiw/akashic-api
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Only main pushes; a PR still builds the image so a broken Dockerfile fails the check.
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          build-args: VERSION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_DIR: /opt/akashic
+      IMAGE: ghcr.io/wiormiw/akashic-api:${{ github.sha }}
+    steps:
+      # The VPS may not exist yet; say so rather than failing every push.
+      - if: env.DEPLOY_HOST == ''
+        run: |
+          echo "deploy skipped: set DEPLOY_HOST (repository variable) and DEPLOY_USER" >> "$GITHUB_STEP_SUMMARY"
+      - if: env.DEPLOY_HOST != ''
+        uses: actions/checkout@v4
+      - if: env.DEPLOY_HOST != ''
+        name: ssh setup
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n' \
+            "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+      # compose.prod.yaml reads ./.env (API_ENV_FILE defaults to it), so the env sits beside it.
+      - if: env.DEPLOY_HOST != ''
+        name: copy the stack
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          ssh vps "mkdir -p $DEPLOY_DIR"
+          scp -r deploy/compose.prod.yaml deploy/Caddyfile deploy/backup "vps:$DEPLOY_DIR/"
+      - if: env.DEPLOY_HOST != ''
+        name: write the env
+        env:
+          API_ENV: ${{ secrets.API_ENV }}
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          # umask first, so the file is never readable by others, even briefly.
+          printf '%s\n' "$API_ENV" | ssh vps "umask 077 && cat > $DEPLOY_DIR/.env && chmod 600 $DEPLOY_DIR/.env"
+      - if: env.DEPLOY_HOST != ''
+        name: release
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u $GHCR_USER --password-stdin"
+          # shellcheck disable=SC2029
+          # Migrations run once, before the new containers take traffic, never on container start.
+          ssh vps "set -e; cd $DEPLOY_DIR
+            export API_IMAGE=$IMAGE
+            docker compose -p akashic-prod -f compose.prod.yaml pull api
+            docker compose -p akashic-prod -f compose.prod.yaml run --rm api bun apps/api/scripts/migrate.ts
+            docker compose -p akashic-prod -f compose.prod.yaml up -d"
+      # Through Caddy, so a broken proxy or certificate fails the deploy too. --resolve keeps the
+      # check on the VPS itself, whatever DNS says yet.
+      - if: env.DEPLOY_HOST != ''
+        name: wait for /readyz
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          ssh vps "cd $DEPLOY_DIR
+            site=\$(sed -n 's/^API_SITE_ADDRESS=//p' .env | tail -1)
+            host=\${site#*://}; host=\${host%%/*}; host=\${host%:*}
+            if [ \"\${site#http://}\" != \"\$site\" ]; then url=\$site; port=\${site##*:}
+            else url=https://\$host; port=443; fi
+            for i in \$(seq 1 30); do
+              curl -fsS --resolve \"\$host:\$port:127.0.0.1\" \"\$url/readyz\" && exit 0
+              sleep 2
+            done
+            echo 'readyz never answered' >&2; exit 1"
