@@ -94,6 +94,9 @@ services:
   rabbitmq:
     image: rabbitmq:4-management-alpine
     restart: unless-stopped
+    # RabbitMQ keys its data on the node name, which comes from the hostname. A random container
+    # hostname would orphan the queues on the volume the next time the container is recreated.
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: akashic
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in the env file}
