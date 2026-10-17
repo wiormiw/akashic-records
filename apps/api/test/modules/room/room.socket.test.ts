@@ -131,7 +131,9 @@ const OTHER_ROOM = '01a0d6ac-0000-7000-8000-000000000002';
 const scripted = {
 	rooms: {
 		admit: async (roomId: string, ticket: string) =>
-			(roomId === ROOM || roomId === OTHER_ROOM) && ticket.startsWith('ok-') ? { roomId, userId: ticket.slice(3) } : null,
+			(roomId === ROOM || roomId === OTHER_ROOM) && ticket.startsWith('ok-')
+				? { roomId, userId: ticket.slice(3) }
+				: null,
 	},
 	messages: {
 		send: async (_roomId: string, senderId: string, message: { body: string }) => {

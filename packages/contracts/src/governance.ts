@@ -1,7 +1,6 @@
 import * as v from 'valibot';
 import {
 	CommentSubject,
-	narrow,
 	RealmRole,
 	RecallKind,
 	RecallStatus,
@@ -33,7 +32,7 @@ export interface NamedUser {
 export interface SeatStanding {
 	userId: string;
 	name: string;
-	role: number;
+	role: RealmRole;
 	upvotes: number;
 	seated: boolean;
 	joinedAt: Temporal.Instant;
@@ -61,7 +60,7 @@ export interface Recall extends Votes {
 export interface Takedown extends Votes {
 	id: string;
 	realmId: string;
-	subjectKind: number;
+	subjectKind: CommentSubject;
 	subjectId: string;
 	reason: string;
 	proposedBy: NamedUser | null;
@@ -154,7 +153,7 @@ const named = (n: NamedUser | null) => n && { id: n.id, name: n.name };
 export const presentSeatStanding = (s: SeatStanding): v.InferInput<typeof SeatStandingView> => ({
 	userId: s.userId,
 	name: s.name,
-	role: narrow(RealmRole, s.role),
+	role: s.role,
 	upvotes: s.upvotes,
 	seated: s.seated,
 	joinedAt: iso(s.joinedAt),
@@ -176,7 +175,7 @@ export const presentRecall = (r: Recall): v.InferInput<typeof RecallView> => ({
 export const presentTakedown = (d: PendingTakedown): v.InferInput<typeof TakedownView> => ({
 	id: d.id,
 	realmId: d.realmId,
-	subjectKind: narrow(CommentSubject, d.subjectKind),
+	subjectKind: d.subjectKind,
 	subjectId: d.subjectId,
 	reason: d.reason,
 	proposedBy: named(d.proposedBy),

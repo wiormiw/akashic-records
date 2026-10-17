@@ -80,9 +80,7 @@ describe.skipIf(!live)('a comment while comments are being turned off', () => {
 			});
 
 			expectErr(await pending!, 'realm.forbidden');
-			expect(await db.select().from(comments).where(eq(comments.subjectId, event!.id))).toEqual(
-				[],
-			);
+			expect(await db.select().from(comments).where(eq(comments.subjectId, event!.id))).toEqual([]);
 		} finally {
 			if (realmId) {
 				await db

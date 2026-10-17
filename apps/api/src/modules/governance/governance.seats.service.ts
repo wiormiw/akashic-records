@@ -110,7 +110,7 @@ async function standingsOf(db: Executor, realmId: string, limit: number): Promis
 	return rows.map((row) => ({
 		userId: row.user_id,
 		name: row.name ?? '',
-		role: Number(row.role),
+		role: narrow(RealmRole, Number(row.role)),
 		upvotes: Number(row.upvotes),
 		seated: Number(row.role) === RealmRole.moderator,
 		joinedAt: rowInstant(row.joined_at),

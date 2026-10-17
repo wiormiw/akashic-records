@@ -8,7 +8,7 @@ import {
 	takedowns,
 	takedownVotes,
 } from '@akashic/db';
-import { AuditAction, narrow, TakedownStatus } from '@akashic/lib/enums';
+import { AuditAction, CommentSubject, narrow, TakedownStatus } from '@akashic/lib/enums';
 import { rowInstant } from '@akashic/db/sql';
 import { AlreadyMember, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -35,7 +35,7 @@ type Row = Record<string, unknown>;
 const toTakedown = (row: Row): Takedown => ({
 	id: String(row.id),
 	realmId: String(row.realm_id),
-	subjectKind: Number(row.subject_kind),
+	subjectKind: narrow(CommentSubject, Number(row.subject_kind)),
 	subjectId: String(row.subject_id),
 	reason: String(row.reason),
 	status: narrow(TakedownStatus, Number(row.status)),
