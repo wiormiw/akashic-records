@@ -67,11 +67,13 @@ a realm admin runs one realm. As built in `changeRole`:
   moved to `@akashic/contracts/events`; one Valibot version (1.5.0) across the workspace.
 - [x] **Split deploys:** the web parses with the contracts views as they are; a new enum value
   ships in the web app first, then the API sends it (spec, "Keeping split deploys compatible").
-- [x] Deleted `apps/api/test/fixtures/web-schemas.ts` and the per-module copies (room's `Web`
-  remains); the contract test holds every view to one source.
+- [x] Deleted `apps/api/test/fixtures/web-schemas.ts` and the per-module copies; the contract test
+  holds every view to one source.
 
 ## Plan 5 (deployment)
 
+- The room page casts socket frames by hand; parse them with a `v.variant('type', ...)` over the
+  frame views (deferred from the Plan 4 review).
 - Add MinIO to compose and CI so the storage round-trip test runs.
 - Mail payloads (address and reset link) sit in `outbox_messages`, RabbitMQ and the dead queue.
   Decide their retention, or carry a reference instead.

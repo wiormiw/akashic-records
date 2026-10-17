@@ -77,7 +77,7 @@ bun run realm:centroids                  recompute each realm's fit centroid fro
 
 ## Testing
 
-`bun test`. Unit tests use in-memory fakes. Integration tests run against the real database,
+`bun run test`. Unit tests use in-memory fakes. Integration tests run against the real database,
 OpenFGA and RabbitMQ; each skips when nothing answers. The database holds real dev data: a test
 writes inside `withRollback` (`@akashic/db/testing`), so nothing it creates persists. The exception
 is race tests, which need several connections: they commit uniquely named rows and delete exactly
