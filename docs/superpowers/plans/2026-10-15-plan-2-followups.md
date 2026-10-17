@@ -78,8 +78,8 @@ a realm admin runs one realm. As built in `changeRole`:
 - Mail payloads (address and reset link) sit in `outbox_messages`, RabbitMQ and the dead queue.
   Decide their retention, or carry a reference instead.
 - Deployment: CI deploy; `deploy/k8s/10-migrate.yaml` still runs the old migrate job.
-- The Vercel project must pin a Node version `adapter-vercel` 6 supports (24 or lower); local
-  Node 26 can't run `VERCEL=1` builds. `adapter-vercel` 7 needs SvelteKit 3.
+- The Vercel functions run on `nodejs24.x`, named in `vite.config.ts` (so a local Node 26 can build
+  for Vercel too). Raise it when `adapter-vercel` supports newer Node; version 7 needs SvelteKit 3.
 - Decide whether CI builds the web image (`apps/web/Dockerfile`).
 
 ## Can wait

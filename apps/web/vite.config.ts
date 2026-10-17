@@ -6,10 +6,11 @@ import { chooseAdapter, cspOrigins } from './build-config.ts';
 const adapterName = chooseAdapter(process.env);
 const origins = cspOrigins(process.env);
 
-// Imported on demand so a node build does not load the Vercel adapter, or the reverse.
+// Imported on demand so a node build does not load the Vercel adapter, or the reverse. The Vercel
+// runtime is named rather than read from the building Node, which adapter-vercel 6 refuses past 24.
 const adapter =
 	adapterName === 'vercel'
-		? (await import('@sveltejs/adapter-vercel')).default()
+		? (await import('@sveltejs/adapter-vercel')).default({ runtime: 'nodejs24.x' })
 		: (await import('@sveltejs/adapter-node')).default();
 
 export default defineConfig({
