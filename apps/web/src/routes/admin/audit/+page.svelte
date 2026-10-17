@@ -22,7 +22,14 @@
 	</p>
 </header>
 
-{#if data.audit.length === 0}
+{#if data.audit === null}
+	<div class="mt-6">
+		<Empty title="Couldn't read the audit log">
+			The log could not be fetched or understood. Try again; if it keeps failing, the API may be
+			sending an entry this version doesn't know.
+		</Empty>
+	</div>
+{:else if data.audit.length === 0}
 	<div class="mt-6">
 		<Empty title="Nothing recorded yet">
 			Renaming a realm, retiring one, changing somebody's rank, removing content — those land here.
