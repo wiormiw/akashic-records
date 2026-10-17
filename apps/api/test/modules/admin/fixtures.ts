@@ -1,5 +1,4 @@
 import { eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import { realmMembers, realms, roomMessages, roomReports, rooms, type Tx, user } from '@akashic/db';
 import { RealmRole, RoomSubject } from '@akashic/lib/enums';
 import { createAdminService } from '@/modules/admin/admin.service.ts';
@@ -82,62 +81,3 @@ export function world(tx: Tx) {
 }
 
 export type World = ReturnType<typeof world>;
-
-// The web app's schemas (akashic_records_fe/src/lib/api/platform.ts), copied: every response
-// must parse with what the browser parses it with.
-const Account = v.object({ id: v.string(), name: v.string(), email: v.string() });
-
-export const Web = {
-	Overview: v.object({
-		realms: v.number(),
-		archived: v.number(),
-		orphaned: v.number(),
-		members: v.number(),
-		openReports: v.number(),
-		auditEntries: v.number(),
-	}),
-	PlatformRealm: v.object({
-		id: v.string(),
-		slug: v.string(),
-		name: v.string(),
-		category: v.nullable(v.string()),
-		memberCount: v.number(),
-		adminCount: v.number(),
-		archivedAt: v.nullable(v.string()),
-		createdAt: v.string(),
-		createdBy: v.nullable(Account),
-	}),
-	AuditEntry: v.object({
-		id: v.string(),
-		actor: v.nullable(Account),
-		entityType: v.string(),
-		entityId: v.string(),
-		action: v.number(),
-		changes: v.nullable(v.record(v.string(), v.unknown())),
-		traceId: v.nullable(v.string()),
-		occurredAt: v.string(),
-	}),
-	Report: v.object({
-		id: v.string(),
-		roomId: v.string(),
-		messageId: v.nullable(v.string()),
-		reason: v.string(),
-		disclosedText: v.nullable(v.string()),
-		reporter: v.nullable(Account),
-		accused: v.nullable(Account),
-		senderMatches: v.nullable(v.boolean()),
-		reviewedAt: v.nullable(v.string()),
-		createdAt: v.string(),
-	}),
-	PlatformAccount: v.object({
-		id: v.string(),
-		name: v.string(),
-		email: v.string(),
-		emailVerified: v.boolean(),
-		createdAt: v.string(),
-		bannedAt: v.nullable(v.string()),
-		banReason: v.nullable(v.string()),
-		bannedUntil: v.nullable(v.string()),
-		realmCount: v.number(),
-	}),
-};

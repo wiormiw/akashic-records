@@ -1,5 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import {
+	JobSummaryView,
+	ListingSummaryView,
+	JobView,
+	ListingView,
+	InterestView,
+	FitReviewView,
+} from '@akashic/contracts';
 import { FgaType, Relation } from '@akashic/authz';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
@@ -15,7 +23,7 @@ import { silentLogger } from '@akashic/lib/log';
 import type { Embedder } from '@/integrations/embedder.ts';
 import { postingsApp } from './app.ts';
 import { databaseUrl } from '../../support/fixtures.ts';
-import { CENTROID, embedderOf, FAR, UNCERTAIN, Web, world } from './fixtures.ts';
+import { CENTROID, embedderOf, FAR, UNCERTAIN, world } from './fixtures.ts';
 
 // Every postings route through app.request, on the real database in a rolled-back transaction:
 // each happy path parses with the web app's schema, each group has its refusals, and an id from
@@ -55,12 +63,12 @@ describe.skipIf(!live)('browsing (public)', () => {
 
 			const jobs = await call('GET', `/api/public/v1/realms/${realm.slug}/jobs?show=all&limit=5`);
 			expect(jobs.status).toBe(200);
-			expect(v.parse(v.array(Web.JobTeaser), jobs.body)).toMatchObject([
+			expect(v.parse(v.array(JobSummaryView), jobs.body)).toMatchObject([
 				{ title: 'Commission', type: JobType.commission, status: JobStatus.open },
 			]);
 			const listings = await call('GET', `/api/public/v1/realms/${realm.slug}/listings`);
 			expect(listings.status).toBe(200);
-			expect(v.parse(v.array(Web.ListingTeaser), listings.body)).toMatchObject([
+			expect(v.parse(v.array(ListingSummaryView), listings.body)).toMatchObject([
 				{ title: 'Print', priceCents: 1500, imageUrl: null },
 			]);
 		}));
@@ -95,7 +103,7 @@ describe.skipIf(!live)('jobs', () => {
 
 			const read = await call('GET', path, { as: applicant });
 			expect(read.status).toBe(200);
-			expect(v.parse(Web.JobDetail, read.body)).toMatchObject({
+			expect(v.parse(JobView, read.body)).toMatchObject({
 				title: 'Draw a banner',
 				budgetCents: null,
 				hiringFlow: null,
@@ -220,7 +228,7 @@ describe.skipIf(!live)('listings', () => {
 
 			const read = await call('GET', path, { as: buyer });
 			expect(read.status).toBe(200);
-			expect(v.parse(Web.ListingDetail, read.body)).toMatchObject({
+			expect(v.parse(ListingView, read.body)).toMatchObject({
 				imageUrl: newListing.imageUrl,
 				sellerName: 'Founder',
 				buyerId: null,
@@ -364,7 +372,7 @@ describe.skipIf(!live)('interest', () => {
 			expect(Object.keys(shown.body)).toEqual(['id']);
 			const list = await call('GET', path, { as: realm.admin });
 			expect(list.status).toBe(200);
-			expect(v.parse(v.array(Web.Interest), list.body)).toMatchObject([
+			expect(v.parse(v.array(InterestView), list.body)).toMatchObject([
 				{ userId: member, userName: 'Member 0', note: 'Mine?', status: InterestStatus.open },
 			]);
 			const dropped = await call('DELETE', path, { as: member });
@@ -432,7 +440,7 @@ describe.skipIf(!live)('the fit review queue', () => {
 				as: realm.admin,
 			});
 			expect(queue.status).toBe(200);
-			const [entry] = v.parse(v.array(Web.Review), queue.body);
+			const [entry] = v.parse(v.array(FitReviewView), queue.body);
 			expect(entry).toMatchObject({ subjectKind: CommentSubject.job, subjectId: created.body.id });
 
 			const kept = await call('POST', `/api/v1/realms/${realm.slug}/review/${entry!.id}`, {

@@ -1,5 +1,4 @@
 import { and, eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import { eventRsvps, events, realmMembers, realmModules, realms, type Tx } from '@akashic/db';
 import { RealmModule, RealmRole } from '@akashic/lib/enums';
 import { createEventService } from '@/modules/events/events.service.ts';
@@ -52,27 +51,3 @@ export function world(tx: Tx) {
 		outbox: (type: string, realmId: string) => outbox(tx, type, realmId),
 	};
 }
-
-// The web app's schemas (akashic_records_fe/src/lib/api/realms.ts), copied: every response must
-// parse with what the browser parses it with.
-const EventTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	startsAt: v.string(),
-	capacity: v.nullable(v.number()),
-	imageUrl: v.nullable(v.string()),
-	goingCount: v.number(),
-});
-export const Web = {
-	EventTeaser,
-	EventDetail: v.object({
-		...EventTeaser.entries,
-		description: v.string(),
-		endsAt: v.nullable(v.string()),
-		location: v.nullable(v.string()),
-		authorId: v.string(),
-		authorName: v.string(),
-		commentsEnabled: v.boolean(),
-		yourRsvp: v.nullable(v.number()),
-	}),
-};

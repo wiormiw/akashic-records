@@ -1,5 +1,4 @@
 import { and, eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import {
 	auditEntries,
 	comments,
@@ -137,50 +136,3 @@ export function world(tx: Tx) {
 }
 
 export type World = ReturnType<typeof world>;
-
-// The web app's schemas (akashic_records_fe/src/lib/api/governance.ts), copied: every response
-// the web app reads must parse with what the browser parses it with. Its writes read the body
-// as `unknown`, so only the three reads have a schema there.
-const NamedUser = v.nullable(v.object({ id: v.string(), name: v.string() }));
-
-export const Web = {
-	Standings: v.object({
-		seats: v.number(),
-		minimum: v.number(),
-		members: v.array(
-			v.object({
-				userId: v.string(),
-				name: v.string(),
-				role: v.number(),
-				upvotes: v.number(),
-				seated: v.boolean(),
-				joinedAt: v.string(),
-			}),
-		),
-	}),
-	Recall: v.object({
-		id: v.string(),
-		realmId: v.string(),
-		subject: NamedUser,
-		kind: v.number(),
-		reason: v.string(),
-		proposedBy: NamedUser,
-		status: v.number(),
-		agrees: v.number(),
-		refusals: v.number(),
-		createdAt: v.string(),
-	}),
-	Takedown: v.object({
-		id: v.string(),
-		realmId: v.string(),
-		subjectKind: v.number(),
-		subjectId: v.string(),
-		reason: v.string(),
-		proposedBy: NamedUser,
-		status: v.number(),
-		agrees: v.number(),
-		refusals: v.number(),
-		needed: v.number(),
-		createdAt: v.string(),
-	}),
-};

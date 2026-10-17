@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import { StandingsView, RecallView, TakedownView } from '@akashic/contracts';
 import { Relation } from '@akashic/authz';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
@@ -14,7 +15,7 @@ import { silentLogger } from '@akashic/lib/log';
 import { expectOk } from '@akashic/lib/testing';
 import { databaseUrl } from '../../support/fixtures.ts';
 import { governanceApp } from './app.ts';
-import { Web, world, type World } from './fixtures.ts';
+import { world, type World } from './fixtures.ts';
 
 // Every governance route through app.request, on the real database in a rolled-back transaction:
 // the happy path parses with the web app's schema where it has one, and each group has its
@@ -55,7 +56,7 @@ describe.skipIf(!live)('standings and upvotes', () => {
 
 			const standings = await call('GET', `/api/v1/realms/${slug}/standings`, { as: voters[0]! });
 			expect(standings.status).toBe(200);
-			expect(v.parse(Web.Standings, standings.body)).toMatchObject({
+			expect(v.parse(StandingsView, standings.body)).toMatchObject({
 				seats: 1,
 				minimum: 3,
 				members: expect.arrayContaining([
@@ -146,7 +147,7 @@ describe.skipIf(!live)('recalls', () => {
 
 			const listed = await call('GET', `/api/v1/realms/${slug}/recalls`, { as: admin });
 			expect(listed.status).toBe(200);
-			expect(v.parse(v.array(Web.Recall), listed.body)).toEqual([
+			expect(v.parse(v.array(RecallView), listed.body)).toEqual([
 				expect.objectContaining({ id: proposed.body.id, realmId: id, agrees: 1 }),
 			]);
 
@@ -221,7 +222,7 @@ describe.skipIf(!live)('takedowns', () => {
 				as: moderators[0]!,
 			});
 			expect(listed.status).toBe(200);
-			expect(v.parse(v.array(Web.Takedown), listed.body)).toEqual([
+			expect(v.parse(v.array(TakedownView), listed.body)).toEqual([
 				expect.objectContaining({ id: proposed.body.id, realmId: id, needed: 2, agrees: 1 }),
 			]);
 

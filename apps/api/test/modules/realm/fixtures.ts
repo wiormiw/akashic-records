@@ -1,5 +1,4 @@
 import { and, eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import { realmMembers, type Tx } from '@akashic/db';
 import { narrow, RealmRole } from '@akashic/lib/enums';
 import type { Embedder } from '@/integrations/embedder.ts';
@@ -42,44 +41,3 @@ export function world(tx: Tx, embedder: Embedder = noEmbedder) {
 		outbox: (type: string, realmId: string) => outbox(tx, type, realmId),
 	};
 }
-
-// The web app's schemas (akashic_records_fe/src/lib/api/{realms,proposals}.ts), copied: every
-// response must parse with what the browser parses it with.
-export const Web = {
-	RealmSummary: v.object({
-		id: v.string(),
-		slug: v.string(),
-		name: v.string(),
-		description: v.nullable(v.string()),
-		category: v.nullable(v.string()),
-		memberCount: v.number(),
-		modules: v.array(v.number()),
-	}),
-	Standing: v.object({
-		role: v.nullable(v.number()),
-		permissions: v.array(v.string()),
-	}),
-	Member: v.object({
-		userId: v.string(),
-		name: v.string(),
-		displayName: v.nullable(v.string()),
-		image: v.nullable(v.string()),
-		role: v.number(),
-		joinedAt: v.string(),
-	}),
-	Proposal: v.object({
-		id: v.string(),
-		slug: v.string(),
-		name: v.string(),
-		description: v.nullable(v.string()),
-		category: v.nullable(v.string()),
-		modules: v.array(v.number()),
-		rationale: v.string(),
-		proposedBy: v.nullable(v.object({ id: v.string(), name: v.string(), email: v.string() })),
-		status: v.number(),
-		decisionNote: v.nullable(v.string()),
-		decidedAt: v.nullable(v.string()),
-		realmId: v.nullable(v.string()),
-		createdAt: v.string(),
-	}),
-};

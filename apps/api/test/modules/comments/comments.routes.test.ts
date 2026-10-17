@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import { CommentView } from '@akashic/contracts';
 import { FgaType, Relation } from '@akashic/authz';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
@@ -7,7 +8,7 @@ import { AuditAction } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { commentsApp } from './app.ts';
 import { databaseUrl } from '../../support/fixtures.ts';
-import { Web, world } from './fixtures.ts';
+import { world } from './fixtures.ts';
 
 // Every comments route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and each group has its refusal.
@@ -57,7 +58,7 @@ describe.skipIf(!live)('a thread', () => {
 				as: people[0]!,
 			});
 			expect(thread.status).toBe(200);
-			expect(v.parse(v.array(Web.Comment), thread.body)).toMatchObject([
+			expect(v.parse(v.array(CommentView), thread.body)).toMatchObject([
 				{
 					body: 'Still available?',
 					authorId: people[0],
@@ -141,7 +142,7 @@ describe.skipIf(!live)('removing a comment', () => {
 			const thread = await call('GET', `/api/v1/realms/${slug}/events/${event.id}/comments`, {
 				as: author,
 			});
-			expect(v.parse(v.array(Web.Comment), thread.body)).toMatchObject([
+			expect(v.parse(v.array(CommentView), thread.body)).toMatchObject([
 				{ body: '', removed: true },
 			]);
 			// Removing your own needs no record.

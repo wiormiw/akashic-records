@@ -1,5 +1,4 @@
 import { and, eq, sql } from 'drizzle-orm';
-import * as v from 'valibot';
 import {
 	auditEntries,
 	events,
@@ -179,62 +178,3 @@ export function world(tx: Tx, embedder: Embedder = embedderOf(), logger: Logger 
 		},
 	};
 }
-
-// The web app's schemas (akashic_records_fe/src/lib/api/realms.ts), copied: every response must
-// parse with what the browser parses it with.
-const JobTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	type: v.number(),
-	budgetCents: v.nullable(v.number()),
-	currency: v.string(),
-	status: v.number(),
-	createdAt: v.string(),
-});
-const ListingTeaser = v.object({
-	id: v.string(),
-	title: v.string(),
-	priceCents: v.number(),
-	currency: v.string(),
-	status: v.number(),
-	imageUrl: v.nullable(v.string()),
-	createdAt: v.string(),
-});
-export const Web = {
-	JobTeaser,
-	JobDetail: v.object({
-		...JobTeaser.entries,
-		description: v.string(),
-		authorId: v.string(),
-		authorName: v.string(),
-		commentsEnabled: v.boolean(),
-		hiringFlow: v.nullable(v.string()),
-		hiredUserId: v.nullable(v.string()),
-		viewerInterested: v.boolean(),
-	}),
-	ListingTeaser,
-	ListingDetail: v.object({
-		...ListingTeaser.entries,
-		description: v.string(),
-		sellerId: v.string(),
-		sellerName: v.string(),
-		commentsEnabled: v.boolean(),
-		buyerId: v.nullable(v.string()),
-		viewerInterested: v.boolean(),
-	}),
-	Interest: v.object({
-		id: v.string(),
-		userId: v.string(),
-		userName: v.string(),
-		note: v.nullable(v.string()),
-		status: v.number(),
-		createdAt: v.string(),
-	}),
-	Review: v.object({
-		id: v.string(),
-		subjectKind: v.number(),
-		subjectId: v.string(),
-		distance: v.number(),
-		createdAt: v.string(),
-	}),
-};

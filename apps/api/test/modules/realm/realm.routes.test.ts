@@ -1,12 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import { RealmSummaryView, ProposalView, StandingView, MemberView } from '@akashic/contracts';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { ProposalStatus, RealmModule, RealmRole } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { realmApp } from './app.ts';
 import { databaseUrl, uniqueSlug } from '../../support/fixtures.ts';
-import { Web, world } from './fixtures.ts';
+import { world } from './fixtures.ts';
 
 // Every realm route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and each group has its refusal.
@@ -34,11 +35,11 @@ describe.skipIf(!live)('public realm routes', () => {
 
 			const list = await call('GET', '/api/public/v1/realms');
 			expect(list.status).toBe(200);
-			expect(v.is(v.array(Web.RealmSummary), list.body)).toBe(true);
+			expect(v.is(v.array(RealmSummaryView), list.body)).toBe(true);
 
 			const one = await call('GET', `/api/public/v1/realms/${slug}`);
 			expect(one.status).toBe(200);
-			expect(v.parse(Web.RealmSummary, one.body)).toEqual({
+			expect(v.parse(RealmSummaryView, one.body)).toEqual({
 				id,
 				slug,
 				name: 'Test realm',
@@ -73,7 +74,7 @@ describe.skipIf(!live)('proposal routes', () => {
 
 			const mine = await call('GET', '/api/v1/proposals/mine', { as: proposer });
 			expect(mine.status).toBe(200);
-			const [proposal] = v.parse(v.array(Web.Proposal), mine.body);
+			const [proposal] = v.parse(v.array(ProposalView), mine.body);
 			expect(proposal).toMatchObject({
 				id: created.body.id,
 				slug,
@@ -110,7 +111,7 @@ describe.skipIf(!live)('membership routes', () => {
 
 			const before = await call('GET', `${base}/me`, { as: newcomer });
 			expect(before.status).toBe(200);
-			expect(v.parse(Web.Standing, before.body)).toEqual({
+			expect(v.parse(StandingView, before.body)).toEqual({
 				role: null,
 				permissions: ['realm.participate'],
 			});
@@ -127,7 +128,7 @@ describe.skipIf(!live)('membership routes', () => {
 
 			const roster = await call('GET', `${base}/members`, { as: newcomer });
 			expect(roster.status).toBe(200);
-			expect(v.parse(v.array(Web.Member), roster.body).map((m) => m.userId)).toEqual([
+			expect(v.parse(v.array(MemberView), roster.body).map((m) => m.userId)).toEqual([
 				admin,
 				newcomer,
 			]);
@@ -303,7 +304,7 @@ describe.skipIf(!live)('platform administration routes', () => {
 
 			const pending = await call('GET', '/api/v1/admin/proposals', { as: reviewer });
 			expect(pending.status).toBe(200);
-			const listed = v.parse(v.array(Web.Proposal), pending.body).map((p) => p.id);
+			const listed = v.parse(v.array(ProposalView), pending.body).map((p) => p.id);
 			expect(listed).toEqual(expect.arrayContaining(ids));
 
 			const approved = await call('POST', `/api/v1/admin/proposals/${ids[0]}/approve`, {

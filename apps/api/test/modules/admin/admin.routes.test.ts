@@ -1,6 +1,13 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import * as v from 'valibot';
+import {
+	CountsView,
+	PlatformRealmView,
+	ReportView,
+	AuditView,
+	AccountView,
+} from '@akashic/contracts';
 import { createDb, realmMembers } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
@@ -8,7 +15,7 @@ import { ErrorCode } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { databaseUrl } from '../../support/fixtures.ts';
 import { adminApp } from './app.ts';
-import { Web, world, type World } from './fixtures.ts';
+import { world, type World } from './fixtures.ts';
 
 // Every admin route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and the surface refuses everyone else with 404.
@@ -41,16 +48,16 @@ describe.skipIf(!live)('the overview, realms, audit and reports', () => {
 
 			const overview = await call('GET', A, { as: boss });
 			expect(overview.status).toBe(200);
-			expect(v.parse(Web.Overview, overview.body).realms).toBeGreaterThanOrEqual(2);
+			expect(v.parse(CountsView, overview.body).realms).toBeGreaterThanOrEqual(2);
 
 			const realms = await call('GET', `${A}/realms?limit=200`, { as: boss });
 			expect(realms.status).toBe(200);
-			const listed = v.parse(v.array(Web.PlatformRealm), realms.body);
+			const listed = v.parse(v.array(PlatformRealmView), realms.body);
 			expect(listed.find((r) => r.slug === slug)).toMatchObject({ id, memberCount: 2 });
 
 			const reports = await call('GET', `${A}/reports?state=open&limit=200`, { as: boss });
 			expect(reports.status).toBe(200);
-			const open = v.parse(v.array(Web.Report), reports.body);
+			const open = v.parse(v.array(ReportView), reports.body);
 			expect(open.find((r) => r.id === report)).toMatchObject({
 				senderMatches: true,
 				reviewedAt: null,
@@ -63,7 +70,7 @@ describe.skipIf(!live)('the overview, realms, audit and reports', () => {
 
 			const audit = await call('GET', `${A}/audit?entityType=room_report&limit=200`, { as: boss });
 			expect(audit.status).toBe(200);
-			const entries = v.parse(v.array(Web.AuditEntry), audit.body);
+			const entries = v.parse(v.array(AuditView), audit.body);
 			expect(entries.find((e) => e.entityId === report)).toMatchObject({
 				action: AuditAction.moderated,
 				actor: { id: boss },
@@ -96,7 +103,7 @@ describe.skipIf(!live)('accounts and bans', () => {
 				},
 			);
 			expect(found.status).toBe(200);
-			expect(v.parse(v.array(Web.PlatformAccount), found.body)).toMatchObject([
+			expect(v.parse(v.array(AccountView), found.body)).toMatchObject([
 				{ id: target.id, bannedAt: null, realmCount: 0 },
 			]);
 
@@ -108,7 +115,7 @@ describe.skipIf(!live)('accounts and bans', () => {
 			const after = await call('GET', `${A}/accounts?q=${encodeURIComponent(target.email)}`, {
 				as: boss,
 			});
-			expect(v.parse(v.array(Web.PlatformAccount), after.body)[0]).toMatchObject({
+			expect(v.parse(v.array(AccountView), after.body)[0]).toMatchObject({
 				banReason: 'Spam.',
 				bannedUntil: '2026-06-02T00:00:00Z',
 			});

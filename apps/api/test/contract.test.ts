@@ -17,11 +17,10 @@ import {
 	RsvpStatus,
 	TakedownStatus,
 } from '@akashic/lib/enums';
-import { Web } from './fixtures/web-schemas.ts';
 
-// Every response view in @akashic/contracts against the schema the web app parses it with. The
-// value is built by the view's presenter (or by hand where there is none), parsed by the view,
-// serialised as the wire would, and parsed again by the web app's schema. Both must accept it.
+// Every response view in @akashic/contracts. The web app parses responses with these same views,
+// so one sample per view is enough: built by the view's presenter (or by hand where there is
+// none), parsed, serialised as the wire would, and parsed again. Both parses must accept it.
 
 const at = Temporal.Instant.from('2026-06-01T12:00:00Z');
 const later = Temporal.Instant.from('2026-06-02T12:00:00Z');
@@ -32,7 +31,6 @@ const named = { id, name: 'Ada' };
 
 interface Pair {
 	view: v.GenericSchema;
-	web: v.GenericSchema;
 	/** What the route sends before the view parses it. */
 	sample: unknown;
 }
@@ -41,14 +39,12 @@ interface Pair {
 const pairs: Record<string, Pair> = {
 	MailStatusView: {
 		view: contracts.MailStatusView,
-		web: Web.MailStatus,
 		sample: { configured: true, healthy: false, lastFailure: 'boom', failedAt: null },
 	},
 
 	// admin
 	CountsView: {
 		view: contracts.CountsView,
-		web: Web.Overview,
 		sample: contracts.presentCounts({
 			realms: 3,
 			archived: 1,
@@ -60,7 +56,6 @@ const pairs: Record<string, Pair> = {
 	},
 	PlatformRealmView: {
 		view: contracts.PlatformRealmView,
-		web: Web.PlatformRealm,
 		sample: contracts.presentPlatformRealm({
 			id,
 			slug: 'weaboo',
@@ -75,7 +70,6 @@ const pairs: Record<string, Pair> = {
 	},
 	AuditView: {
 		view: contracts.AuditView,
-		web: Web.AuditEntry,
 		sample: contracts.presentAudit({
 			id,
 			actor: person,
@@ -89,7 +83,6 @@ const pairs: Record<string, Pair> = {
 	},
 	ReportView: {
 		view: contracts.ReportView,
-		web: Web.Report,
 		sample: contracts.presentReport({
 			id,
 			roomId: other,
@@ -105,7 +98,6 @@ const pairs: Record<string, Pair> = {
 	},
 	AccountView: {
 		view: contracts.AccountView,
-		web: Web.PlatformAccount,
 		sample: contracts.presentAccount({
 			id,
 			name: 'Ada',
@@ -122,7 +114,6 @@ const pairs: Record<string, Pair> = {
 	// comments
 	CommentView: {
 		view: contracts.CommentView,
-		web: Web.Comment,
 		sample: contracts.presentComment({
 			id,
 			body: '',
@@ -137,7 +128,6 @@ const pairs: Record<string, Pair> = {
 	// events
 	EventSummaryView: {
 		view: contracts.EventSummaryView,
-		web: Web.EventTeaser,
 		sample: contracts.presentEventSummary({
 			id,
 			title: 'Meetup',
@@ -149,7 +139,6 @@ const pairs: Record<string, Pair> = {
 	},
 	EventView: {
 		view: contracts.EventView,
-		web: Web.EventDetail,
 		sample: contracts.presentEvent({
 			id,
 			title: 'Meetup',
@@ -170,7 +159,6 @@ const pairs: Record<string, Pair> = {
 	// governance
 	StandingsView: {
 		view: contracts.StandingsView,
-		web: Web.Standings,
 		sample: {
 			seats: 2,
 			minimum: 3,
@@ -188,7 +176,6 @@ const pairs: Record<string, Pair> = {
 	},
 	RecallView: {
 		view: contracts.RecallView,
-		web: Web.Recall,
 		sample: contracts.presentRecall({
 			id,
 			realmId: other,
@@ -204,7 +191,6 @@ const pairs: Record<string, Pair> = {
 	},
 	TakedownView: {
 		view: contracts.TakedownView,
-		web: Web.Takedown,
 		sample: contracts.presentTakedown({
 			id,
 			realmId: other,
@@ -223,7 +209,6 @@ const pairs: Record<string, Pair> = {
 	// postings
 	JobSummaryView: {
 		view: contracts.JobSummaryView,
-		web: Web.JobTeaser,
 		sample: contracts.presentJobSummary({
 			id,
 			title: 'Logo',
@@ -236,7 +221,6 @@ const pairs: Record<string, Pair> = {
 	},
 	JobView: {
 		view: contracts.JobView,
-		web: Web.JobDetail,
 		sample: contracts.presentJob({
 			id,
 			title: 'Logo',
@@ -256,7 +240,6 @@ const pairs: Record<string, Pair> = {
 	},
 	ListingSummaryView: {
 		view: contracts.ListingSummaryView,
-		web: Web.ListingTeaser,
 		sample: contracts.presentListingSummary({
 			id,
 			title: 'Card',
@@ -269,7 +252,6 @@ const pairs: Record<string, Pair> = {
 	},
 	ListingView: {
 		view: contracts.ListingView,
-		web: Web.ListingDetail,
 		sample: contracts.presentListing({
 			id,
 			title: 'Card',
@@ -288,7 +270,6 @@ const pairs: Record<string, Pair> = {
 	},
 	InterestView: {
 		view: contracts.InterestView,
-		web: Web.Interest,
 		sample: contracts.presentInterest({
 			id,
 			userId: other,
@@ -300,7 +281,6 @@ const pairs: Record<string, Pair> = {
 	},
 	FitReviewView: {
 		view: contracts.FitReviewView,
-		web: Web.Review,
 		sample: contracts.presentFitReview({
 			id,
 			subjectKind: CommentSubject.job,
@@ -313,7 +293,6 @@ const pairs: Record<string, Pair> = {
 	// realms
 	RealmSummaryView: {
 		view: contracts.RealmSummaryView,
-		web: Web.RealmSummary,
 		sample: contracts.presentRealmSummary({
 			id,
 			slug: 'weaboo',
@@ -326,12 +305,10 @@ const pairs: Record<string, Pair> = {
 	},
 	FoundedView: {
 		view: contracts.FoundedView,
-		web: Web.Founded,
 		sample: { id, slug: 'weaboo' },
 	},
 	StandingView: {
 		view: contracts.StandingView,
-		web: Web.Standing,
 		sample: contracts.presentStanding(RealmRole.moderator, {
 			post: true,
 			postJob: true,
@@ -344,7 +321,6 @@ const pairs: Record<string, Pair> = {
 	},
 	MemberView: {
 		view: contracts.MemberView,
-		web: Web.Member,
 		sample: contracts.presentMember({
 			userId: id,
 			role: RealmRole.admin,
@@ -356,7 +332,6 @@ const pairs: Record<string, Pair> = {
 	},
 	ProposalView: {
 		view: contracts.ProposalView,
-		web: Web.Proposal,
 		sample: contracts.presentProposal({
 			id,
 			slug: 'weaboo',
@@ -377,7 +352,6 @@ const pairs: Record<string, Pair> = {
 	// rooms
 	DeviceKeyView: {
 		view: contracts.DeviceKeyView,
-		web: Web.PublicKeys,
 		sample: contracts.presentDeviceKey({
 			userId: id,
 			publicKey: 'p'.repeat(32),
@@ -387,7 +361,6 @@ const pairs: Record<string, Pair> = {
 	},
 	RoomSummaryView: {
 		view: contracts.RoomSummaryView,
-		web: Web.RoomSummary,
 		sample: contracts.presentRoomSummary({
 			id,
 			realmId: other,
@@ -401,7 +374,6 @@ const pairs: Record<string, Pair> = {
 	},
 	MessageView: {
 		view: contracts.MessageView,
-		web: Web.StoredMessage,
 		sample: contracts.presentMessage({
 			id,
 			senderId: other,
@@ -415,13 +387,11 @@ const pairs: Record<string, Pair> = {
 	},
 	TicketView: {
 		view: contracts.TicketView,
-		web: Web.Ticket,
 		sample: { ticket: 't', expiresInSeconds: 30 },
 	},
-	// The live frame carries a message plus `keys`; the web app reads it as a StoredMessage.
+	// The live frame carries a message plus `keys`.
 	MessageFrameView: {
 		view: contracts.MessageFrameView,
-		web: v.object({ type: v.literal('message'), message: Web.StoredMessage }),
 		sample: contracts.presentMessageFrame({
 			id,
 			senderId: other,
@@ -435,67 +405,93 @@ const pairs: Record<string, Pair> = {
 	// uploads
 	LimitsView: {
 		view: contracts.LimitsView,
-		web: Web.UploadPolicy,
 		sample: { enabled: true, imageTypes: ['image/png'], maxBytes: 1_000_000 },
 	},
-	UploadedView: { view: contracts.UploadedView, web: Web.Uploaded, sample: { url: 'https://x' } },
+	UploadedView: { view: contracts.UploadedView, sample: { url: 'https://x' } },
+
+	// Small write acknowledgements and socket frames, by hand: they have no presenter.
+	GrantedView: { view: contracts.GrantedView, sample: { realmId: id, userId: other, name: 'Ada' } },
+	BanView: { view: contracts.BanView, sample: { banned: true } },
+	ReviewedView: { view: contracts.ReviewedView, sample: { id } },
+	RemovedView: { view: contracts.RemovedView, sample: { removed: true } },
+	RsvpView: { view: contracts.RsvpView, sample: { status: RsvpStatus.going } },
+	ClearedView: { view: contracts.ClearedView, sample: { cleared: true } },
+	UpvotedView: {
+		view: contracts.UpvotedView,
+		sample: { upvotes: 3, seats: 2, seated: [id], unseated: [other] },
+	},
+	UpvoteWithdrawnView: {
+		view: contracts.UpvoteWithdrawnView,
+		sample: { upvotes: 2, seated: [], unseated: [other] },
+	},
+	SeatRemovedView: { view: contracts.SeatRemovedView, sample: { removed: true } },
+	RecallOpenedView: {
+		view: contracts.RecallOpenedView,
+		sample: { id, electorate: 10, needed: 6 },
+	},
+	RecallTallyView: {
+		view: contracts.RecallTallyView,
+		sample: { status: RecallStatus.open, agrees: 1, refusals: 0, needed: 6 },
+	},
+	TakedownOpenedView: {
+		view: contracts.TakedownOpenedView,
+		sample: { id, carried: false, agrees: 1, needed: 2 },
+	},
+	TakedownTallyView: {
+		view: contracts.TakedownTallyView,
+		sample: { status: TakedownStatus.open, agrees: 1, refusals: 0, needed: 2 },
+	},
+	JobStatusView: { view: contracts.JobStatusView, sample: { status: JobStatus.closed } },
+	ListingStatusView: {
+		view: contracts.ListingStatusView,
+		sample: { status: ListingStatus.removed },
+	},
+	HiredView: { view: contracts.HiredView, sample: { hiredUserId: other } },
+	DealtView: { view: contracts.DealtView, sample: { buyerId: other } },
+	WithdrawnView: { view: contracts.WithdrawnView, sample: { withdrawn: true } },
+	FitDecisionView: { view: contracts.FitDecisionView, sample: { kept: false } },
+	JoinedView: { view: contracts.JoinedView, sample: { joined: true } },
+	LeftView: { view: contracts.LeftView, sample: { left: true } },
+	EditedView: { view: contracts.EditedView, sample: { changed: ['name', 'description'] } },
+	ArchivedView: { view: contracts.ArchivedView, sample: { archived: true } },
+	RoleChangedView: {
+		view: contracts.RoleChangedView,
+		sample: { userId: id, role: RealmRole.moderator },
+	},
+	ApprovedView: { view: contracts.ApprovedView, sample: { realmId: other } },
+	RejectedView: { view: contracts.RejectedView, sample: { id } },
+	PublishedView: { view: contracts.PublishedView, sample: { published: true } },
+	BlockedView: { view: contracts.BlockedView, sample: { blocked: true } },
+	RetentionView: { view: contracts.RetentionView, sample: { days: null, inForce: false } },
+	StaleDevicesFrameView: {
+		view: contracts.StaleDevicesFrameView,
+		sample: { type: 'stale_devices', devices: ['f'.repeat(8)] },
+	},
+	ErrorFrameView: {
+		view: contracts.ErrorFrameView,
+		sample: { type: 'error', detail: 'unreadable frame' },
+	},
 
 	// common
-	Created: { view: contracts.Created, web: Web.Opened, sample: { id } },
+	Created: { view: contracts.Created, sample: { id } },
 };
 
-// Views the web app has no schema for: it ignores the body of these writes (or never sends the
-// request), so there is nothing to hold them to. Listed rather than invented.
-const noWebCounterpart = [
-	'GrantedView', // admin: grantRealmAdmin ignores the body
-	'BanView', // admin: setBan ignores the body
-	'ReviewedView', // admin: reviewReport ignores the body
-	'RemovedView', // comments: removeComment (moderate) ignores the body
-	'RsvpView', // events: rsvp ignores the body
-	'ClearedView', // events: rsvp(null) ignores the body
-	'UpvotedView', // governance: write() returns the payload as unknown
-	'UpvoteWithdrawnView',
-	'SeatRemovedView',
-	'RecallOpenedView',
-	'RecallTallyView',
-	'TakedownOpenedView',
-	'TakedownTallyView',
-	'JobStatusView', // postings: setPostingStatus / settle / setInterest ignore the body
-	'ListingStatusView',
-	'HiredView',
-	'DealtView',
-	'WithdrawnView',
-	'FitDecisionView', // decideReview ignores the body
-	'JoinedView', // realm: membership() ignores the body
-	'LeftView',
-	'EditedView', // no web caller yet
-	'ArchivedView', // no web caller yet
-	'RoleChangedView', // setRole ignores the body
-	'ApprovedView', // proposals: write() returns the payload as unknown
-	'RejectedView',
-	'PublishedView', // rooms: key publication ignores the body
-	'BlockedView', // setBlocked ignores the body
-	'RetentionView', // no web caller yet
-	'StaleDevicesFrameView', // socket frames the web app switches on by `type`, with no schema
-	'ErrorFrameView',
-];
-
-describe("the web app's schemas parse every response view", () => {
+describe('every response view survives the wire', () => {
 	for (const [name, pair] of Object.entries(pairs)) {
 		test(name, () => {
 			const output = v.parse(pair.view, pair.sample);
-			// What the client receives is the JSON text of the view's output.
+			// What the client receives is the JSON text of the view's output; the web app parses
+			// that same text with the same view.
 			const wire: unknown = JSON.parse(JSON.stringify(output));
-			expect(v.safeParse(pair.web, wire).issues).toBeUndefined();
+			expect(v.safeParse(pair.view, wire).issues).toBeUndefined();
+			expect(wire).toEqual(output);
 		});
 	}
 
-	test('every exported view is either checked or listed as having no web counterpart', () => {
+	test('every exported view has a sample', () => {
 		const views = Object.keys(contracts).filter((key) => key.endsWith('View'));
-		const accounted = new Set([...Object.keys(pairs), ...noWebCounterpart]);
-		expect(views.filter((view) => !accounted.has(view))).toEqual([]);
+		expect(views.filter((view) => !(view in pairs))).toEqual([]);
 		// A stale entry would hide a view that was renamed or removed.
-		expect(noWebCounterpart.filter((view) => !views.includes(view))).toEqual([]);
 		expect(Object.keys(pairs).filter((key) => key !== 'Created' && !views.includes(key))).toEqual(
 			[],
 		);

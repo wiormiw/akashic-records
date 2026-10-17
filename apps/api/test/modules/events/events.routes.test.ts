@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import { EventSummaryView, EventView } from '@akashic/contracts';
 import { Relation } from '@akashic/authz';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
@@ -8,7 +9,7 @@ import { silentLogger } from '@akashic/lib/log';
 import { expectOk } from '@akashic/lib/testing';
 import { eventsApp } from './app.ts';
 import { clock, databaseUrl, uniqueSlug } from '../../support/fixtures.ts';
-import { Web, world } from './fixtures.ts';
+import { world } from './fixtures.ts';
 
 // Every events route through app.request, on the real database in a rolled-back transaction: the
 // happy path parses with the web app's schema, and each group has its refusal.
@@ -49,7 +50,7 @@ describe.skipIf(!live)('listing events', () => {
 
 			const list = await call('GET', `/api/public/v1/realms/${slug}/events?limit=3`);
 			expect(list.status).toBe(200);
-			const [teaser] = v.parse(v.array(Web.EventTeaser), list.body);
+			const [teaser] = v.parse(v.array(EventSummaryView), list.body);
 			expect(teaser).toMatchObject({
 				id: posted.body.id,
 				title: 'Meetup',
@@ -98,7 +99,7 @@ describe.skipIf(!live)('posting and reading one event', () => {
 				as: people[0]!,
 			});
 			expect(one.status).toBe(200);
-			expect(v.parse(Web.EventDetail, one.body)).toMatchObject({
+			expect(v.parse(EventView, one.body)).toMatchObject({
 				id: created.body.id,
 				title: 'Meetup',
 				location: 'Cafe',
@@ -201,7 +202,7 @@ describe.skipIf(!live)('RSVP routes', () => {
 			const read = await s.call('GET', `/api/v1/realms/${slug}/events/${eventId}`, {
 				as: people[0]!,
 			});
-			expect(v.parse(Web.EventDetail, read.body)).toMatchObject({
+			expect(v.parse(EventView, read.body)).toMatchObject({
 				yourRsvp: RsvpStatus.going,
 				goingCount: 1,
 			});

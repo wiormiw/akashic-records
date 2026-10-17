@@ -1,5 +1,4 @@
 import { eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import {
 	auditEntries,
 	comments,
@@ -95,17 +94,3 @@ export function world(tx: Tx) {
 			tx.select().from(auditEntries).where(eq(auditEntries.entityId, entityId)),
 	};
 }
-
-// The web app's schema (akashic_records_fe/src/lib/api/realms.ts), copied: every response must
-// parse with what the browser parses it with.
-export const Web = {
-	Comment: v.object({
-		id: v.string(),
-		body: v.string(),
-		authorId: v.string(),
-		authorName: v.string(),
-		authorImage: v.nullable(v.string()),
-		removed: v.boolean(),
-		createdAt: v.string(),
-	}),
-};
