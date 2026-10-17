@@ -2,14 +2,15 @@ import { OpenFgaClient, type AuthorizationModel } from '@openfga/sdk';
 import { transformer } from '@openfga/syntax-transformer';
 import * as v from 'valibot';
 import { modelPath } from '@akashic/authz';
-import { loadEnv, url } from '@akashic/lib/config';
+import { loadEnv } from '@akashic/lib/config';
+import { Env } from '@/config.ts';
 
 // Pushes authz/model.fga to OpenFGA, creating the store on first run, and prints the ids the API
 // needs. Only needs the OpenFGA address.
 const STORE_NAME = 'akashic';
 
 if (import.meta.main) {
-	const env = loadEnv(v.object({ FGA_API_URL: url('http://localhost:8080') }), Bun.env);
+	const env = loadEnv(v.pick(Env, ['FGA_API_URL']), Bun.env);
 
 	const model = transformer.transformDSLToJSONObject(
 		await Bun.file(modelPath).text(),

@@ -256,4 +256,17 @@ describe('structure', () => {
 		}
 		expect(starting).toEqual([]);
 	});
+
+	// One definition of each variable (`Env` in config.ts), so a script can't drift from the API's
+	// default or validation. A heuristic: every `loadEnv(` in scripts must open with `v.pick(Env`.
+	test('scripts load their environment as a pick of the API Env', async () => {
+		const inline: string[] = [];
+		for (const f of scan('apps/api/scripts/**/*.ts')) {
+			const src = await read(f);
+			for (const m of src.matchAll(/loadEnv\(\s*(?!\s|v\.pick\(Env\b)/g)) {
+				inline.push(`${f}:${src.slice(0, m.index).split('\n').length}`);
+			}
+		}
+		expect(inline).toEqual([]);
+	});
 });

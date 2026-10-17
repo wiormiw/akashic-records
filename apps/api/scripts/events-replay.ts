@@ -1,7 +1,8 @@
 import * as v from 'valibot';
 import { createBroker, createOutboxStore, deadCount, Queues, replayDead } from '@akashic/broker';
 import { createDb } from '@akashic/db';
-import { loadEnv, url } from '@akashic/lib/config';
+import { loadEnv } from '@akashic/lib/config';
+import { Env } from '@/config.ts';
 import { createLogger } from '@akashic/lib/log';
 
 // Puts dead events back in line, once whatever killed them has been fixed: outbox events that
@@ -16,7 +17,7 @@ const LIMIT = 1000;
 export const QUEUES: readonly string[] = Object.values(Queues);
 
 if (import.meta.main) {
-	const env = loadEnv(v.object({ DATABASE_URL: url(), RABBITMQ_URL: url() }), Bun.env);
+	const env = loadEnv(v.pick(Env, ['DATABASE_URL', 'RABBITMQ_URL']), Bun.env);
 	const apply = Bun.argv.includes('--apply');
 	const logger = createLogger({ level: 'warn', service: 'akashic-replay', environment: 'script' });
 	const database = createDb({

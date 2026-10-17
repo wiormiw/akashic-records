@@ -1,8 +1,9 @@
 import * as v from 'valibot';
 import { createAuthorizer, FgaType, PLATFORM_ID, RANK_RELATION, type Tuple } from '@akashic/authz';
 import { createDb, realmMembers, realms } from '@akashic/db';
-import { int, loadEnv, str, url } from '@akashic/lib/config';
+import { loadEnv } from '@akashic/lib/config';
 import { createLogger } from '@akashic/lib/log';
+import { Env } from '@/config.ts';
 
 // Rewrites every realm and membership tuple from Postgres, for a fresh store or one that drifted.
 // Safe to rerun: each membership's ranks are deleted and its current one written.
@@ -10,13 +11,7 @@ const PAGE = 50;
 
 if (import.meta.main) {
 	const env = loadEnv(
-		v.object({
-			DATABASE_URL: url(),
-			FGA_API_URL: url('http://localhost:8080'),
-			FGA_STORE_ID: str({ minLength: 1 }),
-			FGA_MODEL_ID: v.optional(v.string()),
-			FGA_TIMEOUT_MS: int({ min: 100, default: 2000 }),
-		}),
+		v.pick(Env, ['DATABASE_URL', 'FGA_API_URL', 'FGA_STORE_ID', 'FGA_MODEL_ID', 'FGA_TIMEOUT_MS']),
 		Bun.env,
 	);
 	const logger = createLogger({
