@@ -1,16 +1,16 @@
-import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { chooseAdapter, cspOrigins } from './build-config.ts';
 
-/**
- * The only host this application loads images from.
- *
- * Cover and banner art is served by AniList's CDN, which is where the catalogue was ingested
- * from. Checked against the live catalogue rather than assumed: every non-null image URL in 1500
- * rows points here, so naming it is a fact rather than a guess.
- */
-const IMAGE_HOSTS = ['https://s4.anilist.co'] as const;
+const adapterName = chooseAdapter(process.env);
+const origins = cspOrigins(process.env);
+
+// Imported on demand so a node build does not load the Vercel adapter, or the reverse.
+const adapter =
+	adapterName === 'vercel'
+		? (await import('@sveltejs/adapter-vercel')).default()
+		: (await import('@sveltejs/adapter-node')).default();
 
 export default defineConfig({
 	plugins: [
@@ -59,11 +59,12 @@ export default defineConfig({
 					'default-src': ['self'],
 					'script-src': ['self'],
 					'style-src': ['self', 'unsafe-inline'],
-					'img-src': ['self', 'data:', ...IMAGE_HOSTS],
+					'img-src': origins.img,
 					'font-src': ['self', 'data:'],
-					// Same origin only: the browser talks to this app's BFF, which is the only thing
-					// that talks to the API. A wider value here would undo that.
-					'connect-src': ['self'],
+					// Same origin, plus the room socket: the browser talks to this app's BFF for
+					// everything else, so the API's wss origin is the one direct connection. Anything
+					// wider would undo that.
+					'connect-src': origins.connect,
 					'base-uri': ['self'],
 					'form-action': ['self'],
 					'frame-ancestors': ['none'],
@@ -72,17 +73,14 @@ export default defineConfig({
 			},
 
 			/**
-			 * The node adapter, not adapter-auto.
+			 * Chosen per build, not adapter-auto.
 			 *
 			 * adapter-auto reads the build environment and picks a platform adapter, which produces
 			 * nothing runnable in a plain container -- and fails at build time rather than at deploy
-			 * time, so the first person to try would have got a confusing error about an unsupported
-			 * environment instead of a server.
-			 *
-			 * This one emits a Node server at build/index.js that listens on PORT, which is what the
-			 * image runs and what a readiness probe can reach.
+			 * time. So the choice is explicit: node (a server at build/index.js listening on PORT,
+			 * which the Dockerfile runs) unless Vercel sets VERCEL=1; ADAPTER overrides either way.
 			 */
-			adapter: adapter(),
+			adapter,
 		}),
 	],
 });

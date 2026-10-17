@@ -8,7 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test src",
+		"test": "bun test src build-config.test.ts",
 		"format": "prettier --write 'src/**/*.svelte' src/app.css src/app.html",
 		"format:check": "prettier --check 'src/**/*.svelte' src/app.css src/app.html",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
@@ -25,6 +25,7 @@
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.7",
+		"@sveltejs/adapter-vercel": "^6.3.4",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.3",
