@@ -15,7 +15,9 @@ import type { Clock } from '@akashic/lib/time';
 import type { RealmEnv } from '@/http/realm-context.ts';
 import type { Sessions } from '@/http/session.ts';
 import type { Embedder } from '@/integrations/embedder.ts';
-import type { RealmService } from './realm.service.ts';
+import type { createRealmService } from './realm.service.ts';
+
+export type RealmService = ReturnType<typeof createRealmService>;
 
 export interface RealmDeps {
 	db: Executor;

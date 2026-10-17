@@ -1,11 +1,13 @@
 import type { MiddlewareHandler } from 'hono';
 import type { Authorizer } from '@akashic/authz';
 import type { RealmEnv } from '@/http/realm-context.ts';
-import type { CommentService } from './comments.service.ts';
+import type { createCommentService } from './comments.service.ts';
 import type { Executor } from '@akashic/db';
 import type { CommentSubject } from '@akashic/lib/enums';
 import type { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
+
+export type CommentService = ReturnType<typeof createCommentService>;
 
 export interface CommentsDeps {
 	db: Executor;

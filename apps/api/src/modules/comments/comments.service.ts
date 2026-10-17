@@ -159,5 +159,3 @@ export function createCommentService(deps: CommentsDeps) {
 		},
 	};
 }
-
-export type CommentService = ReturnType<typeof createCommentService>;

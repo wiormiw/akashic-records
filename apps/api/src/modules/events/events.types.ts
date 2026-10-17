@@ -1,10 +1,12 @@
 import type { MiddlewareHandler } from 'hono';
 import type { RealmEnv } from '@/http/realm-context.ts';
-import type { EventService } from './events.service.ts';
+import type { createEventService } from './events.service.ts';
 import type { Executor } from '@akashic/db';
 import type { RsvpStatus } from '@akashic/lib/enums';
 import type { EventFull, EventInPast, EventNotFound } from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
+
+export type EventService = ReturnType<typeof createEventService>;
 
 export interface EventsDeps {
 	db: Executor;

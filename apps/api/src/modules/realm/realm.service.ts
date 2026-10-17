@@ -373,5 +373,3 @@ export function createRealmService(deps: RealmDeps) {
 		...createProposals({ db, clock, seedCentroid }),
 	};
 }
-
-export type RealmService = ReturnType<typeof createRealmService>;

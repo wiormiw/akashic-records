@@ -141,6 +141,19 @@ describe('structure', () => {
 		expect(stray).toEqual([]);
 	});
 
+	// An exported type lives in <m>.types.ts, so a module's types are found in one place. Types
+	// private to one file (a raw row, a local outcome) stay unexported where they are used.
+	test('exported types live in <m>.types.ts', async () => {
+		const stray: string[] = [];
+		for (const f of scan('apps/api/src/modules/*/*.ts')) {
+			if (f.endsWith('.types.ts')) continue;
+			(await read(f)).split('\n').forEach((line, n) => {
+				if (/^export\s+(?:type|interface)\s/.test(line)) stray.push(`${f}:${n + 1}`);
+			});
+		}
+		expect(stray).toEqual([]);
+	});
+
 	// An exported function names the types of its parameters and result; an inline object type
 	// is for a local, unexported shape. A heuristic over the source text, not the type checker:
 	// it reads each `export function` / `export const x = (...) =>` parameter list (balanced

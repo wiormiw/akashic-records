@@ -60,5 +60,3 @@ export function createUploadService(deps: UploadDeps) {
 		},
 	};
 }
-
-export type UploadService = ReturnType<typeof createUploadService>;

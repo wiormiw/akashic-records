@@ -6,7 +6,8 @@ import { createLogger } from '@akashic/lib/log';
 import { systemClock } from '@akashic/lib/time';
 import { Env } from '@/config.ts';
 import { createEmbedder } from '@/integrations/embedder.ts';
-import { createRealmService, type RealmService } from '@/modules/realm/realm.service.ts';
+import { createRealmService } from '@/modules/realm/realm.service.ts';
+import type { RealmService } from '@/modules/realm/realm.types.ts';
 
 // Gives every realm without a centroid one, from its name and description, so posting fit can
 // be judged. Realms founded while no embedding model was configured are the ones this catches.

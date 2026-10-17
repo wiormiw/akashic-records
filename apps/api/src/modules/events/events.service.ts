@@ -235,5 +235,3 @@ export function createEventService(deps: EventsDeps) {
 		},
 	};
 }
-
-export type EventService = ReturnType<typeof createEventService>;

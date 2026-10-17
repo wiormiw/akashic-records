@@ -3,7 +3,9 @@ import type { ContentTooLarge, StorageNotConfigured, ValidationFailed } from '@a
 import type { Logger } from '@akashic/lib/log';
 import type { RateLimiter } from '@/integrations/rate-limit.ts';
 import type { ImageStore } from '@/integrations/storage.ts';
-import type { UploadService } from './upload.service.ts';
+import type { createUploadService } from './upload.service.ts';
+
+export type UploadService = ReturnType<typeof createUploadService>;
 
 export interface UploadDeps {
 	store: ImageStore;

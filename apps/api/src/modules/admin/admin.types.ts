@@ -2,15 +2,15 @@ import type { Executor } from '@akashic/db';
 import type { RealmNotFound, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import type { Clock } from '@akashic/lib/time';
 import type { Sessions } from '@/http/session.ts';
-import type { AdminService } from './admin.service.ts';
+import type { createAdminService } from './admin.service.ts';
+
+export type AdminService = ReturnType<typeof createAdminService>;
 
 /** What the admin service is built from. */
 export interface AdminDeps {
 	db: Executor;
 	clock: Clock;
 }
-
-export type { AdminService };
 
 /** What the admin routes are built from: every route sits behind the platform-admin session. */
 export interface AdminRoutesDeps {

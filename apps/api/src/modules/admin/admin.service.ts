@@ -324,5 +324,3 @@ export function createAdminService(deps: AdminDeps) {
 		},
 	};
 }
-
-export type AdminService = ReturnType<typeof createAdminService>;
