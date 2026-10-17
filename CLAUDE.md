@@ -104,3 +104,8 @@ they differ from the schema.
 12. **Drizzle 1.0 names constraints `_pkey` / `_fkey`.**
 13. **There is no request scope.** Every route group uses `AppEnv`; per-request values are on
     `c.var` and go to services as arguments.
+14. **Lock a row that others reference `FOR NO KEY UPDATE`, not `FOR UPDATE`.** Inserting a child
+    takes `KEY SHARE` on its parent, which `FOR UPDATE` blocks: recall votes deadlocked on it.
+15. **`realm_member` rows are locked in one statement, ordered by `user_id`.** Locking them one at
+    a time, or re-reading a role outside the lock, is how `changeRole`, `leave` and unseating
+    deadlocked or acted on a stale role.
