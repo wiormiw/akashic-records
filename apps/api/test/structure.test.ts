@@ -364,10 +364,17 @@ describe('structure', () => {
 			seen.add(f);
 			for (const s of specifiers(await read(f))) {
 				if (s.startsWith('.')) queue.push(posix.join(posix.dirname(f), s));
-				else bare.add(s);
+				else {
+					bare.add(s);
+					// Walk into the two lib files too: if one grew a `lib/log` import, the server
+					// logger would reach the browser bundle.
+					if (s === '@akashic/lib/enums') queue.push('packages/lib/src/enums.ts');
+					if (s === '@akashic/lib/errors') queue.push('packages/lib/src/errors.ts');
+				}
 			}
 		}
 		expect(seen.size).toBeGreaterThan(1);
+		expect(seen.has('packages/lib/src/enums.ts')).toBe(true);
 		expect([...bare].filter((s) => !allowed.has(s))).toEqual([]);
 	});
 
