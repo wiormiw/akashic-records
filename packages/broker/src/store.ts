@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, lte } from 'drizzle-orm';
+import { and, asc, eq, inArray, lt, lte, type AnyColumn, type SQL } from 'drizzle-orm';
 import {
 	OutboxStatus,
 	outboxMessages,
@@ -8,6 +8,10 @@ import {
 } from '@akashic/db';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { claimUntil, revive } from './event.ts';
+
+// The mail event's type (`MAIL_REQUESTED` in @akashic/contracts). Stored in rows: never rename it.
+// The broker doesn't depend on contracts, so it is spelled out here.
+const MAIL_TOPIC = 'mail.requested';
 
 type Row = typeof outboxMessages.$inferSelect;
 
@@ -22,7 +26,7 @@ export interface OutboxStore {
 	finish(next: OutboxEvent, deadline: Temporal.Instant): Promise<boolean>;
 	/**
 	 * Deletes published events older than `before`, oldest first, at most `limit` so one call is
-	 * bounded. Pending and dead events are never touched. Returns how many went.
+	 * bounded. Dead mail events past the cutoff go too (their payloads hold addresses and tokens); pending and other dead events are never touched. Returns how many went.
 	 */
 	prune(before: Temporal.Instant, limit: number): Promise<number>;
 }
@@ -111,27 +115,55 @@ export function createOutboxStore(db: Db): OutboxStore & OutboxRecovery {
 		},
 
 		async prune(before, limit) {
-			const old = db
-				.select({ id: outboxMessages.id })
-				.from(outboxMessages)
-				.where(
-					and(
-						eq(outboxMessages.status, OutboxStatus.published),
-						lt(outboxMessages.publishedAt, toDate(before)),
-					),
-				)
-				.orderBy(asc(outboxMessages.publishedAt), asc(outboxMessages.id))
-				.limit(limit);
-			// The status is repeated on the delete so a row revived meanwhile is never removed.
-			const deleted = await db
-				.delete(outboxMessages)
-				.where(
-					and(inArray(outboxMessages.id, old), eq(outboxMessages.status, OutboxStatus.published)),
-				)
-				.returning({ id: outboxMessages.id });
-			return deleted.length;
+			// The status is repeated on each delete so a row revived meanwhile is never removed.
+			const published = await deleteOldest(
+				db,
+				and(
+					eq(outboxMessages.status, OutboxStatus.published),
+					lt(outboxMessages.publishedAt, toDate(before)),
+				),
+				OutboxStatus.published,
+				outboxMessages.publishedAt,
+				limit,
+			);
+			if (published >= limit) return published;
+			// Mail carries addresses and tokens, so it doesn't wait in the dead letters; every other
+			// dead event stays for `events:replay`.
+			const deadMail = await deleteOldest(
+				db,
+				and(
+					eq(outboxMessages.status, OutboxStatus.dead),
+					eq(outboxMessages.messageType, MAIL_TOPIC),
+					lt(outboxMessages.createdAt, toDate(before)),
+				),
+				OutboxStatus.dead,
+				outboxMessages.createdAt,
+				limit - published,
+			);
+			return published + deadMail;
 		},
 	};
+}
+
+/** Deletes the oldest `limit` rows matching `where`, re-checking `status` on the delete itself. */
+async function deleteOldest(
+	db: Db,
+	where: SQL | undefined,
+	status: number,
+	orderBy: AnyColumn,
+	limit: number,
+) {
+	const old = db
+		.select({ id: outboxMessages.id })
+		.from(outboxMessages)
+		.where(where)
+		.orderBy(asc(orderBy), asc(outboxMessages.id))
+		.limit(limit);
+	const deleted = await db
+		.delete(outboxMessages)
+		.where(and(inArray(outboxMessages.id, old), eq(outboxMessages.status, status)))
+		.returning({ id: outboxMessages.id });
+	return deleted.length;
 }
 
 /** The columns an event's transitions change; the rest is written once, by `publish`. */
