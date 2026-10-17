@@ -241,7 +241,7 @@ export function createSeatService(deps: GovernanceDeps) {
 
 	/**
 	 * Takes a moderator's seat and their upvotes, then refills seats from the standings. Refuses
-	 * when the subject has become an admin since the caller checked: an admin holds no seat.
+	 * when the subject has become an admin, or no longer holds a seat, since the caller checked.
 	 */
 	async function unseat(
 		tx: Tx,
@@ -255,8 +255,13 @@ export function createSeatService(deps: GovernanceDeps) {
 		await lockMembers(tx, realmId);
 		// Read again under the lock. A promotion committed since the caller's check took the row out
 		// of the locked set; demoting it now would lock an admin row out of order, and demote them.
-		if ((await roleOf(tx, realmId, userId)) === RealmRole.admin) {
+		// A demotion or a departure leaves nothing to take, and must not wipe votes or audit a change.
+		const role = await roleOf(tx, realmId, userId);
+		if (role === RealmRole.admin) {
 			return err(new ValidationFailed('They are an admin now. An admin holds no seat to take.'));
+		}
+		if (role !== RealmRole.moderator) {
+			return err(new NoSeatInRealm('They do not hold a seat in this realm.'));
 		}
 		await tx.delete(realmEndorsements).where(ofCandidate(realmId, userId));
 		await setRoles(tx, realmId, [userId], RealmRole.member);

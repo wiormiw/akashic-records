@@ -254,4 +254,32 @@ describe.skipIf(!live)('removing a moderator', () => {
 			expect(await w.memberChanges(id)).toEqual([]);
 			expect(await w.audits(moderator)).toEqual([]);
 		}));
+
+	test('someone demoted after the check is refused under the lock, with nothing wiped', () =>
+		inWorld(async (w, tx) => {
+			const { id, admin, people } = await w.realm(4);
+			const [moderator, ...voters] = people as [string, ...string[]];
+			await w.upvotes(id, moderator, voters);
+			await w.setRole(id, moderator, RealmRole.moderator);
+			// The demotion commits between removeModerator's check and its transaction.
+			const demoting = new Proxy(tx, {
+				get(target, key) {
+					if (key === 'transaction') {
+						return async (...args: Parameters<Tx['transaction']>) => {
+							await w.setRole(id, moderator, RealmRole.member);
+							return target.transaction(...args);
+						};
+					}
+					const value: unknown = Reflect.get(target, key, target);
+					return typeof value === 'function' ? value.bind(target) : value;
+				},
+			});
+			const { seats } = createGovernanceServices({ db: demoting, clock });
+
+			expectErr(await seats.removeModerator(id, moderator, admin, 'Gone quiet.'), NoSeatInRealm);
+			expect(await w.roleOf(id, moderator)).toBe(RealmRole.member);
+			expect(await w.endorsementsOf(id, moderator)).toHaveLength(voters.length);
+			expect(await w.memberChanges(id)).toEqual([]);
+			expect(await w.audits(moderator)).toEqual([]);
+		}));
 });
