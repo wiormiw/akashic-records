@@ -134,4 +134,19 @@ describe.skipIf(!live)('uploads', () => {
 			expect(over.status).toBe(429);
 			expect(over.body.code).toBe('common.request.rate_limited');
 		}));
+
+	test('refused uploads leave the hourly budget unspent', () =>
+		scenario(async ({ call, user }) => {
+			const gif = () => formOf(new File([PNG], 'a.gif', { type: 'image/gif' }));
+			for (let i = 0; i < policy.uploads.perHour + 1; i++) {
+				const refused = await call('POST', '/api/v1/uploads/listings', { as: user, form: gif() });
+				expect(refused.status).toBe(400);
+			}
+			// Were refusals charged, the budget would be gone and these would be 429.
+			const png = formOf(new File([PNG], 'a.png', { type: 'image/png' }));
+			expect((await call('POST', '/api/v1/uploads/listings', { as: user, form: png })).status).toBe(
+				201,
+			);
+			expect((await call('GET', '/api/v1/uploads', { as: user })).status).toBe(200);
+		}));
 });
