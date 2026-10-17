@@ -24,21 +24,30 @@ sudo install -d -o deploy -g deploy -m 755 /opt/akashic
 
 - Allow inbound 22, 80 and 443 only. Caddy needs 80 for the certificate challenge.
 - DNS: an `A` record for `API_DOMAIN` (say `api.example.com`) pointing at the box. Do it first;
-  Caddy asks for the certificate on its first start and rate-limits repeated failures.
+  Caddy asks for the certificate as soon as it starts and rate-limits repeated failures.
 - An SSH keypair for CI, with no passphrase: put the public half in
-  `~deploy/.ssh/authorized_keys`, keep the private half for `DEPLOY_SSH_KEY`.
+  `~deploy/.ssh/authorized_keys`, keep the private half for `DEPLOY_SSH_KEY`:
+
+```sh
+sudo -u deploy sh -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys \
+  && chmod 600 ~/.ssh/authorized_keys' < ci_key.pub
+```
+
 - A private S3-compatible bucket for backups, and a key that can read, write and delete in it only.
 
 ## 2. GitHub
 
 Create the `production` environment (Settings, Environments). Add required reviewers if you want
-a human gate on each deploy.
+a human gate on each deploy. Set `DEPLOY_SSH_KEY`, `DEPLOY_USER` and `DEPLOY_KNOWN_HOSTS` now;
+leave `API_ENV` and `DEPLOY_HOST` until the end of section 3. Setting `DEPLOY_HOST` turns on
+deploys for every push to `main`, and a deploy before first boot, or with `API_ENV` lacking the
+FGA ids, takes the API down.
 
 | Where | Name | Value |
 | --- | --- | --- |
-| environment secret | `API_ENV` | the whole `.env` (section 3) |
+| environment secret | `API_ENV` | the whole `.env`, FGA ids included (set last, section 3) |
 | environment secret | `DEPLOY_SSH_KEY` | the private key, whole file |
-| **repository** variable | `DEPLOY_HOST` | the box's address |
+| **repository** variable | `DEPLOY_HOST` | the box's address (set last, section 3) |
 | environment variable | `DEPLOY_USER` | `deploy` |
 | environment variable | `DEPLOY_KNOWN_HOSTS` | output of `ssh-keyscan <host>`, run once |
 
@@ -71,8 +80,10 @@ RabbitMQ. Set `API_SITE_ADDRESS` and `BETTER_AUTH_URL` to the API domain, `CORS_
 Vercel origin, `TRUST_PROXY=true`, and the `BACKUP_*` values. Leave `FGA_STORE_ID` and
 `FGA_MODEL_ID` empty.
 
-The image: CI pushes to GHCR, which needs a login (a PAT with `read:packages`; the packages are
-private by default, or make them public and skip this).
+The image: CI pushes to GHCR only from `main`, so push to `main` once with `DEPLOY_HOST` still
+empty; the build runs, nothing deploys, and `<commit-sha>` below is that commit. Pulling needs a
+login (a PAT with `read:packages`; the packages are private by default, or make them public and
+skip this). The `dc` alias is for pasting into your shell.
 
 ```sh
 echo "$PAT" | docker login ghcr.io -u <github-user> --password-stdin
@@ -88,22 +99,26 @@ Paste the two ids into `.env`, then bring everything up:
 
 ```sh
 dc up -d
+dc up -d --wait api caddy
 curl -fsS https://api.example.com/readyz
 ```
 
 `up -d` also runs `rabbitmq-policy`, a one-shot that gives the mail dead queue a 7-day message
-TTL; it exits 0 and stays exited. Caddy fetches its certificate on the first request.
+TTL; it exits 0 and stays exited, which is why the wait names only `api` and `caddy` (`--wait`
+treats an exited service as a failure). Caddy fetches its certificate at start, so the first
+`curl` can still fail for a few seconds; retry.
 
-Now copy the finished `.env`, ids included, into the `API_ENV` secret. CI overwrites
-`/opt/akashic/.env` with that secret on every deploy; if it still has empty ids, the next deploy
-takes the API down.
+Last, enable CI: copy the finished `.env`, ids included, into the `API_ENV` secret, then set
+`DEPLOY_HOST`. CI overwrites `/opt/akashic/.env` with that secret on every deploy; if it still has
+empty ids, the next deploy takes the API down.
 
 ### First admin
 
 Sign up on the web app first. `admin-grant` refuses an account whose address is unverified, and
 sign-in does too, so the account needs the verification mail: set `RESEND_API_KEY` and
 `MAIL_FROM`, and click the link. Without a mail key nothing is sent; mark the one account
-verified in SQL instead (rehearsed locally, where no mail is sent):
+verified in SQL instead (rehearsed locally, where no mail is sent; the local form of these
+commands is in section 7):
 
 ```sh
 dc exec postgres psql -U akashic -d akashic \
@@ -192,13 +207,21 @@ deploy/up-local.sh --web      # without --web: the API only
 It writes `deploy/.env.local` (gitignored, generated secrets), builds `akashic-api:local` and
 `akashic-web:local`, migrates, pushes the authz model, and starts api and caddy on
 `127.0.0.1:8300` and web on `127.0.0.1:8301`. Run it again and it reuses everything. Local MinIO
-stands in for the backup bucket, and no mail is sent, so a new account is verified by the SQL in
-"First admin" before it can sign in. Tear down, volumes included:
+stands in for the backup bucket, and no mail is sent, so a new account is verified by SQL before
+it can sign in. From the repository root, paste this once per shell (it uses the same file and
+variables as `up-local.sh`):
 
 ```sh
-docker compose -p akashic-prod --profile local --profile web --env-file deploy/.env.local \
-  -f deploy/compose.prod.yaml down -v
-rm deploy/.env.local
+dcl() {
+  API_ENV_FILE=.env.local API_IMAGE=akashic-api:local WEB_IMAGE=akashic-web:local \
+    docker compose -p akashic-prod --profile local --profile web \
+    --env-file deploy/.env.local -f deploy/compose.prod.yaml "$@"
+}
+# After signing up at http://localhost:8301/register:
+dcl exec -T postgres psql -U akashic -d akashic \
+  -c "UPDATE \"user\" SET email_verified = true WHERE email = 'you@example.test'"
+dcl run --rm -T api bun apps/api/scripts/admin-grant.ts you@example.test
+dcl down -v && rm deploy/.env.local     # tear down, volumes included
 ```
 
 ## Kubernetes: the scale-out path
