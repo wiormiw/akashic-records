@@ -19,6 +19,9 @@ export interface BuildEnv {
 	[other: string]: string | undefined;
 }
 
+/** Where a local build assumes the API is; config.ts defaults to it too, so the CSP agrees. */
+export const DEFAULT_API_BASE = 'http://localhost:3000';
+
 export interface CspOrigins {
 	connect: Sources;
 	img: Sources;
@@ -26,6 +29,7 @@ export interface CspOrigins {
 
 /** An explicit ADAPTER wins; otherwise Vercel's own VERCEL=1 selects its adapter. */
 export function chooseAdapter(env: BuildEnv): AdapterName {
+	requireApiBase(env);
 	const explicit = env.ADAPTER;
 	if (explicit) {
 		if (explicit !== 'node' && explicit !== 'vercel')
@@ -35,18 +39,23 @@ export function chooseAdapter(env: BuildEnv): AdapterName {
 	return env.VERCEL === '1' ? 'vercel' : 'node';
 }
 
+/** A Vercel build has no local API to fall back on; a baked-in localhost would break every room. */
+export function requireApiBase(env: BuildEnv): void {
+	if (env.VERCEL && !env.PUBLIC_API_BASE)
+		throw new Error('PUBLIC_API_BASE must be set for a Vercel build');
+}
+
 /**
  * The origins the page may reach beyond itself: the room socket on the API and uploaded images
- * on the media host. Both are known only at build time, so they are baked into the policy.
+ * on the media host. The policy is baked in at build time, so these origins are fixed per build;
+ * with no PUBLIC_API_BASE the API defaults to the same origin config.ts uses.
  */
 export function cspOrigins(env: BuildEnv): CspOrigins {
 	const connect: Sources = ['self'];
 	const img: Sources = ['self', 'data:'];
-	if (env.PUBLIC_API_BASE) {
-		const api = new URL(env.PUBLIC_API_BASE);
-		// The socket lives on the API's host; `connect-src 'self'` does not cover another origin.
-		connect.push(`${api.protocol === 'https:' ? 'wss' : 'ws'}://${api.host}` as Source);
-	}
+	const api = new URL(env.PUBLIC_API_BASE || DEFAULT_API_BASE);
+	// The socket lives on the API's host; `connect-src 'self'` does not cover another origin.
+	connect.push(`${api.protocol === 'https:' ? 'wss' : 'ws'}://${api.host}` as Source);
 	if (env.PUBLIC_MEDIA_ORIGIN) img.push(new URL(env.PUBLIC_MEDIA_ORIGIN).origin as Source);
 	return { connect, img };
 }

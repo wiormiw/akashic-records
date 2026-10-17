@@ -378,7 +378,8 @@ already running:
 - Each app validates its environment at startup and refuses to start when a required variable is
   missing or malformed, as `config.ts` does today. A bad secret fails the deploy, not a request.
 - **Web:** variables live in the Vercel project, separately for Production and Preview. The app
-  reads `$env/dynamic/public`, so changing `PUBLIC_API_BASE` needs no rebuild.
+  reads `$env/dynamic/public`, but the API and media origins are fixed per build (the CSP is baked
+  in), so changing `PUBLIC_API_BASE` or `PUBLIC_MEDIA_ORIGIN` needs a rebuild.
 - **API:** secrets live in a GitHub Environment named `production`, which can require approval
   before a deploy. The deploy workflow builds the image, pushes it to GHCR, writes
   `/opt/akashic/.env` on the VPS over SSH with mode 600, and restarts the stack with compose.
