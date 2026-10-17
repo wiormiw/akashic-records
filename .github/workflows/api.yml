@@ -59,9 +59,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # A skipped job can't write a summary, and the gated deploy must not enter its environment
+  # (required reviewers) for a no-op; this small job says why nothing deployed.
+  deploy-skipped:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HOST == ''
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "deploy skipped: set DEPLOY_HOST (repository variable) and DEPLOY_USER" >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     needs: image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HOST != ''
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -73,40 +83,37 @@ jobs:
       DEPLOY_DIR: /opt/akashic
       IMAGE: ghcr.io/wiormiw/akashic-api:${{ github.sha }}
     steps:
-      # The VPS may not exist yet; say so rather than failing every push.
-      - if: env.DEPLOY_HOST == ''
-        run: |
-          echo "deploy skipped: set DEPLOY_HOST (repository variable) and DEPLOY_USER" >> "$GITHUB_STEP_SUMMARY"
-      - if: env.DEPLOY_HOST != ''
-        uses: actions/checkout@v4
-      - if: env.DEPLOY_HOST != ''
-        name: ssh setup
+      - uses: actions/checkout@v4
+      - name: ssh setup
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n' \
+          # The pinned key, not ssh-keyscan here: scanning at deploy time trusts whatever answers.
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::error::DEPLOY_KNOWN_HOSTS is empty: run 'ssh-keyscan <host>' once and store the output in that repository variable"
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' \
             "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
       # compose.prod.yaml reads ./.env (API_ENV_FILE defaults to it), so the env sits beside it.
-      - if: env.DEPLOY_HOST != ''
-        name: copy the stack
+      - name: copy the stack
         run: |
           # shellcheck disable=SC2029  # expanding on this side is the point
           ssh vps "mkdir -p $DEPLOY_DIR"
           scp -r deploy/compose.prod.yaml deploy/Caddyfile deploy/backup "vps:$DEPLOY_DIR/"
-      - if: env.DEPLOY_HOST != ''
-        name: write the env
+      - name: write the env
         env:
           API_ENV: ${{ secrets.API_ENV }}
         run: |
           # shellcheck disable=SC2029  # expanding on this side is the point
           # umask first, so the file is never readable by others, even briefly.
           printf '%s\n' "$API_ENV" | ssh vps "umask 077 && cat > $DEPLOY_DIR/.env && chmod 600 $DEPLOY_DIR/.env"
-      - if: env.DEPLOY_HOST != ''
-        name: release
+      - name: release
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
@@ -122,8 +129,7 @@ jobs:
             docker compose -p akashic-prod -f compose.prod.yaml up -d"
       # Through Caddy, so a broken proxy or certificate fails the deploy too. --resolve keeps the
       # check on the VPS itself, whatever DNS says yet.
-      - if: env.DEPLOY_HOST != ''
-        name: wait for /readyz
+      - name: wait for /readyz
         run: |
           # shellcheck disable=SC2029  # expanding on this side is the point
           ssh vps "cd $DEPLOY_DIR

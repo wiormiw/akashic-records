@@ -6,9 +6,11 @@ on:
   # api.yml runs the same check before it builds and deploys an image.
   workflow_call:
 
-# A newer push to the same branch makes the running check moot.
+# A newer push to the same branch makes the running check moot. When called, github.workflow is
+# the CALLER's name, so the groups are `ci-ci-<ref>` standalone and `api-ci-<ref>` from api.yml:
+# distinct from each other and from api.yml's own `api-<ref>`, so none cancels another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
