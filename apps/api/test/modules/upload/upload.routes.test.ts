@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import { LimitsView } from '@akashic/contracts';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { silentLogger } from '@akashic/lib/log';
@@ -10,14 +11,6 @@ import { JPEG, memoryStore, PNG } from './fixtures.ts';
 
 // Both upload routes through app.request. The session looks the caller up in Postgres, so these run
 // on the real database in a rolled-back transaction.
-
-// The web app's schema (akashic_records_fe/src/lib/api/uploads.ts); Plan 3 replaces it with the
-// shared contract.
-const WebUploadPolicy = v.object({
-	enabled: v.boolean(),
-	imageTypes: v.array(v.string()),
-	maxBytes: v.number(),
-});
 
 const database = createDb({
 	url: databaseUrl,
@@ -54,7 +47,7 @@ describe.skipIf(!live)('uploads', () => {
 		scenario(async ({ call, user }) => {
 			const { status, body } = await call('GET', '/api/v1/uploads', { as: user });
 			expect(status).toBe(200);
-			expect(v.parse(WebUploadPolicy, body)).toEqual({
+			expect(v.parse(LimitsView, body)).toEqual({
 				enabled: true,
 				imageTypes: [...policy.uploads.imageTypes],
 				maxBytes: policy.uploads.maxBytes,
@@ -118,7 +111,7 @@ describe.skipIf(!live)('uploads', () => {
 	test('without a bucket: limits say disabled, an upload is 502 external.storage.not_configured', () =>
 		scenario(async ({ call, user }) => {
 			const limits = await call('GET', '/api/v1/uploads', { as: user });
-			expect(v.parse(WebUploadPolicy, limits.body).enabled).toBe(false);
+			expect(v.parse(LimitsView, limits.body).enabled).toBe(false);
 			const form = formOf(new File([PNG], 'a.png', { type: 'image/png' }));
 			const refused = await call('POST', '/api/v1/uploads/listings', { as: user, form });
 			expect(refused.body.code).toBe('external.storage.not_configured');

@@ -1,3 +1,5 @@
+// The real protection is the presenters typed InferInput<View>, the route tests parsing with the
+// views, svelte-check and the coverage guard. The JSON round trip only catches non-JSON values.
 import { describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
 import * as contracts from '@akashic/contracts';

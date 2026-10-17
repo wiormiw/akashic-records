@@ -18,7 +18,7 @@ import { adminApp } from './app.ts';
 import { world, type World } from './fixtures.ts';
 
 // Every admin route through app.request, on the real database in a rolled-back transaction: the
-// happy path parses with the web app's schema, and the surface refuses everyone else with 404.
+// happy path parses with the contracts view, and the surface refuses everyone else with 404.
 
 const database = createDb({
 	url: databaseUrl,

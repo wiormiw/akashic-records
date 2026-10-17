@@ -18,7 +18,7 @@ import { governanceApp } from './app.ts';
 import { world, type World } from './fixtures.ts';
 
 // Every governance route through app.request, on the real database in a rolled-back transaction:
-// the happy path parses with the web app's schema where it has one, and each group has its
+// the happy path parses with the contracts view where it has one, and each group has its
 // refusals.
 
 const database = createDb({

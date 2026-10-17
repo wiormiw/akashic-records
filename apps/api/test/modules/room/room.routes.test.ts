@@ -16,7 +16,7 @@ import { roomApp } from './app.ts';
 import { deviceKey, outgoing, world, type World } from './fixtures.ts';
 
 // Every room HTTP route through app.request, on the real database in a rolled-back transaction:
-// the happy path parses with the web app's schema, and each group has its refusals.
+// the happy path parses with the contracts view, and each group has its refusals.
 
 const database = createDb({
 	url: databaseUrl,

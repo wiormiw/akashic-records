@@ -26,7 +26,7 @@ import { databaseUrl } from '../../support/fixtures.ts';
 import { CENTROID, embedderOf, FAR, UNCERTAIN, world } from './fixtures.ts';
 
 // Every postings route through app.request, on the real database in a rolled-back transaction:
-// each happy path parses with the web app's schema, each group has its refusals, and an id from
+// each happy path parses with the contracts view, each group has its refusals, and an id from
 // another realm is never acted on through this realm's URL.
 
 const database = createDb({
