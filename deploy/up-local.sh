@@ -21,7 +21,7 @@ export API_IMAGE=akashic-api:local
 export WEB_IMAGE=akashic-web:local
 
 dc() {
-	docker compose -p akashic-prod --env-file "$ENV_FILE" -f deploy/compose.prod.yaml "$@"
+	docker compose -p akashic-prod --profile local --env-file "$ENV_FILE" -f deploy/compose.prod.yaml "$@"
 }
 
 get_var() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
@@ -33,7 +33,7 @@ if [ -f "$ENV_FILE" ]; then
 else
 	cp deploy/env.local.example "$ENV_FILE"
 	chmod 600 "$ENV_FILE"
-	for token in POSTGRES_PASSWORD OPENFGA_DB_PASSWORD RABBITMQ_PASSWORD BETTER_AUTH_SECRET; do
+	for token in POSTGRES_PASSWORD OPENFGA_DB_PASSWORD RABBITMQ_PASSWORD BACKUP_S3_SECRET_ACCESS_KEY BETTER_AUTH_SECRET; do
 		sed -i "s|__${token}__|$(openssl rand -hex 32)|g" "$ENV_FILE"
 	done
 	echo "wrote $ENV_FILE with generated secrets"
@@ -46,7 +46,10 @@ if $WITH_WEB; then
 fi
 
 echo "== 3. data services"
-dc up -d --wait postgres openfga-db openfga redis rabbitmq
+# minio stands in for the S3 the backups go to; the `local` profile is always on. Its bucket is
+# made by a one-shot run, since `up --wait` treats a service that exits as a failure.
+dc up -d --wait postgres openfga-db openfga redis rabbitmq minio
+dc run --rm -T minio-init
 
 echo "== 4. migrate"
 dc run --rm --no-deps -T api bun apps/api/scripts/migrate.ts
@@ -72,9 +75,9 @@ fi
 
 echo "== 6. api and caddy"
 if $WITH_WEB; then
-	dc --profile web up -d --wait api caddy web
+	dc --profile web up -d --wait api caddy backup web
 else
-	dc up -d --wait api caddy
+	dc up -d --wait api caddy backup
 fi
 
 echo "== 7. readyz"

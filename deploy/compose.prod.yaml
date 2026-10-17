@@ -146,6 +146,60 @@ services:
       api:
         condition: service_healthy
 
+  # Nightly `pg_dump` to S3-compatible storage at 02:00 Asia/Jakarta. Restore by hand:
+  #   docker compose stop api
+  #   docker compose run --rm backup /backup/restore.sh postgres/<timestamp>.dump
+  # into an existing (empty, if you recreated it) `akashic` database, then start the api again.
+  # Only the app database is dumped: OpenFGA's tuples are rebuilt from it by `authz:backfill`.
+  backup:
+    build: ./backup
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: akashic
+      PGDATABASE: akashic
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:?set BACKUP_BUCKET in the env file}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:?set BACKUP_S3_ENDPOINT in the env file}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?set BACKUP_S3_ACCESS_KEY_ID in the env file}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?set BACKUP_S3_SECRET_ACCESS_KEY in the env file}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Local rehearsal only (`--profile local`). In production the backups go to a real S3 bucket.
+  # MinIO publishes no Docker Hub images; Chainguard builds it. Its free images carry only
+  # `latest`, so this is pinned by digest alone (MinIO RELEASE.2026-09-22T19-25-18Z).
+  minio:
+    profiles: [local]
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${BACKUP_S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${BACKUP_S3_SECRET_ACCESS_KEY}
+      # mc has no built-in alias; this defines `local` for the health check.
+      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@localhost:9000
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket and exits. The backup script assumes the bucket exists, as it does on S3.
+  minio-init:
+    profiles: [local]
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@minio:9000
+    entrypoint: ["mc", "mb", "--ignore-existing", "local/${BACKUP_BUCKET}"]
+
   # Local rehearsal only (`--profile web`). In production the web runs on Vercel.
   web:
     profiles: [web]
@@ -175,5 +229,6 @@ volumes:
   postgres-data:
   openfga-data:
   rabbitmq-data:
+  minio-data:
   caddy-data:
   caddy-config:
