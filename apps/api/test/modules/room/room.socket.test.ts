@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { websocket } from 'hono/bun';
+import * as v from 'valibot';
 import type { Authorizer } from '@akashic/authz';
 import { createDb, type Db } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
@@ -18,7 +19,7 @@ import { createRoomRoutes } from '@/modules/room/room.routes.ts';
 import { createTickets } from '@/modules/room/room.service.ts';
 import type { RoomServices } from '@/modules/room/room.types.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
-import { outgoing, TICKET_SECRET, world } from './fixtures.ts';
+import { outgoing, TICKET_SECRET, Web, world } from './fixtures.ts';
 
 // The room socket over real WebSockets, served as main.ts serves the app: the whole app, through
 // Bun.serve with Hono's `websocket` handler.
@@ -76,7 +77,9 @@ function serve(services: RoomServices) {
 }
 
 /** Opens a socket and collects what it receives. Resolves once open, rejects if refused. */
-function connect(url: string): Promise<{ ws: WebSocket; next: () => Promise<Frame> }> {
+function connect(
+	url: string,
+): Promise<{ ws: WebSocket; next: () => Promise<Frame>; inbox: Frame[] }> {
 	const ws = new WebSocket(`ws://${url}`);
 	const inbox: Frame[] = [];
 	const waiting: ((frame: Frame) => void)[] = [];
@@ -93,7 +96,7 @@ function connect(url: string): Promise<{ ws: WebSocket; next: () => Promise<Fram
 			else waiting.push(resolve);
 		});
 	return new Promise((resolve, reject) => {
-		ws.onopen = () => resolve({ ws, next });
+		ws.onopen = () => resolve({ ws, next, inbox });
 		ws.onerror = () => reject(new Error('refused'));
 	});
 }
@@ -116,15 +119,19 @@ async function expectRefused(url: string) {
 	await expect(connect(url)).rejects.toThrow('refused');
 }
 
+// What the web app parses a live frame with (the same schema as its transcript, plus `keys`).
+const LiveFrame = v.object({ type: v.literal('message'), message: Web.StoredMessage });
+
 // ---- The handler's branches, with a scripted service -----------------------------------------
 
 const ROOM = '01a0d6ac-0000-7000-8000-000000000001';
+const OTHER_ROOM = '01a0d6ac-0000-7000-8000-000000000002';
 
 // The message body picks the outcome, so each test drives one branch of the handler.
 const scripted = {
 	rooms: {
 		admit: async (roomId: string, ticket: string) =>
-			roomId === ROOM && ticket.startsWith('ok-') ? { roomId, userId: ticket.slice(3) } : null,
+			(roomId === ROOM || roomId === OTHER_ROOM) && ticket.startsWith('ok-') ? { roomId, userId: ticket.slice(3) } : null,
 	},
 	messages: {
 		send: async (_roomId: string, senderId: string, message: { body: string }) => {
@@ -190,6 +197,7 @@ describe('room socket', () => {
 		alice.ws.send(frame('hello'));
 		const [mine, theirs] = await Promise.all([alice.next(), bob.next()]);
 		expect(mine).toEqual(theirs);
+		v.parse(LiveFrame, mine);
 		expect(mine).toMatchObject({
 			type: 'message',
 			message: {
@@ -207,6 +215,22 @@ describe('room socket', () => {
 		expect(server.relayed.slice(before).map((payload) => JSON.parse(payload))).toEqual([mine]);
 		alice.ws.close();
 		bob.ws.close();
+	});
+
+	test("a message in one room doesn't reach a socket in another", async () => {
+		const alice = await connect(server.url(ROOM, 'ok-alice'));
+		const bob = await connect(server.url(ROOM, 'ok-bob'));
+		const elsewhere = await connect(server.url(OTHER_ROOM, 'ok-carol'));
+
+		alice.ws.send(frame('hello'));
+		// The control: the other person in the same room does get it.
+		v.parse(LiveFrame, await bob.next());
+		await alice.next();
+		await Bun.sleep(100);
+		expect(elsewhere.inbox).toEqual([]);
+		alice.ws.close();
+		bob.ws.close();
+		elsewhere.ws.close();
 	});
 
 	test('a storage failure is reported to the sender, not dropped', async () => {
@@ -298,6 +322,7 @@ describe.skipIf(!live)('room socket admission', () => {
 				);
 				const [mine, theirs] = await Promise.all([a.next(), b.next()]);
 				expect(theirs).toEqual(mine);
+				v.parse(LiveFrame, mine);
 				const [stored] = await w.messageRows(roomId);
 				expect(mine).toMatchObject({
 					type: 'message',
