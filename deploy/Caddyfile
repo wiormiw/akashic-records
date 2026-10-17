@@ -1,0 +1,16 @@
+# The address is the one setting that differs: api.example.com on the VPS, which switches on
+# automatic HTTPS (certificates, renewal, the :80 redirect); http://localhost:8300 locally.
+{$API_SITE_ADDRESS} {
+	encode zstd gzip
+
+	# One line of JSON per request on stdout, for `docker compose logs caddy`.
+	log
+
+	# WebSocket upgrades (/ws/*) pass through reverse_proxy untouched.
+	#
+	# X-Forwarded-For is rewritten here, not appended to: Caddy 2 replaces a client-supplied value
+	# with the address it saw unless that peer is in `trusted_proxies`, and none is. The API
+	# (TRUST_PROXY=true) reads the right-most entry, so a client cannot choose its own rate-limit
+	# key by sending the header. Do not add trusted_proxies without rereading that code.
+	reverse_proxy api:3000
+}
