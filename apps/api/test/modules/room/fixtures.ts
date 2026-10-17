@@ -1,5 +1,4 @@
 import { eq } from 'drizzle-orm';
-import * as v from 'valibot';
 import {
 	jobs,
 	listings,
@@ -137,39 +136,3 @@ export function world(tx: Tx) {
 }
 
 export type World = ReturnType<typeof world>;
-
-// The web app's schemas (akashic_records_fe/src/lib/api/rooms.ts), copied: every response the web
-// app reads must parse with what the browser parses it with.
-const Envelope = v.object({ fingerprint: v.string(), wrappedKey: v.string(), iv: v.string() });
-
-export const Web = {
-	PublicKeys: v.object({
-		userId: v.string(),
-		publicKey: v.string(),
-		signingKey: v.nullable(v.string()),
-		fingerprint: v.string(),
-	}),
-	RoomSummary: v.object({
-		id: v.string(),
-		realmId: v.string(),
-		subjectKind: v.number(),
-		subjectId: v.string(),
-		otherId: v.string(),
-		otherName: v.string(),
-		lastMessageAt: v.nullable(v.string()),
-		createdAt: v.string(),
-	}),
-	StoredMessage: v.object({
-		id: v.string(),
-		senderId: v.string(),
-		body: v.string(),
-		iv: v.string(),
-		signature: v.nullable(v.string()),
-		createdAt: v.string(),
-		wrappedKey: v.nullable(v.string()),
-		keyIv: v.nullable(v.string()),
-		keys: v.optional(v.array(Envelope)),
-	}),
-	Opened: v.object({ id: v.string() }),
-	Ticket: v.object({ ticket: v.string(), expiresInSeconds: v.number() }),
-};

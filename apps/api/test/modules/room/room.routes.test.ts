@@ -1,12 +1,19 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import * as v from 'valibot';
+import {
+	Created,
+	DeviceKeyView,
+	MessageView,
+	RoomSummaryView,
+	TicketView,
+} from '@akashic/contracts';
 import { createDb } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { RoomSubject } from '@akashic/lib/enums';
 import { silentLogger } from '@akashic/lib/log';
 import { databaseUrl } from '../../support/fixtures.ts';
 import { roomApp } from './app.ts';
-import { deviceKey, outgoing, Web, world, type World } from './fixtures.ts';
+import { deviceKey, outgoing, world, type World } from './fixtures.ts';
 
 // Every room HTTP route through app.request, on the real database in a rolled-back transaction:
 // the happy path parses with the web app's schema, and each group has its refusals.
@@ -34,7 +41,7 @@ describe.skipIf(!live)('device keys', () => {
 
 			const keys = await call('GET', `/api/v1/rooms/keys/${ann}`, { as: ann });
 			expect(keys.status).toBe(200);
-			expect(v.parse(v.array(Web.PublicKeys), keys.body)).toEqual([
+			expect(v.parse(v.array(DeviceKeyView), keys.body)).toEqual([
 				{ userId: ann, ...deviceKey('ann-1234') },
 			]);
 		}));
@@ -77,11 +84,11 @@ describe.skipIf(!live)('opening and listing rooms', () => {
 				},
 			});
 			expect(opened.status).toBe(201);
-			const { id: roomId } = v.parse(Web.Opened, opened.body);
+			const { id: roomId } = v.parse(Created, opened.body);
 
 			const inbox = await call('GET', '/api/v1/rooms', { as: bob });
 			expect(inbox.status).toBe(200);
-			expect(v.parse(v.array(Web.RoomSummary), inbox.body)).toEqual([
+			expect(v.parse(v.array(RoomSummaryView), inbox.body)).toEqual([
 				expect.objectContaining({ id: roomId, realmId: id, otherId: ann, subjectId: listing }),
 			]);
 		}));
@@ -139,7 +146,7 @@ describe.skipIf(!live)("a room's messages and ticket", () => {
 				{ as: bob },
 			);
 			expect(transcript.status).toBe(200);
-			expect(v.parse(v.array(Web.StoredMessage), transcript.body)).toEqual([
+			expect(v.parse(v.array(MessageView), transcript.body)).toEqual([
 				expect.objectContaining({
 					senderId: alice,
 					body: 'sealed',
@@ -149,7 +156,7 @@ describe.skipIf(!live)("a room's messages and ticket", () => {
 
 			const ticket = await call('POST', `/api/v1/rooms/${roomId}/ticket`, { as: alice });
 			expect(ticket.status).toBe(200);
-			expect(v.parse(Web.Ticket, ticket.body)).toMatchObject({ expiresInSeconds: 60 });
+			expect(v.parse(TicketView, ticket.body)).toMatchObject({ expiresInSeconds: 60 });
 		}));
 
 	test('someone outside the room 404, a bad limit or id 400, signed out 401', () =>
@@ -207,7 +214,7 @@ describe.skipIf(!live)('blocking, retention and reports', () => {
 				body: { messageId: sent.value.sent.id, reason: 'threats', disclosedText: 'plaintext' },
 			});
 			expect(report.status).toBe(201);
-			expect(v.parse(Web.Opened, report.body).id).toBe((await w.reportRows(roomId))[0]!.id);
+			expect(v.parse(Created, report.body).id).toBe((await w.reportRows(roomId))[0]!.id);
 		}));
 
 	test("someone outside the room 404; bad days, a short reason, one's own message 400", () =>
