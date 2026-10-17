@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { createDb, listings } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, CommentSubject, InterestStatus, ListingStatus } from '@akashic/lib/enums';
+import { MemberNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -189,10 +190,7 @@ describe.skipIf(!live)('deals', () => {
 			const { listing } = await w.seed(realm.id, realm.admin);
 			const buyer = realm.people[0]!;
 			const outsider = await w.person('Outsider');
-			expectErr(
-				await w.listings.deal(realm.id, listing.id, realm.admin, outsider),
-				'realm.not_member',
-			);
+			expectErr(await w.listings.deal(realm.id, listing.id, realm.admin, outsider), MemberNotFound);
 			expectOk(await w.interest.show(realm.id, listing, buyer, undefined));
 			expectOk(await w.interest.drop(realm.id, listing, buyer));
 			expectErr(

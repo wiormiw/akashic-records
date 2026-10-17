@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { createDb, jobs } from '@akashic/db';
 import { withRollback } from '@akashic/db/testing';
 import { AuditAction, InterestStatus, JobStatus, JobType } from '@akashic/lib/enums';
+import { MemberNotFound } from '@akashic/lib/errors';
 import { silentLogger } from '@akashic/lib/log';
 import { expectErr, expectOk } from '@akashic/lib/testing';
 import { toDate } from '@akashic/lib/time';
@@ -138,7 +139,7 @@ describe.skipIf(!live)('hiring', () => {
 				'event.not_found',
 			);
 			expectErr(await w.jobs.hire(realm.id, job.id, other, chosen), 'realm.forbidden');
-			expectErr(await w.jobs.hire(realm.id, job.id, realm.admin, outsider), 'realm.not_member');
+			expectErr(await w.jobs.hire(realm.id, job.id, realm.admin, outsider), MemberNotFound);
 			expectOk(await w.interest.drop(realm.id, job, chosen));
 			expectErr(
 				await w.jobs.hire(realm.id, job.id, realm.admin, chosen),
