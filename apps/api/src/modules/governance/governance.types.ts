@@ -146,7 +146,7 @@ export interface TakedownOpened {
 export type RequireSeatHolderError = NoSeatInRealm | ValidationFailed;
 export type UpvoteError = ValidationFailed | NoSeatInRealm;
 export type WithdrawUpvoteError = never;
-// The subject became an admin after the caller's check.
+// The subject became an admin, or lost their seat, after the caller's check.
 export type UnseatError = ValidationFailed | NoSeatInRealm;
 export type RemoveModeratorError = RequireSeatHolderError | UnseatError;
 export type ProposeRecallError = RealmForbidden | RequireSeatHolderError | AlreadyMember;
