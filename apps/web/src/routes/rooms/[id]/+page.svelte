@@ -10,7 +10,7 @@
 		report,
 		send,
 		setBlocked,
-		LiveMessage,
+		ServerFrame,
 		type PublicKeys,
 		type ReadMessage,
 	} from '$lib/api/rooms';
@@ -119,11 +119,22 @@
 		});
 
 		socket.addEventListener('message', async (event) => {
-			const frame = JSON.parse(String(event.data)) as {
-				type: string;
-				message?: unknown;
-				detail?: string;
-			};
+			// A frame that is not JSON, or not one of ours, is dropped: a stray frame must not kill the
+			// handler.
+			let raw: unknown;
+			try {
+				raw = JSON.parse(String(event.data));
+			} catch {
+				console.warn('Ignoring a socket frame that is not JSON');
+				return;
+			}
+
+			const result = v.safeParse(ServerFrame, raw);
+			if (!result.success) {
+				console.warn('Ignoring an unrecognised socket frame', result.issues[0]?.message);
+				return;
+			}
+			const frame = result.output;
 
 			// Somebody opened the app on another browser since this page loaded. Pick up their new
 			// device and let the reader send again — the message was not stored.
@@ -134,18 +145,18 @@
 			}
 
 			if (frame.type === 'error') {
-				error = frame.detail ?? 'The server refused that.';
+				error = frame.detail;
 				return;
 			}
 
-			const parsed = v.safeParse(LiveMessage, frame.message);
-			if (!parsed.success || !keyring) return;
+			if (!keyring) return;
+			const live = frame.message;
 
 			// The sender sees their own message come back through the socket, which is what
 			// reconciles the optimistic copy against the id the server actually stored.
-			if (messages.some((existing) => existing.id === parsed.output.id)) return;
+			if (messages.some((existing) => existing.id === live.id)) return;
 
-			const read = await decode(parsed.output, keyring, devices, myFingerprint);
+			const read = await decode(live, keyring, devices, myFingerprint);
 
 			// The echo of something this device sent: drop the optimistic copy in favour of it.
 			if (read.senderId === data.user.id && read.text !== null) {

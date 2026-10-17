@@ -2,9 +2,11 @@ import * as v from 'valibot';
 import {
 	Created,
 	DeviceKeyView,
+	ErrorFrameView,
 	MessageFrameView,
 	MessageView,
 	RoomSummaryView,
+	StaleDevicesFrameView,
 	TicketView,
 } from '@akashic/contracts';
 import type { RoomSubject } from '@akashic/lib/enums';
@@ -42,6 +44,14 @@ export type LiveFrame = v.InferOutput<typeof MessageFrameView>;
 /** The message inside a live frame. */
 export const LiveMessage = MessageFrameView.entries.message;
 export type LiveMessage = LiveFrame['message'];
+
+/** Every frame the socket can carry; the page parses each one with this, never a cast. */
+export const ServerFrame = v.variant('type', [
+	MessageFrameView,
+	StaleDevicesFrameView,
+	ErrorFrameView,
+]);
+export type ServerFrame = v.InferOutput<typeof ServerFrame>;
 
 /** A message after the browser has opened it. */
 export interface ReadMessage {
