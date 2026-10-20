@@ -39,6 +39,15 @@ else
 	echo "wrote $ENV_FILE with generated secrets"
 fi
 
+# mc reads its login from MC_HOST_<alias>, a URL with the credentials in it. It is assembled here,
+# into the ignored env file, so no committed file holds a URL like that. Older env files get it too.
+mc_host() { printf 'http://%s:%s@%s:9000' "$(get_var BACKUP_S3_ACCESS_KEY_ID)" "$(get_var BACKUP_S3_SECRET_ACCESS_KEY)" "$1"; }
+for entry in MC_HOST_LOCAL_HEALTH:localhost MC_HOST_LOCAL_INIT:minio; do
+	if [ -z "$(get_var "${entry%%:*}")" ]; then
+		printf '%s=%s\n' "${entry%%:*}" "$(mc_host "${entry##*:}")" >> "$ENV_FILE"
+	fi
+done
+
 echo "== 2. build"
 docker build -f apps/api/Dockerfile -t "$API_IMAGE" .
 if $WITH_WEB; then
