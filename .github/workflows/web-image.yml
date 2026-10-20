@@ -1,7 +1,7 @@
 ---
 name: web-image
 
-# The web ships on Vercel; this builds the spare Dockerfile (never pushed) so it can't rot.
+# The web ships on Cloudflare; this builds the spare Dockerfile (never pushed) so it can't rot.
 on:
   pull_request:
     paths: &paths

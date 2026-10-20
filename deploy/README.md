@@ -1,10 +1,10 @@
 # Deploying
 
-The API runs on one VPS under Docker Compose, behind Caddy. The web app runs on Vercel. The
+The API runs on one VPS under Docker Compose, behind Caddy. The web app runs on Cloudflare. The
 Kubernetes manifests are the scale-out path, kept but not applied.
 
 ```
-Vercel (web, sin1) --HTTPS--> Caddy :443 --> api --> postgres, openfga, redis, rabbitmq
+Cloudflare (web Worker) --HTTPS--> Caddy :443 --> api --> postgres, openfga, redis, rabbitmq
                                               backup --nightly pg_dump x2--> S3-compatible bucket
 ```
 
@@ -13,7 +13,7 @@ databases publish nothing. It never collides with the dev `compose.yaml` (projec
 
 ## 1. The box
 
-- 4 vCPU / 8 GB, Ubuntu LTS, in the region you set in `apps/web/vercel.json` (`sin1` today).
+- 4 vCPU / 8 GB, Ubuntu LTS, anywhere with a public IPv4 address; the web Worker reaches it by its domain name, so the API needs a DNS name (Workers cannot fetch a bare IP).
 - Install Docker Engine with the compose plugin (<https://docs.docker.com/engine/install/>).
 - Create the deploy user and the directory:
 
@@ -82,7 +82,7 @@ On the box, edit `.env` (`chmod 600`). Every `CHANGE_ME` in `env.prod.example` m
 the API rejects the short secret, and the CI deploy refuses a `.env` that still has one. The three passwords are `openssl rand -hex 32` (hex keeps the connection strings
 URL-safe), and the same password goes in `POSTGRES_PASSWORD` and in `DATABASE_URL`, likewise
 RabbitMQ. Set `API_SITE_ADDRESS` and `BETTER_AUTH_URL` to the API domain, `CORS_ORIGINS` to the
-Vercel origin, `TRUST_PROXY=true`, and the `BACKUP_*` values. Leave `FGA_STORE_ID` and
+web app's origin, `TRUST_PROXY=true`, and the `BACKUP_*` values. Leave `FGA_STORE_ID` and
 `FGA_MODEL_ID` empty.
 
 The image: CI pushes to GHCR only from `main`, so push to `main` once with `DEPLOY_HOST` still
@@ -221,21 +221,33 @@ nothing running reads them). A migration that breaks the old image cannot be rol
 way; restore from a backup instead. To make the rollback stick, put the old value in `API_IMAGE`
 in `.env`; the next CI deploy rewrites both lines anyway.
 
-## 6. Vercel
+## 6. Cloudflare (the web app)
 
-Import the repository as a project, then:
+The web app is a SvelteKit server rendered on a Cloudflare Worker, with its assets served by
+Cloudflare. In the dashboard: Workers & Pages, Create, Import a repository, then:
 
-- Root Directory: `apps/web`.
-- Enable "Include source files outside of the Root Directory in the Build Step", or
-  `packages/contracts` does not resolve.
-- Environment variables, for Production and Preview: `PUBLIC_API_BASE` (the API's HTTPS origin, no
-  trailing slash; a build fails without it), `PUBLIC_MEDIA_ORIGIN` (the origin serving uploads,
-  which shapes the CSP `img-src`) and `PUBLIC_SITE_URL` (the web's own origin).
-- Node version is irrelevant: the function runtime is pinned to `nodejs24.x` in `vite.config.ts`.
+- Root directory: `/` (the repository root, so the workspace packages resolve).
+- Build command: `bun run --filter @akashic/web build`.
+- Deploy command: `cd apps/web && bunx wrangler deploy`. The Worker is `akashic-web`, named in
+  `apps/web/wrangler.jsonc`, and the project name must match it. Do not use `wrangler pages
+  deploy`: a Git-connected Workers build holds a Workers-scoped token and it fails with an
+  authentication error.
+- Build watch paths, so API-only commits do not redeploy it: include `apps/web/**`,
+  `packages/contracts/**`, `packages/lib/src/enums.ts` and `bun.lock`.
+- Build variables: `PUBLIC_API_BASE` (the API's HTTPS origin, no trailing slash; the build fails
+  without it), `PUBLIC_MEDIA_ORIGIN` (the origin serving uploads, which shapes the CSP
+  `img-src`) and `PUBLIC_SITE_URL` (the web's own origin). The build bakes `PUBLIC_API_BASE` into
+  the Worker as its fallback, so you do not have to repeat it as a runtime variable; set the other
+  two as runtime variables too if you change them.
 
-`vercel.json` pins region `sin1` and skips builds that touch nothing the web depends on
-(`scripts/vercel-ignore.sh`). The API's `CORS_ORIGINS` and `BETTER_AUTH_URL` must match the
-domains you give the project. `PUBLIC_*` values are baked in at build time: change one, redeploy.
+`ADAPTER` is chosen per build: `adapter-cloudflare` when Cloudflare's build marks itself
+(`WORKERS_CI=1`, or `CF_PAGES=1` for a Pages project), `adapter-node` for everything else, so
+local runs and the container stay on Node. `ADAPTER=node|cloudflare` forces one. The API's
+`CORS_ORIGINS` and `BETTER_AUTH_URL` must match the domains you give the project. The API origin
+and media origin are fixed per build (the CSP is baked in): change one, redeploy.
+
+Cloudflare's `fetch` only reaches hostnames, not bare IP addresses, so `PUBLIC_API_BASE` must be a
+domain such as `https://api.example.com`, which Caddy already serves.
 
 ## 7. Run the production stack locally
 

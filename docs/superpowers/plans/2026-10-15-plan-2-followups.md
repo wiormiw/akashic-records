@@ -78,8 +78,9 @@ a realm admin runs one realm. As built in `changeRole`:
   dead queue has a 7-day TTL (policy). Payloads still hold the address and reset link until then.
 - [x] CI deploy to the VPS (`api.yml`, gated on `DEPLOY_HOST`); the k8s migrate Job runs
   `apps/api/scripts/migrate.ts`.
-- [x] Vercel config (`nodejs24.x`, `sin1`, ignored builds). Still open: raise the runtime when
-  `adapter-vercel` supports newer Node (version 7 needs SvelteKit 3).
+- [x] Web hosting moved from Vercel to Cloudflare (Workers with static assets, `adapter-cloudflare`
+  7; version 8 needs SvelteKit 3). Still open: confirm the Git-connected build's root directory and
+  deploy command in the dashboard, and move the build variables there.
 - [x] CI builds the web image (not pushed, D8).
 
 Still open from Plan 5:

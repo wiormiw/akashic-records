@@ -72,7 +72,7 @@ akashic-records/
 ## Web and deployment
 
 `apps/web` is the SvelteKit front end (see [apps/web/README.md](apps/web/README.md)); it deploys to
-Vercel. The API deploys to a VPS with `deploy/compose.prod.yaml` behind Caddy, from the image CI
+Cloudflare. The API deploys to a VPS with `deploy/compose.prod.yaml` behind Caddy, from the image CI
 pushes to GHCR. [deploy/README.md](deploy/README.md) is the runbook: the box, the GitHub
-environment, first boot, backups and restore, Vercel, and the Kubernetes scale-out path.
+environment, first boot, backups and restore, Cloudflare, and the Kubernetes scale-out path.
 `deploy/up-local.sh [--web]` runs the same production stack on this machine to rehearse it.

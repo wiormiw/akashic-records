@@ -8,25 +8,36 @@ describe('chooseAdapter', () => {
 		expect(chooseAdapter({})).toBe('node');
 	});
 
-	test('a Vercel build uses vercel', () => {
-		expect(chooseAdapter({ VERCEL: '1', PUBLIC_API_BASE: API })).toBe('vercel');
+	test('a Pages build uses cloudflare', () => {
+		expect(chooseAdapter({ CF_PAGES: '1', PUBLIC_API_BASE: API })).toBe('cloudflare');
 	});
 
-	test('ADAPTER wins over VERCEL', () => {
-		expect(chooseAdapter({ VERCEL: '1', ADAPTER: 'node', PUBLIC_API_BASE: API })).toBe('node');
+	test('a Workers build uses cloudflare', () => {
+		expect(chooseAdapter({ WORKERS_CI: '1', PUBLIC_API_BASE: API })).toBe('cloudflare');
 	});
 
-	test('a Vercel build without PUBLIC_API_BASE fails', () => {
-		expect(() => chooseAdapter({ VERCEL: '1' })).toThrow(
-			'PUBLIC_API_BASE must be set for a Vercel build',
+	test('ADAPTER wins over the Cloudflare markers, and can force cloudflare', () => {
+		expect(chooseAdapter({ WORKERS_CI: '1', ADAPTER: 'node' })).toBe('node');
+		expect(chooseAdapter({ ADAPTER: 'cloudflare', PUBLIC_API_BASE: API })).toBe('cloudflare');
+	});
+
+	test('a Cloudflare build without PUBLIC_API_BASE fails', () => {
+		expect(() => chooseAdapter({ WORKERS_CI: '1' })).toThrow(
+			'PUBLIC_API_BASE must be set for a Cloudflare build',
 		);
-		expect(chooseAdapter({ VERCEL: '1', PUBLIC_API_BASE: 'https://api.example.com' })).toBe(
-			'vercel',
+		expect(() => chooseAdapter({ ADAPTER: 'cloudflare' })).toThrow(
+			'PUBLIC_API_BASE must be set for a Cloudflare build',
 		);
+	});
+
+	test('a node build needs no PUBLIC_API_BASE', () => {
+		expect(chooseAdapter({ ADAPTER: 'node' })).toBe('node');
 	});
 
 	test('an unknown ADAPTER fails the build', () => {
-		expect(() => chooseAdapter({ ADAPTER: 'bogus' })).toThrow('ADAPTER must be node or vercel');
+		expect(() => chooseAdapter({ ADAPTER: 'vercel' })).toThrow(
+			'ADAPTER must be node or cloudflare',
+		);
 	});
 });
 

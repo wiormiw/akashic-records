@@ -6,14 +6,17 @@ import { chooseAdapter, cspOrigins } from './build-config.ts';
 const adapterName = chooseAdapter(process.env);
 const origins = cspOrigins(process.env);
 
-// Imported on demand so a node build does not load the Vercel adapter, or the reverse. The Vercel
-// runtime is named rather than read from the building Node, which adapter-vercel 6 refuses past 24.
+// Imported on demand so a node build does not load the Cloudflare adapter, or the reverse.
 const adapter =
-	adapterName === 'vercel'
-		? (await import('@sveltejs/adapter-vercel')).default({ runtime: 'nodejs24.x' })
+	adapterName === 'cloudflare'
+		? (await import('@sveltejs/adapter-cloudflare')).default()
 		: (await import('@sveltejs/adapter-node')).default();
 
 export default defineConfig({
+	// The API origin the CSP was built for, as config.ts's fallback when the runtime has no
+	// PUBLIC_API_BASE: one build-time variable then covers both, which matters on Cloudflare where
+	// build and runtime variables are set apart.
+	define: { __API_BASE__: JSON.stringify(process.env.PUBLIC_API_BASE ?? '') },
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -79,7 +82,8 @@ export default defineConfig({
 			 * adapter-auto reads the build environment and picks a platform adapter, which produces
 			 * nothing runnable in a plain container -- and fails at build time rather than at deploy
 			 * time. So the choice is explicit: node (a server at build/index.js listening on PORT,
-			 * which the Dockerfile runs) unless Vercel sets VERCEL=1; ADAPTER overrides either way.
+			 * which the Dockerfile runs) unless Cloudflare's build marks itself (WORKERS_CI=1 or
+			 * CF_PAGES=1); ADAPTER overrides either way.
 			 */
 			adapter,
 		}),

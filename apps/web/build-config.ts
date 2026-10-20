@@ -8,10 +8,11 @@ type Source = Sources[number];
 // Pure so the build's choices are testable without running a build; type-only imports because
 // vite.config.ts loads this before anything else is set up.
 
-export type AdapterName = 'node' | 'vercel';
+export type AdapterName = 'node' | 'cloudflare';
 
 export interface BuildEnv {
-	VERCEL?: string;
+	CF_PAGES?: string;
+	WORKERS_CI?: string;
 	ADAPTER?: string;
 	PUBLIC_API_BASE?: string;
 	PUBLIC_MEDIA_ORIGIN?: string;
@@ -27,22 +28,28 @@ export interface CspOrigins {
 	img: Sources;
 }
 
-/** An explicit ADAPTER wins; otherwise Vercel's own VERCEL=1 selects its adapter. */
+/**
+ * An explicit ADAPTER wins. Otherwise Cloudflare's own build markers select its adapter: Pages
+ * sets CF_PAGES=1 and Workers Builds sets WORKERS_CI=1. Anything else, a local run or a container
+ * build, gets a Node server.
+ */
 export function chooseAdapter(env: BuildEnv): AdapterName {
-	requireApiBase(env);
 	const explicit = env.ADAPTER;
-	if (explicit) {
-		if (explicit !== 'node' && explicit !== 'vercel')
-			throw new Error('ADAPTER must be node or vercel');
-		return explicit;
-	}
-	return env.VERCEL === '1' ? 'vercel' : 'node';
+	if (explicit && explicit !== 'node' && explicit !== 'cloudflare')
+		throw new Error('ADAPTER must be node or cloudflare');
+	const name: AdapterName =
+		explicit === 'node' || explicit === 'cloudflare'
+			? explicit
+			: env.CF_PAGES === '1' || env.WORKERS_CI === '1'
+				? 'cloudflare'
+				: 'node';
+	if (name === 'cloudflare') requireApiBase(env);
+	return name;
 }
 
-/** A Vercel build has no local API to fall back on; a baked-in localhost would break every room. */
+/** A Cloudflare build has no local API to fall back on; a baked-in localhost would break every room. */
 export function requireApiBase(env: BuildEnv): void {
-	if (env.VERCEL && !env.PUBLIC_API_BASE)
-		throw new Error('PUBLIC_API_BASE must be set for a Vercel build');
+	if (!env.PUBLIC_API_BASE) throw new Error('PUBLIC_API_BASE must be set for a Cloudflare build');
 }
 
 /**

@@ -27,7 +27,7 @@ One repository, `akashic-records`, holding the API and the web app, with:
   gives each request a scope.
 - One set of Valibot contract schemas imported by both the API and the web app.
 - Full feature parity with the current API before the old repositories are retired.
-- Independent deploys: web on Vercel, API on a VPS.
+- Independent deploys: web on Cloudflare, API on a VPS.
 
 Success means: every current endpoint, event, job and test behaviour exists in the new repository;
 `apps/web` uses the shared contracts, so a response field change that breaks it fails its
@@ -343,23 +343,24 @@ The two apps deploy independently from the same repository.
 - A GitHub Actions workflow builds and ships the image only when `apps/api/**`,
   `packages/{db,lib,authz,broker,contracts}/**` or the lockfile change.
 
-### Web on Vercel
+### Web on Cloudflare
 
-- The adapter is chosen per build, not fixed: `adapter-vercel` when `process.env.VERCEL` is set
-  (Vercel sets it during its builds), `adapter-node` otherwise, so local runs, a container, a VPS
-  or Kubernetes get a Node server. An explicit `ADAPTER` variable overrides the choice, so another
-  host later is a config change, not a code change.
-- The Vercel project's root directory is `apps/web`. Vercel installs the workspace, so
-  `packages/contracts` resolves.
-- An ignored-build-step command skips a deploy unless `apps/web/**`, `packages/contracts/**`,
-  `packages/lib/**` or the lockfile changed.
+- The adapter is chosen per build, not fixed: `adapter-cloudflare` when Cloudflare's build marks
+  itself (`WORKERS_CI=1`, or `CF_PAGES=1`), `adapter-node` otherwise, so local runs, a container,
+  a VPS or Kubernetes get a Node server. An explicit `ADAPTER` variable overrides the choice, so
+  another host later is a config change, not a code change.
+- The web app is a Cloudflare Worker with static assets (`apps/web/wrangler.jsonc`), deployed by
+  `wrangler deploy` as the Git-connected build's deploy command. The build runs from the
+  repository root so `packages/contracts` resolves.
+- Build watch paths skip a deploy unless `apps/web/**`, `packages/contracts/**`,
+  `packages/lib/src/enums.ts` or the lockfile changed.
 - The web app is a backend-for-frontend: the browser talks only to SvelteKit, which calls the API
   server to server with `PUBLIC_API_BASE`. Session cookies live on the web domain, so no
   cross-site cookie setup is needed.
 - The room WebSocket connects to the API directly with a ticket. The CSP `connect-src` gains the
   API's `wss://` origin.
-- Put the Vercel functions' region close to the VPS, since every page load makes server-to-server
-  calls.
+- The Worker reaches the API by hostname over HTTPS (Workers cannot fetch a bare IP), and runs
+  near the visitor, so a page load adds one Cloudflare-to-VPS round trip.
 
 ### Keeping split deploys compatible
 
@@ -377,7 +378,7 @@ already running:
 
 - Each app validates its environment at startup and refuses to start when a required variable is
   missing or malformed, as `config.ts` does today. A bad secret fails the deploy, not a request.
-- **Web:** variables live in the Vercel project, separately for Production and Preview. The app
+- **Web:** variables live in the Cloudflare project, build variables and runtime variables set apart. The app
   reads `$env/dynamic/public`, but the API and media origins are fixed per build (the CSP is baked
   in), so changing `PUBLIC_API_BASE` or `PUBLIC_MEDIA_ORIGIN` needs a rebuild.
 - **API:** secrets live in a GitHub Environment named `production`, which can require approval
@@ -385,7 +386,7 @@ already running:
   `/opt/akashic/.env` on the VPS over SSH with mode 600, and restarts the stack with compose.
 - Non-secret defaults are committed in `.env.example` files. Real values never are.
 - When there are several environments or several people, secrets move to Infisical or Doppler,
-  which sync to GitHub, Vercel and Kubernetes. Nothing in the apps changes for that.
+  which sync to GitHub, Cloudflare and Kubernetes. Nothing in the apps changes for that.
 - No Jenkins: GitHub Actions covers building, testing and deploying both apps.
 
 ## Telemetry
@@ -470,7 +471,7 @@ Each step is its own commit, with its tests, and leaves `bun run check` green.
 9. Remaining scripts: admin grant, realm centroids.
 10. `apps/web`: moved in, its `src/lib/api/*` schemas replaced by imports from `contracts`,
     adapter chosen per build.
-11. Deployment: API Dockerfile and workflow, Vercel configuration, ignored-build step.
+11. Deployment: API Dockerfile and workflow, Cloudflare configuration, build watch paths.
 12. Docs: `README.md`, `docs/ARCHITECTURE.md` and `CLAUDE.md` for the new layout.
 
 The old repositories stay untouched throughout. Nothing is pushed until the user has created the
@@ -491,4 +492,4 @@ empty `wiormiw/akashic-records` repository on GitHub.
   `container.ts` imports it, which keeps a replacement cheap.
 - **Integration tests need Docker.** Service and route tests run against real Postgres, so they
   can't run while Docker is down. Pure unit tests still run.
-- **Vercel to VPS latency** adds to every server-rendered page. Mitigated by choosing the region.
+- **Cloudflare to VPS latency** adds to every server-rendered page. Mitigated by the VPS region, and by Cloudflare's connection reuse.

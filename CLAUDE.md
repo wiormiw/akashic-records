@@ -15,7 +15,7 @@ bun run dev            API with reload (needs postgres, redis, rabbitmq, openfga
 bun run check          format:check, lint, typecheck, test: what CI runs
 bun run format         oxfmt apps packages, then prettier on the web's .svelte files
 bun run dev:web        web app with reload (API at PUBLIC_API_BASE)
-bun --filter @akashic/web build   production build (ADAPTER=node|vercel picks the adapter)
+bun --filter @akashic/web build   production build (ADAPTER=node|cloudflare picks the adapter)
 bun run db:generate    migration from a schema change; never hand-edit packages/db/migrations/
 bun run db:migrate / authz:push / authz:backfill / events:replay
 bun run admin:grant <email> [--revoke]   make (or stop) someone a platform admin
