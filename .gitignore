@@ -7,4 +7,6 @@ build/
 .superpowers/
 apps/web/.svelte-kit
 apps/web/build
-apps/web/.vercel
+apps/web/.wrangler
+deploy/.env.local
+deploy/.env.prod

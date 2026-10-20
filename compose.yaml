@@ -126,6 +126,31 @@ services:
       timeout: 5s
       retries: 20
 
+  # Mail payloads hold addresses and tokens, so the mail dead queue drops messages after 7 days.
+  # A policy, not queue arguments: redeclaring an existing queue with new arguments fails.
+  # A PUT of the same policy changes nothing, so this is safe on every `up`.
+  rabbitmq-policy:
+    # The rabbitmq image has no curl, and rabbitmqctl from another container needs the node's
+    # cookie and name; the management API needs only the login.
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    command:
+      - --fail
+      - --silent
+      - --show-error
+      - --user
+      - akashic:akashic
+      - --request
+      - PUT
+      - --header
+      - "content-type: application/json"
+      - --data
+      - '{"pattern":"^akashic\\.mail\\.dead$$","definition":{"message-ttl":604800000},"apply-to":"queues"}'
+      - http://rabbitmq:15672/api/policies/%2F/mail-dead-ttl
+
   # MinIO stopped publishing images to Docker Hub (minio/minio and minio/mc are gone); Chainguard
   # builds it from source. Its entrypoint is the minio binary, and it ships mc and a shell, so
   # the health check and minio-init below need no second image.

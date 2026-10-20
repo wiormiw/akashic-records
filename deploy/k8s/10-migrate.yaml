@@ -54,7 +54,7 @@ spec:
           # not a separate image — the property that the API cannot migrate comes from the package
           # boundary, not from what is installed where.
           image: ghcr.io/wiormiw/akashic-api:latest
-          command: ["bun", "src/jobs/migrate.ts"]
+          command: ["bun", "apps/api/scripts/migrate.ts"]
 
           env:
             - name: DATABASE_URL

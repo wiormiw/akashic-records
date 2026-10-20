@@ -15,12 +15,16 @@ bun run dev            API with reload (needs postgres, redis, rabbitmq, openfga
 bun run check          format:check, lint, typecheck, test: what CI runs
 bun run format         oxfmt apps packages, then prettier on the web's .svelte files
 bun run dev:web        web app with reload (API at PUBLIC_API_BASE)
-bun --filter @akashic/web build   production build (ADAPTER=node|vercel picks the adapter)
+bun --filter @akashic/web build   production build (ADAPTER=node|cloudflare picks the adapter)
 bun run db:generate    migration from a schema change; never hand-edit packages/db/migrations/
 bun run db:migrate / authz:push / authz:backfill / events:replay
 bun run admin:grant <email> [--revoke]   make (or stop) someone a platform admin
 bun run realm:centroids                  recompute each realm's fit centroid from its postings
+deploy/up-local.sh [--web]               the production stack here (project akashic-prod, :8300/:8301)
 ```
+
+Deployment: [deploy/README.md](deploy/README.md). Tear the local stack down with `down -v` on
+project `akashic-prod`; never touch project `akashic` (dev, holds real data).
 
 ## Rules
 
@@ -116,3 +120,15 @@ they differ from the schema.
 15. **`realm_member` rows are locked in one statement, ordered by `user_id`.** Locking them one at
     a time, or re-reading a role outside the lock, is how `changeRole`, `leave` and unseating
     deadlocked or acted on a stale role.
+16. **First boot is ordered.** Migrate, then `authz-push` (prints `FGA_STORE_ID`/`FGA_MODEL_ID`),
+    then `up`. Paste the ids into the `API_ENV` secret too, or the next deploy overwrites `.env`
+    with empty ones.
+17. **`admin-grant` and sign-in need a verified email**, and with no `RESEND_API_KEY` no mail is
+    sent: verify the first account in SQL (deploy/README.md, "First admin").
+18. **`DEPLOY_HOST` is a repository variable**: the deploy job's `if` cannot see environment
+    variables. CI writes `API_IMAGE` into `.env`;
+    without it `up -d` runs `:latest`.
+19. **Backups are a pair, and restore drops both databases.** The app database and OpenFGA's are
+    dumped under one timestamp, because `authz-backfill` rebuilds neither the posting tuples nor
+    the platform admin. `restore.sh <stamp>` needs the API and OpenFGA stopped, recreates both
+    databases, and is followed by `migrate` (deploy/README.md, section 5).

@@ -70,17 +70,26 @@ a realm admin runs one realm. As built in `changeRole`:
 - [x] Deleted `apps/api/test/fixtures/web-schemas.ts` and the per-module copies; the contract test
   holds every view to one source.
 
-## Plan 5 (deployment)
+## Settled by Plan 5 (deployment)
 
-- The room page casts socket frames by hand; parse them with a `v.variant('type', ...)` over the
-  frame views (deferred from the Plan 4 review).
-- Add MinIO to compose and CI so the storage round-trip test runs.
-- Mail payloads (address and reset link) sit in `outbox_messages`, RabbitMQ and the dead queue.
-  Decide their retention, or carry a reference instead.
-- Deployment: CI deploy; `deploy/k8s/10-migrate.yaml` still runs the old migrate job.
-- The Vercel functions run on `nodejs24.x`, named in `vite.config.ts` (so a local Node 26 can build
-  for Vercel too). Raise it when `adapter-vercel` supports newer Node; version 7 needs SvelteKit 3.
-- Decide whether CI builds the web image (`apps/web/Dockerfile`).
+- [x] The room page parses every socket frame.
+- [x] MinIO in compose and CI, so the storage round-trip test runs.
+- [x] Mail retention: dead `mail.requested` rows are pruned after `OUTBOX_RETENTION_DAYS`, and the
+  dead queue has a 7-day TTL (policy). Payloads still hold the address and reset link until then.
+- [x] CI deploy to the VPS (`api.yml`, gated on `DEPLOY_HOST`); the k8s migrate Job runs
+  `apps/api/scripts/migrate.ts`.
+- [x] Web hosting moved from Vercel to Cloudflare (Workers with static assets, `adapter-cloudflare`
+  7; version 8 needs SvelteKit 3). Still open: confirm the Git-connected build's root directory and
+  deploy command in the dashboard, and move the build variables there.
+- [x] CI builds the web image (not pushed, D8).
+
+Still open from Plan 5:
+
+- Nothing has run on a real VPS yet: the first deploy will test the certificate, the GHCR login
+  and the SSH known-hosts pin.
+- Push `ghcr.io/wiormiw/akashic-web` when the Kubernetes path is wanted (`30-web.yaml` needs it).
+- WAL archiving (`wal-g`) for point-in-time recovery, when nightly dumps stop being enough.
+- Removing the two stray anonymous Docker volumes from Task 3's rehearsal (the user's to do).
 
 ## Can wait
 

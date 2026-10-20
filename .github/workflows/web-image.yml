@@ -1,0 +1,32 @@
+---
+name: web-image
+
+# The web ships on Cloudflare; this builds the spare Dockerfile (never pushed) so it can't rot.
+on:
+  pull_request:
+    paths: &paths
+      - apps/web/**
+      - packages/contracts/**
+      - packages/lib/src/enums.ts
+      - bun.lock
+      - .github/workflows/web-image.yml
+  push:
+    paths: *paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

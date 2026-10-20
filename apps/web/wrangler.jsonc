@@ -1,0 +1,14 @@
+{
+	// Cloudflare Worker with static assets: adapter-cloudflare writes the worker and the assets into
+	// .svelte-kit/cloudflare, and `wrangler deploy` uploads them. nodejs_compat also fills the
+	// runtime env that `$env/dynamic/public` reads from the Worker's variables.
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "akashic-web",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare",
+	},
+}

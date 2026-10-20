@@ -40,3 +40,26 @@ describe('a transcript row', () => {
 		expect(v.safeParse(MessageView, stored).success).toBe(true);
 	});
 });
+
+describe('ServerFrame', () => {
+	test('a message frame parses', () => {
+		const frame = {
+			type: 'message',
+			message: { ...stored, keys: [{ fingerprint: 'f'.repeat(8), wrappedKey: 'w', iv: 'iv' }] },
+		};
+		expect(v.safeParse(rooms.ServerFrame, frame).success).toBe(true);
+	});
+
+	test('a stale_devices frame parses', () => {
+		const frame = { type: 'stale_devices', devices: ['abcd1234'] };
+		expect(v.safeParse(rooms.ServerFrame, frame).success).toBe(true);
+	});
+
+	test('an error frame parses', () => {
+		expect(v.safeParse(rooms.ServerFrame, { type: 'error', detail: 'no' }).success).toBe(true);
+	});
+
+	test('an unknown type fails', () => {
+		expect(v.safeParse(rooms.ServerFrame, { type: 'surprise' }).success).toBe(false);
+	});
+});

@@ -1,0 +1,180 @@
+---
+name: api
+
+on:
+  pull_request:
+    paths: &paths
+      - apps/api/**
+      - packages/db/**
+      - packages/lib/**
+      - packages/authz/**
+      - packages/broker/**
+      - packages/contracts/**
+      - bun.lock
+      - package.json
+      - tsconfig.base.json
+      # Only what the deploy copies and runs: README and k8s edits must not deploy.
+      - deploy/compose.prod.yaml
+      - deploy/Caddyfile
+      - deploy/backup/**
+      - .github/workflows/api.yml
+  push:
+    branches: [main]
+    paths: *paths
+
+# Jobs widen this only where they need to.
+permissions:
+  contents: read
+
+# A deploy must not be cancelled half-way, so only a PR run is cancelled by a newer push; main
+# runs queue.
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Deploys wait for the full check: the tests run twice on a main push, which is the price of
+  # never shipping an unchecked commit.
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/wiormiw/akashic-api
+      PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Only main pushes; a PR still builds the image so a broken Dockerfile fails the check.
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: ${{ env.PUSH == 'true' }}
+          build-args: VERSION=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # A skipped job can't write a summary, and the gated deploy must not enter its environment
+  # (required reviewers) for a no-op; this small job says why nothing deployed.
+  deploy-skipped:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HOST == ''
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "deploy skipped: set DEPLOY_HOST (repository variable) and DEPLOY_USER" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_HOST != ''
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_DIR: /opt/akashic
+      IMAGE: ghcr.io/wiormiw/akashic-api:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ssh setup
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # The pinned key, not ssh-keyscan here: scanning at deploy time trusts whatever answers.
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "::error::DEPLOY_KNOWN_HOSTS is empty: run 'ssh-keyscan <host>' once and store the output in that repository variable"
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' \
+            "$DEPLOY_HOST" "$DEPLOY_USER" > ~/.ssh/config
+      # compose.prod.yaml reads ./.env (API_ENV_FILE defaults to it), so the env sits beside it.
+      - name: copy the stack
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          ssh vps "mkdir -p $DEPLOY_DIR"
+          scp -r deploy/compose.prod.yaml deploy/Caddyfile deploy/backup "vps:$DEPLOY_DIR/"
+      - name: write the env
+        env:
+          API_ENV: ${{ secrets.API_ENV }}
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          # umask first, so the file is never readable by others, even briefly. Written beside
+          # the live .env and moved over it only once it passes, so a bad secret leaves the
+          # running deploy's env alone.
+          printf '%s\n' "$API_ENV" | ssh vps "umask 077 && cat > $DEPLOY_DIR/.env.new"
+          # shellcheck disable=SC2029
+          ssh vps "IMAGE='$IMAGE' DEPLOY_DIR='$DEPLOY_DIR' sh -s" <<'REMOTE'
+          set -eu
+          umask 077
+          cd "$DEPLOY_DIR"
+          if grep -v '^[[:space:]]*#' .env.new | grep -Eq 'CHANGE_ME|replace-me'; then
+            echo 'API_ENV still holds a CHANGE_ME or replace-me placeholder' >&2
+            rm -f .env.new
+            exit 1
+          fi
+          # What ran before, for a rollback. A redeploy of the same image keeps the older one.
+          prev=$(sed -n 's/^API_IMAGE=//p' .env 2>/dev/null | tail -1 || true)
+          prev_prev=$(sed -n 's/^PREVIOUS_API_IMAGE=//p' .env 2>/dev/null | tail -1 || true)
+          [ "$prev" != "$IMAGE" ] || prev=$prev_prev
+          # Replace, not append blindly: a stray line from API_ENV or an earlier deploy goes.
+          sed -i '/^API_IMAGE=/d;/^PREVIOUS_API_IMAGE=/d' .env.new
+          # In .env so a manual `docker compose` later runs what is deployed, never :latest.
+          printf 'API_IMAGE=%s\n' "$IMAGE" >> .env.new
+          [ -z "$prev" ] || printf 'PREVIOUS_API_IMAGE=%s\n' "$prev" >> .env.new
+          chmod 600 .env.new
+          mv .env.new .env
+          REMOTE
+      - name: release
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          printf '%s' "$GHCR_TOKEN" | ssh vps "docker login ghcr.io -u $GHCR_USER --password-stdin"
+          # shellcheck disable=SC2029
+          # Migrations run once, before the new containers take traffic, never on container start.
+          # API_IMAGE comes from .env (written above). The backup image is built on the box, so
+          # build it explicitly: `up -d` would keep a stale one when backup.sh changed.
+          ssh vps "set -e; cd $DEPLOY_DIR
+            docker compose -p akashic-prod -f compose.prod.yaml pull api
+            docker compose -p akashic-prod -f compose.prod.yaml build backup
+            docker compose -p akashic-prod -f compose.prod.yaml run --rm api bun apps/api/scripts/migrate.ts
+            docker compose -p akashic-prod -f compose.prod.yaml up -d"
+      # Through Caddy, so a broken proxy or certificate fails the deploy too. --resolve keeps the
+      # check on the VPS itself, whatever DNS says yet.
+      - name: wait for /readyz
+        run: |
+          # shellcheck disable=SC2029  # expanding on this side is the point
+          ssh vps "cd $DEPLOY_DIR
+            site=\$(sed -n 's/^API_SITE_ADDRESS=//p' .env | tail -1)
+            host=\${site#*://}; host=\${host%%/*}; host=\${host%:*}
+            if [ \"\${site#http://}\" != \"\$site\" ]; then url=\$site; port=\${site##*:}
+            else url=https://\$host; port=443; fi
+            for i in \$(seq 1 30); do
+              curl -fsS --resolve \"\$host:\$port:127.0.0.1\" \"\$url/readyz\" && exit 0
+              sleep 2
+            done
+            echo 'readyz never answered' >&2; exit 1"

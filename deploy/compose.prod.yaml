@@ -1,0 +1,294 @@
+# The VPS stack: Caddy in front, the API behind it, and the data services on an internal network.
+#
+# On the VPS this file sits in /opt/akashic beside `.env` (the API's whole environment, one
+# GitHub secret). `deploy/up-local.sh` runs the same file on a laptop against `.env.local`.
+#
+# Only Caddy publishes ports. Every data service is reachable from this project's network and
+# nowhere else, which is what makes OpenFGA's missing authentication below acceptable.
+# The project name keeps containers, networks and volumes apart from the dev `compose.yaml`
+# (project `akashic`), so both can run at once.
+
+name: akashic-prod
+
+# Docker keeps json-file logs forever by default; on one VPS that fills the disk, and Postgres
+# stops accepting writes with it.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *logging
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    # The default 10s kills a slow shutdown checkpoint and costs crash recovery on the next start.
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_USER: akashic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the env file}
+      POSTGRES_DB: akashic
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # An actual query: pg_isready is true while the first init pass is still running.
+      test: ["CMD-SHELL", "psql -U akashic -d akashic -c 'SELECT 1' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # OpenFGA's own database, so two migration tools never share one schema.
+  openfga-db:
+    logging: *logging
+    image: postgres:17-alpine
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      POSTGRES_USER: openfga
+      POSTGRES_PASSWORD: ${OPENFGA_DB_PASSWORD:?set OPENFGA_DB_PASSWORD in the env file}
+      POSTGRES_DB: openfga
+    volumes:
+      - openfga-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U openfga -d openfga -c 'SELECT 1' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # Runs to completion and exits; the server waits on that exit, not on a port.
+  # Same tag and digest as the dev compose.yaml. Bump both together.
+  openfga-migrate:
+    logging: *logging
+    image: openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55
+    command: migrate
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD}@openfga-db:5432/openfga?sslmode=disable
+    depends_on:
+      openfga-db:
+        condition: service_healthy
+    restart: on-failure
+
+  openfga:
+    logging: *logging
+    image: openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55
+    command: run
+    restart: unless-stopped
+    environment:
+      OPENFGA_DATASTORE_ENGINE: postgres
+      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD}@openfga-db:5432/openfga?sslmode=disable
+      OPENFGA_LOG_FORMAT: json
+      # No authentication, because the API has no setting for a token. That is safe only because
+      # this service publishes no port and sits on the stack's internal network: anything that
+      # could reach it could grant itself any role in any realm. Never add a `ports:` entry.
+      OPENFGA_AUTHN_METHOD: none
+    depends_on:
+      openfga-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=:8081"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    logging: *logging
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No persistence: only rate-limit counters live here, and losing them on restart is correct.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  rabbitmq:
+    logging: *logging
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    # RabbitMQ keys its data on the node name, which comes from the hostname. A random container
+    # hostname would orphan the queues on the volume the next time the container is recreated.
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: akashic
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in the env file}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Mail payloads hold addresses and tokens, so the mail dead queue drops messages after 7 days.
+  # A policy, not queue arguments: redeclaring an existing queue with new arguments fails.
+  # A PUT of the same policy changes nothing, so this is safe on every `up`.
+  rabbitmq-policy:
+    logging: *logging
+    # The rabbitmq image has no curl, and rabbitmqctl from another container needs the node's
+    # cookie and name; the management API needs only the login.
+    image: curlimages/curl:8.11.1
+    restart: "no"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    command:
+      - --fail
+      - --silent
+      - --show-error
+      - --user
+      - akashic:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in the env file}
+      - --request
+      - PUT
+      - --header
+      - "content-type: application/json"
+      - --data
+      - '{"pattern":"^akashic\\.mail\\.dead$$","definition":{"message-ttl":604800000},"apply-to":"queues"}'
+      - http://rabbitmq:15672/api/policies/%2F/mail-dead-ttl
+
+  api:
+    logging: *logging
+    # Locally `up-local.sh` points API_IMAGE at the image it just built.
+    image: ${API_IMAGE:-ghcr.io/wiormiw/akashic-api:latest}
+    restart: unless-stopped
+    # The API drains and exits within SHUTDOWN_TIMEOUT_MS (15s by default); this must exceed it,
+    # or Docker kills a process that was about to exit cleanly.
+    stop_grace_period: 30s
+    env_file: ${API_ENV_FILE:-.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      openfga:
+        condition: service_healthy
+
+  caddy:
+    logging: *logging
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      # api.example.com on the VPS (automatic HTTPS); http://localhost:8300 locally.
+      API_SITE_ADDRESS: ${API_SITE_ADDRESS:?set API_SITE_ADDRESS in the env file}
+    ports:
+      # On the VPS the defaults apply. Locally the env file binds loopback only and maps the
+      # plain-HTTP listener, since the site address there names the port itself.
+      - "${CADDY_HTTP:-80}:${CADDY_HTTP_INNER:-80}"
+      - "${CADDY_HTTPS:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificates: losing this volume means re-issuing them, and Let's Encrypt rate-limits.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Nightly `pg_dump` of the app database and OpenFGA's, as a pair under one timestamp, to
+  # S3-compatible storage at 02:00 Asia/Jakarta. Restore (see deploy/README.md, section 5):
+  #   docker compose stop api openfga
+  #   docker compose run --rm backup /backup/restore.sh <timestamp>
+  #   docker compose run --rm api bun apps/api/scripts/migrate.ts
+  #   docker compose up -d
+  # The restore drops and recreates both databases. Needs a bucket with versioning or object
+  # lock: the API's environment holds this service's delete key.
+  backup:
+    logging: *logging
+    build: ./backup
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: akashic
+      PGDATABASE: akashic
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      OPENFGA_PGHOST: openfga-db
+      OPENFGA_PGUSER: openfga
+      OPENFGA_PGDATABASE: openfga
+      OPENFGA_PGPASSWORD: ${OPENFGA_DB_PASSWORD}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:?set BACKUP_BUCKET in the env file}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:?set BACKUP_S3_ENDPOINT in the env file}
+      BACKUP_S3_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?set BACKUP_S3_ACCESS_KEY_ID in the env file}
+      BACKUP_S3_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?set BACKUP_S3_SECRET_ACCESS_KEY in the env file}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      # Optional ping after a good run; empty means none.
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openfga-db:
+        condition: service_healthy
+
+  # Local rehearsal only (`--profile local`). In production the backups go to a real S3 bucket.
+  # MinIO publishes no Docker Hub images; Chainguard builds it. Its free images carry only
+  # `latest`, so this is pinned by digest alone (MinIO RELEASE.2026-09-22T19-25-18Z).
+  minio:
+    logging: *logging
+    profiles: [local]
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    restart: unless-stopped
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${BACKUP_S3_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${BACKUP_S3_SECRET_ACCESS_KEY}
+      # mc has no built-in alias; this defines `local` for the health check.
+      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@localhost:9000
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Creates the bucket and exits. The backup script assumes the bucket exists, as it does on S3.
+  minio-init:
+    logging: *logging
+    profiles: [local]
+    image: cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@minio:9000
+    entrypoint: ["mc", "mb", "--ignore-existing", "local/${BACKUP_BUCKET}"]
+
+  # Local rehearsal only (`--profile web`). In production the web runs on Cloudflare.
+  web:
+    logging: *logging
+    profiles: [web]
+    image: ${WEB_IMAGE:-akashic-web:local}
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:8300}
+        PUBLIC_MEDIA_ORIGIN: ${PUBLIC_MEDIA_ORIGIN:-}
+    # The web server calls the API at the same address the browser uses, http://localhost:8300.
+    # Inside a bridge-network container "localhost" is the container itself, so this shares the
+    # host's network and reaches Caddy's loopback port. HOST keeps it off the LAN.
+    network_mode: host
+    environment:
+      PORT: ${WEB_PORT:-8301}
+      HOST: 127.0.0.1
+    healthcheck:
+      # The image's own check probes port 3000.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${PORT}/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  postgres-data:
+  openfga-data:
+  rabbitmq-data:
+  minio-data:
+  caddy-data:
+  caddy-config:

@@ -3,10 +3,14 @@ name: ci
 on:
   push:
   pull_request:
+  # api.yml runs the same check before it builds and deploys an image.
+  workflow_call:
 
-# A newer push to the same branch makes the running check moot.
+# A newer push to the same branch makes the running check moot. When called, github.workflow is
+# the CALLER's name, so the groups are `ci-ci-<ref>` standalone and `api-ci-<ref>` from api.yml:
+# distinct from each other and from api.yml's own `api-<ref>`, so none cancels another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,6 +45,10 @@ jobs:
       REDIS_URL: redis://localhost:6379
       FGA_API_URL: http://localhost:8080
       RABBITMQ_URL: amqp://akashic:akashic@localhost:5672
+      # The storage round-trip test skips unless a MinIO answers at this endpoint.
+      S3_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY_ID: akashic
+      S3_SECRET_ACCESS_KEY: akashic-dev-secret
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -51,6 +59,19 @@ jobs:
       - run: docker run -d -p 8080:8080 openfga/openfga:v1.21.0@sha256:2113c664a486b5da8d7a2cdab479e0d4e30639c80fd2c000540f645c1dbc1e55 run
       # Wait for it: tests against an OpenFGA that isn't up yet skip rather than fail.
       - run: timeout 60 sh -c 'until curl -sf http://localhost:8080/healthz; do sleep 1; done'
+      # MinIO publishes no Docker Hub image and needs `server /data` as its command, so it is
+      # started like OpenFGA. Pinned by digest as deploy/compose.prod.yaml pins it; bump both.
+      # The image carries mc, so the bucket is made from inside the container.
+      - run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=akashic -e MINIO_ROOT_PASSWORD=akashic-dev-secret \
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 \
+            server /data
+          timeout 60 sh -c 'until curl -sf http://localhost:9000/minio/health/live; do sleep 1; done'
+          docker exec minio sh -c '
+            mc alias set local http://localhost:9000 akashic akashic-dev-secret &&
+            mc mb --ignore-existing local/akashic &&
+            mc anonymous set download local/akashic'
       - run: bun install --frozen-lockfile
       - run: bun run format:check
       - run: bun run lint

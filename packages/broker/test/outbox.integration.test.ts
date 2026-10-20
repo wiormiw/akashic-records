@@ -28,8 +28,15 @@ const lease = (seconds: number) => due.add({ seconds });
 const store = createOutboxStore(database.db);
 const remove = () => database.db.delete(outboxMessages).where(eq(outboxMessages.messageType, TYPE));
 
+// Dead rows the retention tests insert; found and deleted by id only, never by type.
+const planted: string[] = [];
+
 afterAll(async () => {
-	if (live) await remove();
+	if (live) {
+		await remove();
+		if (planted.length > 0)
+			await database.db.delete(outboxMessages).where(inArray(outboxMessages.id, planted));
+	}
 	await database[Symbol.asyncDispose]();
 });
 
@@ -143,5 +150,45 @@ describe.skipIf(!live)('outbox store', () => {
 		}
 		expect(await store.prune(epoch.add({ hours: 1 }), 2)).toBe(2);
 		expect(await store.prune(epoch.add({ hours: 1 }), 2)).toBe(1);
+	});
+
+	describe('dead mail retention', () => {
+		const now = epoch.add({ hours: 24 * 60 });
+		const cutoff = now.subtract({ hours: 24 * 7 });
+		// Dead and far in the past, so no dispatcher claims them and a real prune never reaches 1970 rows
+		// of other topics.
+		async function plant(messageType: string, createdAt: Temporal.Instant) {
+			const [row] = await database.db
+				.insert(outboxMessages)
+				.values({
+					messageType,
+					routingKey: messageType,
+					payload: { retention: true },
+					status: OutboxStatus.dead,
+					createdAt: new Date(createdAt.epochMilliseconds),
+					nextAttemptAt: new Date(createdAt.epochMilliseconds),
+				})
+				.returning({ id: outboxMessages.id });
+			planted.push(row!.id);
+			return row!.id;
+		}
+
+		test('the prune deletes a dead mail event past retention', async () => {
+			const id = await plant('mail.requested', now.subtract({ hours: 24 * 30 }));
+			await store.prune(cutoff, 100);
+			expect(await rowsOf([id])).toEqual([]);
+		});
+
+		test('the prune keeps a dead non-mail event', async () => {
+			const id = await plant(TYPE, now.subtract({ hours: 24 * 30 }));
+			await store.prune(cutoff, 100);
+			expect(await rowsOf([id])).toHaveLength(1);
+		});
+
+		test('the prune keeps a dead mail event inside retention', async () => {
+			const id = await plant('mail.requested', now.subtract({ hours: 24 }));
+			await store.prune(cutoff, 100);
+			expect(await rowsOf([id])).toHaveLength(1);
+		});
 	});
 });
