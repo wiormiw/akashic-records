@@ -66,7 +66,9 @@ services:
     command: migrate
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD}@openfga-db:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_URI: postgres://openfga-db:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_USERNAME: openfga
+      OPENFGA_DATASTORE_PASSWORD: ${OPENFGA_DB_PASSWORD}
     depends_on:
       openfga-db:
         condition: service_healthy
@@ -79,7 +81,9 @@ services:
     restart: unless-stopped
     environment:
       OPENFGA_DATASTORE_ENGINE: postgres
-      OPENFGA_DATASTORE_URI: postgres://openfga:${OPENFGA_DB_PASSWORD}@openfga-db:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_URI: postgres://openfga-db:5432/openfga?sslmode=disable
+      OPENFGA_DATASTORE_USERNAME: openfga
+      OPENFGA_DATASTORE_PASSWORD: ${OPENFGA_DB_PASSWORD}
       OPENFGA_LOG_FORMAT: json
       # No authentication, because the API has no setting for a token. That is safe only because
       # this service publishes no port and sits on the stack's internal network: anything that
@@ -137,19 +141,18 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    environment:
+      RABBITMQ_USER: akashic
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in the env file}
+    # The login is read from the container's environment, not written into the command line.
+    entrypoint: ["sh", "-c"]
     command:
-      - --fail
-      - --silent
-      - --show-error
-      - --user
-      - akashic:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in the env file}
-      - --request
-      - PUT
-      - --header
-      - "content-type: application/json"
-      - --data
-      - '{"pattern":"^akashic\\.mail\\.dead$$","definition":{"message-ttl":604800000},"apply-to":"queues"}'
-      - http://rabbitmq:15672/api/policies/%2F/mail-dead-ttl
+      - >-
+        printf 'user = "%s:%s"\n' "$$RABBITMQ_USER" "$$RABBITMQ_PASSWORD" |
+        curl --config - --fail --silent --show-error
+        --request PUT --header 'content-type: application/json'
+        --data '{"pattern":"^akashic\\.mail\\.dead$$","definition":{"message-ttl":604800000},"apply-to":"queues"}'
+        http://rabbitmq:15672/api/policies/%2F/mail-dead-ttl
 
   api:
     logging: *logging
@@ -237,12 +240,13 @@ services:
     environment:
       MINIO_ROOT_USER: ${BACKUP_S3_ACCESS_KEY_ID}
       MINIO_ROOT_PASSWORD: ${BACKUP_S3_SECRET_ACCESS_KEY}
-      # mc has no built-in alias; this defines `local` for the health check.
-      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@localhost:9000
     volumes:
       - minio-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # mc has no built-in alias: define `local` from the server's own login, then ask it.
+      test:
+        - CMD-SHELL
+        - mc alias set local http://localhost:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null && mc ready local
       interval: 2s
       timeout: 3s
       retries: 30
@@ -256,8 +260,11 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MC_HOST_local: http://${BACKUP_S3_ACCESS_KEY_ID}:${BACKUP_S3_SECRET_ACCESS_KEY}@minio:9000
-    entrypoint: ["mc", "mb", "--ignore-existing", "local/${BACKUP_BUCKET}"]
+      MINIO_USER: ${BACKUP_S3_ACCESS_KEY_ID}
+      MINIO_PASSWORD: ${BACKUP_S3_SECRET_ACCESS_KEY}
+    entrypoint: ["sh", "-c"]
+    command:
+      - mc alias set local http://minio:9000 "$$MINIO_USER" "$$MINIO_PASSWORD" >/dev/null && mc mb --ignore-existing "local/${BACKUP_BUCKET}"
 
   # Local rehearsal only (`--profile web`). In production the web runs on Cloudflare.
   web:
