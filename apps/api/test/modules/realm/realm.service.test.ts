@@ -8,9 +8,26 @@ import { silentLogger } from '@akashic/lib/log';
 import { isError } from '@akashic/lib/result';
 import { expectErr, expectOk, expectType } from '@akashic/lib/testing';
 import type { Embedder } from '@/integrations/embedder.ts';
-import { actingRank, grantable, mayChange, outranks } from '@/modules/realm/realm.service.ts';
+import {
+	actingRank,
+	grantable,
+	mayChange,
+	outranks,
+	summaryQuery,
+} from '@/modules/realm/realm.service.ts';
 import { databaseUrl, uniqueSlug } from '../../support/fixtures.ts';
 import { world } from './fixtures.ts';
+
+describe('realm summary SQL', () => {
+	// The module subquery is correlated; unqualified, `id` would bind to the wrong table the day
+	// realm_module gains one, and every realm would silently list no modules.
+	test('the correlated module subquery qualifies both sides of its join', () => {
+		// The pool connects lazily, so building the query needs no database.
+		const { sql } = summaryQuery(database.db, undefined, 10).toSQL();
+		expect(sql).toContain('"realm_module"."realm_id" = "realm"."id"');
+		expect(sql).toContain('array_agg("realm_module"."module" ORDER BY "realm_module"."module")');
+	});
+});
 
 describe('role rules', () => {
 	test('only a higher rank outranks; someone outside the realm outranks nobody', () => {

@@ -393,16 +393,23 @@ describe('structure', () => {
 
 	// Rows come typed from the schema (builder, or a typed sql fragment with mapWith), never from a
 	// raw `execute` whose result is cast. An exception needs an entry here with its reason, and
-	// validates its rows with a Valibot schema instead.
+	// validates its rows with a Valibot schema instead. Scanned: the modules, and the packages that
+	// talk to the database. packages/lib's `as unknown as Err<...>` casts are type plumbing, not
+	// rows, so lib is left out.
 	test('module code reads rows through the typed query builder, not execute and casts', async () => {
 		const allowed = new Map<string, string>();
+		// Block comments and whole-line `//` comments only: a `//` inside a string is code.
 		const stripComments = (src: string) =>
-			src.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '');
+			src.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/^\s*\/\/.*$/gm, '');
 		const bad: string[] = [];
-		for (const f of scan('apps/api/src/modules/**/*.ts')) {
+		for (const f of scan(
+			'apps/api/src/modules/**/*.ts',
+			'packages/broker/src/**/*.ts',
+			'packages/db/src/**/*.ts',
+		)) {
 			if (allowed.has(f)) continue;
 			const code = stripComments(await read(f));
-			if (/as unknown as/.test(code)) bad.push(`${f}: as unknown as`);
+			if (/as\s+unknown\s+as/.test(code)) bad.push(`${f}: as unknown as`);
 			if (/\.execute\s*[<(]/.test(code)) bad.push(`${f}: .execute(`);
 		}
 		expect(bad).toEqual([]);

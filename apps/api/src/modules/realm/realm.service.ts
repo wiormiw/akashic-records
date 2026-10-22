@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, isNull, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, isNull, or, type SQL, sql } from 'drizzle-orm';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { Member, RealmEdit, RealmSummary } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import {
@@ -48,14 +49,17 @@ import type {
 	RoleChange,
 } from './realm.types.ts';
 
+/**
+ * A column written with its table, since Drizzle omits the qualifier in a one-table select. In a
+ * correlated subquery an unqualified `id` binds to whichever table has one: qualify both sides.
+ */
+const inTable = (table: PgTable, key: string) =>
+	sql`${table}.${sql.identifier(getTableColumns(table)[key]!.name)}`;
+
 /** Live realms with their member counts and modules, most members first, oldest first among equals. */
-export async function liveSummaries(
-	db: Executor,
-	filter: SQL | undefined,
-	limit: number,
-): Promise<RealmSummary[]> {
+export function summaryQuery(db: Executor, filter: SQL | undefined, limit: number) {
 	const memberCount = db.$count(realmMembers, eq(realmMembers.realmId, realms.id));
-	const rows = await db
+	return db
 		.select({
 			id: realms.id,
 			slug: realms.slug,
@@ -64,14 +68,22 @@ export async function liveSummaries(
 			category: realms.category,
 			memberCount,
 			modules: sql<number[]>`(
-        SELECT coalesce(array_agg(${realmModules.module} ORDER BY ${realmModules.module}), '{}')
-        FROM ${realmModules} WHERE ${realmModules.realmId} = ${realms.id})`,
+        SELECT coalesce(array_agg(${inTable(realmModules, 'module')} ORDER BY ${inTable(realmModules, 'module')}), '{}')
+        FROM ${realmModules}
+        WHERE ${inTable(realmModules, 'realmId')} = ${inTable(realms, 'id')})`,
 		})
 		.from(realms)
 		.where(and(isNull(realms.archivedAt), filter))
 		.orderBy(desc(memberCount), asc(realms.createdAt))
 		.limit(limit);
-	return rows;
+}
+
+export async function liveSummaries(
+	db: Executor,
+	filter: SQL | undefined,
+	limit: number,
+): Promise<RealmSummary[]> {
+	return summaryQuery(db, filter, limit);
 }
 
 export const ofMember = (realmId: string, userId: string) =>
