@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, or, type SQL, sql } from 'drizzle-orm';
 import type { Member, RealmEdit, RealmSummary } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import {
@@ -48,39 +48,30 @@ import type {
 	RoleChange,
 } from './realm.types.ts';
 
-type SummaryRow = {
-	id: string;
-	slug: string;
-	name: string;
-	description: string | null;
-	category: string | null;
-	member_count: number;
-	modules: number[] | null;
-};
-
-const toSummary = (row: SummaryRow): RealmSummary => ({
-	id: row.id,
-	slug: row.slug,
-	name: row.name,
-	description: row.description,
-	category: row.category,
-	memberCount: Number(row.member_count),
-	modules: row.modules ?? [],
-});
-
-/** Live realms with their member counts and modules; `rest` filters further, orders and limits. */
-export async function liveSummaries(db: Executor, rest: SQL): Promise<RealmSummary[]> {
-	const rows = (await db.execute(sql`
-    SELECT
-      r.id, r.slug, r.name, r.description, r.category,
-      (SELECT count(*)::int FROM realm_member m WHERE m.realm_id = r.id) AS member_count,
-      (SELECT coalesce(array_agg(rm.module ORDER BY rm.module), '{}')
-         FROM realm_module rm WHERE rm.realm_id = r.id) AS modules
-    FROM realm r
-    WHERE r.archived_at IS NULL
-    ${rest}
-  `)) as unknown as SummaryRow[];
-	return rows.map(toSummary);
+/** Live realms with their member counts and modules, most members first, oldest first among equals. */
+export async function liveSummaries(
+	db: Executor,
+	filter: SQL | undefined,
+	limit: number,
+): Promise<RealmSummary[]> {
+	const memberCount = db.$count(realmMembers, eq(realmMembers.realmId, realms.id));
+	const rows = await db
+		.select({
+			id: realms.id,
+			slug: realms.slug,
+			name: realms.name,
+			description: realms.description,
+			category: realms.category,
+			memberCount,
+			modules: sql<number[]>`(
+        SELECT coalesce(array_agg(${realmModules.module} ORDER BY ${realmModules.module}), '{}')
+        FROM ${realmModules} WHERE ${realmModules.realmId} = ${realms.id})`,
+		})
+		.from(realms)
+		.where(and(isNull(realms.archivedAt), filter))
+		.orderBy(desc(memberCount), asc(realms.createdAt))
+		.limit(limit);
+	return rows;
 }
 
 export const ofMember = (realmId: string, userId: string) =>
@@ -145,15 +136,12 @@ export function createRealmService(deps: RealmDeps) {
 		seedCentroid,
 
 		async browse(): Promise<RealmSummary[]> {
-			return liveSummaries(
-				db,
-				sql`ORDER BY member_count DESC, r.created_at ASC LIMIT ${policy.pageSize}`,
-			);
+			return liveSummaries(db, undefined, policy.pageSize);
 		},
 
 		/** Live realms only. */
 		async read(slug: string): Promise<Result<RealmSummary, ReadRealmError>> {
-			const [realm] = await liveSummaries(db, sql`AND r.slug = ${slug} LIMIT 1`);
+			const [realm] = await liveSummaries(db, eq(realms.slug, slug), 1);
 			return realm ? ok(realm) : err(new RealmNotFound(`No realm called "${slug}".`));
 		},
 
