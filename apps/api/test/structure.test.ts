@@ -390,4 +390,21 @@ describe('structure', () => {
 		}
 		expect(bad).toEqual([]);
 	});
+
+	// Rows come typed from the schema (builder, or a typed sql fragment with mapWith), never from a
+	// raw `execute` whose result is cast. An exception needs an entry here with its reason, and
+	// validates its rows with a Valibot schema instead.
+	test('module code reads rows through the typed query builder, not execute and casts', async () => {
+		const allowed = new Map<string, string>();
+		const stripComments = (src: string) =>
+			src.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/\/\/.*$/gm, '');
+		const bad: string[] = [];
+		for (const f of scan('apps/api/src/modules/**/*.ts')) {
+			if (allowed.has(f)) continue;
+			const code = stripComments(await read(f));
+			if (/as unknown as/.test(code)) bad.push(`${f}: as unknown as`);
+			if (/\.execute\s*[<(]/.test(code)) bad.push(`${f}: .execute(`);
+		}
+		expect(bad).toEqual([]);
+	});
 });
