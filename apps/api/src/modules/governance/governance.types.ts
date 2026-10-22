@@ -54,12 +54,6 @@ export interface RealmSize {
 	moderators: number;
 }
 
-/** The counts row as the driver hands it back: counts may arrive as strings, or not at all. */
-export interface SizeRow {
-	members: unknown;
-	moderators: unknown;
-}
-
 // ---- Seats -----------------------------------------------------------------------------------
 
 export interface Standings {

@@ -1,11 +1,11 @@
-import { and, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { NamedUser, Recall, Votes } from '@akashic/contracts';
-import { type Executor, inTransaction, recalls, recallVotes } from '@akashic/db';
+import { type Executor, inTransaction, recalls, recallVotes, user } from '@akashic/db';
 import { narrow, RealmRole, RecallKind, RecallStatus } from '@akashic/lib/enums';
-import { rowInstant } from '@akashic/db/sql';
 import { AlreadyMember, RealmForbidden, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
-import { toDate } from '@akashic/lib/time';
+import { fromDate, toDate } from '@akashic/lib/time';
 import { cannotCarry, majority, roleOf, sizeOf } from './governance.seats.service.ts';
 import type {
 	NewRecall,
@@ -34,42 +34,58 @@ const notTheirs = () =>
 
 // ---- Queries ---------------------------------------------------------------------------------
 
-type Row = Record<string, unknown>;
+const subject = alias(user, 'subject');
+const proposer = alias(user, 'proposer');
 
-const person = (id: unknown, name: unknown): NamedUser | null =>
-	id ? { id: String(id), name: String(name ?? '') } : null;
+const person = (id: string | null, name: string | null): NamedUser | null =>
+	id ? { id, name: name ?? '' } : null;
 
-const toRecall = (row: Row): Recall => ({
-	id: String(row.id),
-	realmId: String(row.realm_id),
-	kind: narrow(RecallKind, Number(row.kind)),
-	reason: String(row.reason),
-	status: narrow(RecallStatus, Number(row.status)),
-	agrees: Number(row.agrees),
-	refusals: Number(row.refusals),
-	subject: person(row.subject_id, row.subject_name),
-	proposedBy: person(row.proposer_id, row.proposer_name),
-	createdAt: rowInstant(row.created_at as Date | string),
-});
-
-const selectRecalls = (where: SQL, tail: SQL = sql``) => sql`
-  SELECT r.id, r.realm_id, r.kind, r.reason, r.status, r.created_at,
-    s.id AS subject_id, s.name AS subject_name,
-    p.id AS proposer_id, p.name AS proposer_name,
-    count(v.*) FILTER (WHERE v.agree)::int AS agrees,
-    count(v.*) FILTER (WHERE NOT v.agree)::int AS refusals
-  FROM recall r
-  LEFT JOIN "user" s ON s.id = r.subject_id
-  LEFT JOIN "user" p ON p.id = r.proposed_by
-  LEFT JOIN recall_vote v ON v.recall_id = r.id
-  WHERE ${where}
-  GROUP BY r.id, s.id, p.id
-  ${tail}
-`;
+/** Recalls with their tallies, oldest first; `where` carries the realm or the id. */
+async function selectRecalls(
+	db: Executor,
+	where: SQL | undefined,
+	limit: number,
+): Promise<Recall[]> {
+	const rows = await db
+		.select({
+			id: recalls.id,
+			realmId: recalls.realmId,
+			kind: recalls.kind,
+			reason: recalls.reason,
+			status: recalls.status,
+			createdAt: recalls.createdAt,
+			subjectId: subject.id,
+			subjectName: subject.name,
+			proposerId: proposer.id,
+			proposerName: proposer.name,
+			agrees: sql<number>`count(*) FILTER (WHERE ${recallVotes.agree})`.mapWith(Number),
+			refusals: sql<number>`count(*) FILTER (WHERE NOT ${recallVotes.agree})`.mapWith(Number),
+		})
+		.from(recalls)
+		.leftJoin(subject, eq(subject.id, recalls.subjectId))
+		.leftJoin(proposer, eq(proposer.id, recalls.proposedBy))
+		.leftJoin(recallVotes, eq(recallVotes.recallId, recalls.id))
+		.where(where)
+		.groupBy(recalls.id, subject.id, proposer.id)
+		.orderBy(asc(recalls.createdAt))
+		.limit(limit);
+	return rows.map((row) => ({
+		id: row.id,
+		realmId: row.realmId,
+		kind: narrow(RecallKind, row.kind),
+		reason: row.reason,
+		status: narrow(RecallStatus, row.status),
+		agrees: row.agrees,
+		refusals: row.refusals,
+		subject: person(row.subjectId, row.subjectName),
+		proposedBy: person(row.proposerId, row.proposerName),
+		createdAt: fromDate(row.createdAt),
+	}));
+}
 
 async function findRecall(db: Executor, id: string): Promise<Recall | undefined> {
-	const [row] = (await db.execute(selectRecalls(sql`r.id = ${id}`))) as unknown as Row[];
-	return row && toRecall(row);
+	const [recall] = await selectRecalls(db, eq(recalls.id, id), 1);
+	return recall;
 }
 
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
@@ -83,12 +99,14 @@ async function castVote(
 		.insert(recallVotes)
 		.values({ recallId, voterId, agree })
 		.onConflictDoUpdate({ target: [recallVotes.recallId, recallVotes.voterId], set: { agree } });
-	const [row] = (await db.execute(sql`
-    SELECT count(*) FILTER (WHERE agree)::int AS agrees,
-           count(*) FILTER (WHERE NOT agree)::int AS refusals
-    FROM recall_vote WHERE recall_id = ${recallId}
-  `)) as unknown as Votes[];
-	return { agrees: Number(row?.agrees ?? 0), refusals: Number(row?.refusals ?? 0) };
+	const [row] = await db
+		.select({
+			agrees: sql<number>`count(*) FILTER (WHERE ${recallVotes.agree})`.mapWith(Number),
+			refusals: sql<number>`count(*) FILTER (WHERE NOT ${recallVotes.agree})`.mapWith(Number),
+		})
+		.from(recallVotes)
+		.where(eq(recallVotes.recallId, recallId));
+	return row ?? { agrees: 0, refusals: 0 };
 }
 
 /** Only an open recall resolves; false when it was already settled, by a concurrent vote say. */
@@ -133,13 +151,11 @@ export function createRecallService(deps: RecallDeps) {
 
 	return {
 		async openRecalls(realmId: string, limit: number): Promise<Recall[]> {
-			const rows = (await db.execute(
-				selectRecalls(
-					sql`r.realm_id = ${realmId} AND r.status = ${RecallStatus.open}`,
-					sql`ORDER BY r.created_at ASC LIMIT ${limit}`,
-				),
-			)) as unknown as Row[];
-			return rows.map(toRecall);
+			return selectRecalls(
+				db,
+				and(eq(recalls.realmId, realmId), eq(recalls.status, RecallStatus.open)),
+				limit,
+			);
 		},
 
 		async proposeRecall(

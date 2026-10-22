@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { SeatStanding } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import {
@@ -9,11 +9,12 @@ import {
 	realmEndorsements,
 	realmMembers,
 	type Tx,
+	user,
 } from '@akashic/db';
 import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
-import { rowInstant } from '@akashic/db/sql';
 import { NoSeatInRealm, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
+import { fromDate } from '@akashic/lib/time';
 import type {
 	GovernanceDeps,
 	RealmSize,
@@ -22,7 +23,6 @@ import type {
 	SeatCandidates,
 	SeatChanges,
 	SeatRemoved,
-	SizeRow,
 	Standings,
 	Unseating,
 	UnseatError,
@@ -49,22 +49,21 @@ export const majority = (voters: number): number => Math.floor(voters / 2) + 1;
 export const cannotCarry = (refusals: number, electorate: number, needed: number): boolean =>
 	refusals > electorate - needed;
 
-/** The counts row as a size; a realm with no row has no one in it. Counts may arrive as strings. */
-export const sizeFrom = (row: SizeRow | undefined): RealmSize => ({
-	members: Number(row?.members ?? 0),
-	moderators: Number(row?.moderators ?? 0),
-});
-
 // ---- Queries ---------------------------------------------------------------------------------
 
 /** How many members the realm has, and how many of them moderate (moderators and admins). */
 export async function sizeOf(db: Executor, realmId: string): Promise<RealmSize> {
-	const [row] = (await db.execute(sql`
-    SELECT count(*)::int AS members,
-           count(*) FILTER (WHERE role >= ${RealmRole.moderator})::int AS moderators
-    FROM realm_member WHERE realm_id = ${realmId}
-  `)) as unknown as SizeRow[];
-	return sizeFrom(row);
+	const [row] = await db
+		.select({
+			members: sql<number>`count(*)`.mapWith(Number),
+			moderators:
+				sql<number>`count(*) FILTER (WHERE ${realmMembers.role} >= ${RealmRole.moderator})`.mapWith(
+					Number,
+				),
+		})
+		.from(realmMembers)
+		.where(eq(realmMembers.realmId, realmId));
+	return row ?? { members: 0, moderators: 0 };
 }
 
 /** The member's role in the realm; null when they aren't in it. */
@@ -81,49 +80,46 @@ export async function roleOf(
 	return row ? narrow(RealmRole, row.role) : null;
 }
 
-// Upvotes for every member, as a lateral join; shared by standings and seat allocation.
-const upvotesOf = sql`
-  LEFT JOIN LATERAL (
-    SELECT count(*)::int AS votes FROM realm_endorsement
-    WHERE realm_id = m.realm_id AND candidate_id = m.user_id
-  ) e ON true
-`;
+const ofCandidate = (realmId: string, candidateId: string) =>
+	and(eq(realmEndorsements.realmId, realmId), eq(realmEndorsements.candidateId, candidateId));
 
-type StandingRow = {
-	user_id: string;
-	role: number;
-	joined_at: string | Date;
-	name: string | null;
-	upvotes: number;
-};
+// A member's upvotes, counted by a correlated subquery; shared by standings and seat allocation.
+const upvotesOf = (db: Executor) =>
+	db.$count(
+		realmEndorsements,
+		and(
+			eq(realmEndorsements.realmId, realmMembers.realmId),
+			eq(realmEndorsements.candidateId, realmMembers.userId),
+		),
+	);
 
 /** Members ranked by upvotes, ties broken by seniority. */
 async function standingsOf(db: Executor, realmId: string, limit: number): Promise<SeatStanding[]> {
-	const rows = (await db.execute(sql`
-    SELECT m.user_id, m.role, m.joined_at, u.name, coalesce(e.votes, 0)::int AS upvotes
-    FROM realm_member m
-    JOIN "user" u ON u.id = m.user_id
-    ${upvotesOf}
-    WHERE m.realm_id = ${realmId}
-    ORDER BY upvotes DESC, m.joined_at ASC
-    LIMIT ${limit}
-  `)) as unknown as StandingRow[];
+	const rows = await db
+		.select({
+			userId: realmMembers.userId,
+			role: realmMembers.role,
+			joinedAt: realmMembers.joinedAt,
+			name: user.name,
+			upvotes: upvotesOf(db),
+		})
+		.from(realmMembers)
+		.innerJoin(user, eq(user.id, realmMembers.userId))
+		.where(eq(realmMembers.realmId, realmId))
+		.orderBy(desc(upvotesOf(db)), asc(realmMembers.joinedAt))
+		.limit(limit);
 	return rows.map((row) => ({
-		userId: row.user_id,
-		name: row.name ?? '',
-		role: narrow(RealmRole, Number(row.role)),
-		upvotes: Number(row.upvotes),
-		seated: Number(row.role) === RealmRole.moderator,
-		joinedAt: rowInstant(row.joined_at),
+		userId: row.userId,
+		name: row.name,
+		role: narrow(RealmRole, row.role),
+		upvotes: row.upvotes,
+		seated: row.role === RealmRole.moderator,
+		joinedAt: fromDate(row.joinedAt),
 	}));
 }
 
 async function upvotesFor(db: Executor, realmId: string, candidateId: string): Promise<number> {
-	const [row] = (await db.execute(sql`
-    SELECT count(*)::int AS votes FROM realm_endorsement
-    WHERE realm_id = ${realmId} AND candidate_id = ${candidateId}
-  `)) as unknown as { votes: number }[];
-	return Number(row?.votes ?? 0);
+	return db.$count(realmEndorsements, ofCandidate(realmId, candidateId));
 }
 
 /**
@@ -136,27 +132,31 @@ async function seatCandidates(
 	seatCount: number,
 	minimum: number,
 ): Promise<SeatCandidates> {
-	const rows = (await db.execute(sql`
-    WITH ranked AS (
-      SELECT m.user_id, m.role, m.joined_at, coalesce(e.votes, 0)::int AS upvotes
-      FROM realm_member m
-      ${upvotesOf}
-      WHERE m.realm_id = ${realmId} AND m.role <> ${RealmRole.admin}
-    )
-    SELECT user_id,
-      (upvotes >= ${minimum}
-        AND row_number() OVER (ORDER BY upvotes DESC, joined_at ASC) <= ${seatCount}) AS should_hold,
-      (role = ${RealmRole.moderator}) AS holds
-    FROM ranked
-  `)) as unknown as { user_id: string; should_hold: boolean; holds: boolean }[];
+	const ranked = db.$with('ranked').as(
+		db
+			.select({
+				userId: realmMembers.userId,
+				role: realmMembers.role,
+				joinedAt: realmMembers.joinedAt,
+				upvotes: upvotesOf(db).as('upvotes'),
+			})
+			.from(realmMembers)
+			.where(and(eq(realmMembers.realmId, realmId), ne(realmMembers.role, RealmRole.admin))),
+	);
+	const rows = await db
+		.with(ranked)
+		.select({
+			userId: ranked.userId,
+			shouldHold: sql<boolean>`(${ranked.upvotes} >= ${minimum}
+        AND row_number() OVER (ORDER BY ${ranked.upvotes} DESC, ${ranked.joinedAt} ASC) <= ${seatCount})`,
+			holds: sql<boolean>`(${ranked.role} = ${RealmRole.moderator})`,
+		})
+		.from(ranked);
 	return {
-		shouldHold: rows.filter((row) => row.should_hold).map((row) => row.user_id),
-		currentlyHold: rows.filter((row) => row.holds).map((row) => row.user_id),
+		shouldHold: rows.filter((row) => row.shouldHold).map((row) => row.userId),
+		currentlyHold: rows.filter((row) => row.holds).map((row) => row.userId),
 	};
 }
-
-const ofCandidate = (realmId: string, candidateId: string) =>
-	and(eq(realmEndorsements.realmId, realmId), eq(realmEndorsements.candidateId, candidateId));
 
 /**
  * Locks the rows of `userIds` (or, without them, every non-admin member: everyone a seat change

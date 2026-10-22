@@ -11,7 +11,6 @@ import {
 	majority,
 	MIN_UPVOTES,
 	seats,
-	sizeFrom,
 } from '@/modules/governance/governance.seats.service.ts';
 import { createGovernanceServices } from '@/modules/governance/governance.module.ts';
 import { clock, databaseUrl } from '../../support/fixtures.ts';
@@ -40,13 +39,6 @@ describe('vote thresholds', () => {
 	test('a vote is lost once too few voters remain to carry it', () => {
 		expect(cannotCarry(2, 5, 3)).toBe(false);
 		expect(cannotCarry(3, 5, 3)).toBe(true);
-	});
-});
-
-describe('realm size', () => {
-	test('counts arrive as strings and a missing row is an empty realm', () => {
-		expect(sizeFrom({ members: '12', moderators: '2' })).toEqual({ members: 12, moderators: 2 });
-		expect(sizeFrom(undefined)).toEqual({ members: 0, moderators: 0 });
 	});
 });
 

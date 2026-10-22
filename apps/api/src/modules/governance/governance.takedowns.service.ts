@@ -1,4 +1,4 @@
-import { and, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
 import type { PendingTakedown, Takedown, Votes } from '@akashic/contracts';
 import {
 	audit,
@@ -7,12 +7,12 @@ import {
 	inTransaction,
 	takedowns,
 	takedownVotes,
+	user,
 } from '@akashic/db';
 import { AuditAction, CommentSubject, narrow, TakedownStatus } from '@akashic/lib/enums';
-import { rowInstant } from '@akashic/db/sql';
 import { AlreadyMember, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
-import { toDate } from '@akashic/lib/time';
+import { fromDate, toDate } from '@akashic/lib/time';
 import { cannotCarry, majority, sizeOf } from './governance.seats.service.ts';
 import type {
 	GovernanceDeps,
@@ -30,39 +30,50 @@ export const actsAlone = (moderators: number): boolean => moderators < 3;
 
 // ---- Queries ---------------------------------------------------------------------------------
 
-type Row = Record<string, unknown>;
-
-const toTakedown = (row: Row): Takedown => ({
-	id: String(row.id),
-	realmId: String(row.realm_id),
-	subjectKind: narrow(CommentSubject, Number(row.subject_kind)),
-	subjectId: String(row.subject_id),
-	reason: String(row.reason),
-	status: narrow(TakedownStatus, Number(row.status)),
-	agrees: Number(row.agrees),
-	refusals: Number(row.refusals),
-	proposedBy: row.proposer_id
-		? { id: String(row.proposer_id), name: String(row.proposer_name ?? '') }
-		: null,
-	createdAt: rowInstant(row.created_at as Date | string),
-});
-
-const selectTakedowns = (where: SQL, tail: SQL = sql``) => sql`
-  SELECT t.id, t.realm_id, t.subject_kind, t.subject_id, t.reason, t.status, t.created_at,
-    u.id AS proposer_id, u.name AS proposer_name,
-    count(v.*) FILTER (WHERE v.agree)::int AS agrees,
-    count(v.*) FILTER (WHERE NOT v.agree)::int AS refusals
-  FROM takedown t
-  LEFT JOIN "user" u ON u.id = t.proposed_by
-  LEFT JOIN takedown_vote v ON v.takedown_id = t.id
-  WHERE ${where}
-  GROUP BY t.id, u.id
-  ${tail}
-`;
+/** Takedowns with their tallies, oldest first; `where` carries the realm or the id. */
+async function selectTakedowns(
+	db: Executor,
+	where: SQL | undefined,
+	limit: number,
+): Promise<Takedown[]> {
+	const rows = await db
+		.select({
+			id: takedowns.id,
+			realmId: takedowns.realmId,
+			subjectKind: takedowns.subjectKind,
+			subjectId: takedowns.subjectId,
+			reason: takedowns.reason,
+			status: takedowns.status,
+			createdAt: takedowns.createdAt,
+			proposerId: user.id,
+			proposerName: user.name,
+			agrees: sql<number>`count(*) FILTER (WHERE ${takedownVotes.agree})`.mapWith(Number),
+			refusals: sql<number>`count(*) FILTER (WHERE NOT ${takedownVotes.agree})`.mapWith(Number),
+		})
+		.from(takedowns)
+		.leftJoin(user, eq(user.id, takedowns.proposedBy))
+		.leftJoin(takedownVotes, eq(takedownVotes.takedownId, takedowns.id))
+		.where(where)
+		.groupBy(takedowns.id, user.id)
+		.orderBy(asc(takedowns.createdAt))
+		.limit(limit);
+	return rows.map((row) => ({
+		id: row.id,
+		realmId: row.realmId,
+		subjectKind: narrow(CommentSubject, row.subjectKind),
+		subjectId: row.subjectId,
+		reason: row.reason,
+		status: narrow(TakedownStatus, row.status),
+		agrees: row.agrees,
+		refusals: row.refusals,
+		proposedBy: row.proposerId ? { id: row.proposerId, name: row.proposerName ?? '' } : null,
+		createdAt: fromDate(row.createdAt),
+	}));
+}
 
 async function findTakedown(db: Executor, id: string): Promise<Takedown | undefined> {
-	const [row] = (await db.execute(selectTakedowns(sql`t.id = ${id}`))) as unknown as Row[];
-	return row && toTakedown(row);
+	const [takedown] = await selectTakedowns(db, eq(takedowns.id, id), 1);
+	return takedown;
 }
 
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
@@ -79,12 +90,14 @@ async function castVote(
 			target: [takedownVotes.takedownId, takedownVotes.voterId],
 			set: { agree },
 		});
-	const [row] = (await db.execute(sql`
-    SELECT count(*) FILTER (WHERE agree)::int AS agrees,
-           count(*) FILTER (WHERE NOT agree)::int AS refusals
-    FROM takedown_vote WHERE takedown_id = ${takedownId}
-  `)) as unknown as Votes[];
-	return { agrees: Number(row?.agrees ?? 0), refusals: Number(row?.refusals ?? 0) };
+	const [row] = await db
+		.select({
+			agrees: sql<number>`count(*) FILTER (WHERE ${takedownVotes.agree})`.mapWith(Number),
+			refusals: sql<number>`count(*) FILTER (WHERE NOT ${takedownVotes.agree})`.mapWith(Number),
+		})
+		.from(takedownVotes)
+		.where(eq(takedownVotes.takedownId, takedownId));
+	return row ?? { agrees: 0, refusals: 0 };
 }
 
 /** Only an open takedown resolves; false when it was already settled. */
@@ -141,15 +154,14 @@ export function createTakedownService(deps: GovernanceDeps) {
 		async openTakedowns(realmId: string, limit: number): Promise<PendingTakedown[]> {
 			const [size, rows] = await Promise.all([
 				sizeOf(db, realmId),
-				db.execute(
-					selectTakedowns(
-						sql`t.realm_id = ${realmId} AND t.status = ${TakedownStatus.open}`,
-						sql`ORDER BY t.created_at ASC LIMIT ${limit}`,
-					),
-				) as unknown as Promise<Row[]>,
+				selectTakedowns(
+					db,
+					and(eq(takedowns.realmId, realmId), eq(takedowns.status, TakedownStatus.open)),
+					limit,
+				),
 			]);
 			const needed = majority(size.moderators);
-			return rows.map((row) => ({ ...toTakedown(row), needed }));
+			return rows.map((row) => ({ ...row, needed }));
 		},
 
 		/** Opens a vote to remove a comment; a lone moderator's takedown carries at once. */
