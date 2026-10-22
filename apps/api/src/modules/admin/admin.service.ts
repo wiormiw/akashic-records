@@ -1,4 +1,5 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { and, asc, desc, eq, ilike, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
 import type {
 	Account,
 	AuditRecord,
@@ -15,13 +16,13 @@ import {
 	publish,
 	realmMembers,
 	realms,
+	roomMessages,
 	roomReports,
 	session,
 	user,
 } from '@akashic/db';
 import { containing } from '@akashic/db/sql';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
-import { rowInstant } from '@akashic/db/sql';
 import { RealmNotFound, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
@@ -33,66 +34,78 @@ import type {
 	GrantRealmAdminError,
 	Reviewed,
 	ReviewReportError,
-	Row,
 	SetBanError,
 } from './admin.types.ts';
 
 // ---- Row readers -----------------------------------------------------------------------------
 
-const instant = (value: unknown) => rowInstant(value as Date | string);
-const maybeInstant = (value: unknown) => (value ? instant(value) : null);
-const int = (value: unknown) => Number(value ?? 0);
-const person = (id: unknown, name: unknown, email: unknown) =>
-	id ? { id: String(id), name: String(name ?? ''), email: String(email ?? '') } : null;
+const maybeInstant = (date: Date | null) => (date ? fromDate(date) : null);
+const person = (id: string | null, name: string | null, email: string | null) =>
+	id ? { id, name: name ?? '', email: email ?? '' } : null;
+
+const reporter = alias(user, 'reporter');
+const accused = alias(user, 'accused');
 
 /** The platform's control panel: every realm, every account, the audit trail and reports. */
 export function createAdminService(deps: AdminDeps) {
 	const { db, clock } = deps;
 
 	async function overview(): Promise<PlatformCounts> {
-		const [row = {}] = (await db.execute(sql`
-      SELECT
-        (SELECT count(*)::int FROM realm) AS realms,
-        (SELECT count(*)::int FROM realm WHERE archived_at IS NOT NULL) AS archived,
-        (SELECT count(*)::int FROM realm r WHERE NOT EXISTS (
-           SELECT 1 FROM realm_member m WHERE m.realm_id = r.id AND m.role = ${RealmRole.admin}
-         )) AS orphaned,
-        (SELECT count(*)::int FROM "user") AS members,
-        (SELECT count(*)::int FROM room_report WHERE reviewed_at IS NULL) AS open_reports,
-        (SELECT count(*)::int FROM audit_entries) AS audit_entries
-    `)) as unknown as Row[];
+		const [total, archived, orphaned, members, openReports, auditCount] = await Promise.all([
+			db.$count(realms),
+			db.$count(realms, isNotNull(realms.archivedAt)),
+			db.$count(
+				realms,
+				notExists(
+					db
+						.select({ one: sql`1` })
+						.from(realmMembers)
+						.where(
+							and(eq(realmMembers.realmId, realms.id), eq(realmMembers.role, RealmRole.admin)),
+						),
+				),
+			),
+			db.$count(user),
+			db.$count(roomReports, isNull(roomReports.reviewedAt)),
+			db.$count(auditEntries),
+		]);
 		return {
-			realms: int(row.realms),
-			archived: int(row.archived),
-			orphaned: int(row.orphaned),
-			members: int(row.members),
-			openReports: int(row.open_reports),
-			auditEntries: int(row.audit_entries),
+			realms: total,
+			archived,
+			orphaned,
+			members,
+			openReports,
+			auditEntries: auditCount,
 		};
 	}
 
 	async function listRealms(limit: number): Promise<PlatformRealm[]> {
-		const rows = (await db.execute(sql`
-      SELECT r.id, r.slug, r.name, r.category, r.archived_at, r.created_at,
-        (SELECT count(*)::int FROM realm_member m WHERE m.realm_id = r.id) AS member_count,
-        (SELECT count(*)::int FROM realm_member m
-           WHERE m.realm_id = r.id AND m.role = ${RealmRole.admin}) AS admin_count,
-        u.id AS founder_id, u.name AS founder_name, u.email AS founder_email
-      FROM realm r
-      LEFT JOIN "user" u ON u.id = r.created_by
-      ORDER BY r.created_at DESC
-      LIMIT ${limit}
-    `)) as unknown as Row[];
-		return rows.map((row) => ({
-			id: String(row.id),
-			slug: String(row.slug),
-			name: String(row.name),
-			category: (row.category as string | null) ?? null,
-			memberCount: Number(row.member_count),
-			adminCount: Number(row.admin_count),
-			archivedAt: maybeInstant(row.archived_at),
-			createdAt: instant(row.created_at),
-			createdBy: person(row.founder_id, row.founder_name, row.founder_email),
+		const rows = await db
+			.select({
+				id: realms.id,
+				slug: realms.slug,
+				name: realms.name,
+				category: realms.category,
+				archivedAt: realms.archivedAt,
+				createdAt: realms.createdAt,
+				memberCount: db.$count(realmMembers, eq(realmMembers.realmId, realms.id)),
+				adminCount: db.$count(
+					realmMembers,
+					and(eq(realmMembers.realmId, realms.id), eq(realmMembers.role, RealmRole.admin)),
+				),
+				founderId: user.id,
+				founderName: user.name,
+				founderEmail: user.email,
+			})
+			.from(realms)
+			.leftJoin(user, eq(user.id, realms.createdBy))
+			.orderBy(desc(realms.createdAt))
+			.limit(limit);
+		return rows.map(({ founderId, founderName, founderEmail, ...row }) => ({
+			...row,
+			archivedAt: maybeInstant(row.archivedAt),
+			createdAt: fromDate(row.createdAt),
+			createdBy: person(founderId, founderName, founderEmail),
 		}));
 	}
 
@@ -124,55 +137,73 @@ export function createAdminService(deps: AdminDeps) {
 	}
 
 	async function reports(openOnly: boolean, limit: number): Promise<Report[]> {
-		const rows = (await db.execute(sql`
-      SELECT rr.id, rr.room_id, rr.message_id, rr.reason, rr.disclosed_text,
-        rr.reviewed_at, rr.created_at,
-        rep.id AS reporter_id, rep.name AS reporter_name, rep.email AS reporter_email,
-        acc.id AS accused_id, acc.name AS accused_name, acc.email AS accused_email,
-        (SELECT m.sender_id = rr.accused_id FROM room_message m WHERE m.id = rr.message_id)
-          AS sender_matches
-      FROM room_report rr
-      LEFT JOIN "user" rep ON rep.id = rr.reporter_id
-      LEFT JOIN "user" acc ON acc.id = rr.accused_id
-      ${openOnly ? sql`WHERE rr.reviewed_at IS NULL` : sql``}
-      ORDER BY rr.reviewed_at IS NULL DESC, rr.created_at ASC
-      LIMIT ${limit}
-    `)) as unknown as Row[];
-		return rows.map((row) => ({
-			id: String(row.id),
-			roomId: String(row.room_id),
-			messageId: (row.message_id as string | null) ?? null,
-			reason: String(row.reason),
-			disclosedText: (row.disclosed_text as string | null) ?? null,
-			reporter: person(row.reporter_id, row.reporter_name, row.reporter_email),
-			accused: person(row.accused_id, row.accused_name, row.accused_email),
-			senderMatches: (row.sender_matches as boolean | null) ?? null,
-			reviewedAt: maybeInstant(row.reviewed_at),
-			createdAt: instant(row.created_at),
-		}));
+		const rows = await db
+			.select({
+				id: roomReports.id,
+				roomId: roomReports.roomId,
+				messageId: roomReports.messageId,
+				reason: roomReports.reason,
+				disclosedText: roomReports.disclosedText,
+				reviewedAt: roomReports.reviewedAt,
+				createdAt: roomReports.createdAt,
+				reporterId: reporter.id,
+				reporterName: reporter.name,
+				reporterEmail: reporter.email,
+				accusedId: accused.id,
+				accusedName: accused.name,
+				accusedEmail: accused.email,
+				// Null when the report names no message, or the message is gone.
+				senderMatches: sql<boolean | null>`${roomMessages.senderId} = ${roomReports.accusedId}`,
+			})
+			.from(roomReports)
+			.leftJoin(reporter, eq(reporter.id, roomReports.reporterId))
+			.leftJoin(accused, eq(accused.id, roomReports.accusedId))
+			.leftJoin(roomMessages, eq(roomMessages.id, roomReports.messageId))
+			.where(openOnly ? isNull(roomReports.reviewedAt) : undefined)
+			.orderBy(desc(isNull(roomReports.reviewedAt)), asc(roomReports.createdAt))
+			.limit(limit);
+		return rows.map(
+			({
+				reporterId,
+				reporterName,
+				reporterEmail,
+				accusedId,
+				accusedName,
+				accusedEmail,
+				...row
+			}) => ({
+				...row,
+				reporter: person(reporterId, reporterName, reporterEmail),
+				accused: person(accusedId, accusedName, accusedEmail),
+				reviewedAt: maybeInstant(row.reviewedAt),
+				createdAt: fromDate(row.createdAt),
+			}),
+		);
 	}
 
 	async function accounts(query: string, limit: number): Promise<Account[]> {
 		const like = containing(query);
-		const rows = (await db.execute(sql`
-      SELECT u.id, u.name, u.email, u.email_verified, u.created_at,
-        u.banned_at, u.ban_reason, u.banned_until,
-        (SELECT count(*)::int FROM realm_member m WHERE m.user_id = u.id) AS realm_count
-      FROM "user" u
-      ${query ? sql`WHERE u.name ILIKE ${like} OR u.email ILIKE ${like}` : sql``}
-      ORDER BY (u.banned_at IS NOT NULL) DESC, u.created_at DESC
-      LIMIT ${limit}
-    `)) as unknown as Row[];
+		const rows = await db
+			.select({
+				id: user.id,
+				name: user.name,
+				email: user.email,
+				emailVerified: user.emailVerified,
+				createdAt: user.createdAt,
+				bannedAt: user.bannedAt,
+				banReason: user.banReason,
+				bannedUntil: user.bannedUntil,
+				realmCount: db.$count(realmMembers, eq(realmMembers.userId, user.id)),
+			})
+			.from(user)
+			.where(query ? or(ilike(user.name, like), ilike(user.email, like)) : undefined)
+			.orderBy(desc(isNotNull(user.bannedAt)), desc(user.createdAt))
+			.limit(limit);
 		return rows.map((row) => ({
-			id: String(row.id),
-			name: String(row.name),
-			email: String(row.email),
-			emailVerified: Boolean(row.email_verified),
-			createdAt: instant(row.created_at),
-			bannedAt: maybeInstant(row.banned_at),
-			banReason: (row.ban_reason as string | null) ?? null,
-			bannedUntil: maybeInstant(row.banned_until),
-			realmCount: Number(row.realm_count),
+			...row,
+			createdAt: fromDate(row.createdAt),
+			bannedAt: maybeInstant(row.bannedAt),
+			bannedUntil: maybeInstant(row.bannedUntil),
 		}));
 	}
 

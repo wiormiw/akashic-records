@@ -27,9 +27,6 @@ export interface BanRequest {
 	until?: Temporal.Instant;
 }
 
-/** The raw row a raw SQL query returns: columns arrive untyped. */
-export type Row = Record<string, unknown>;
-
 /** What reviewing a report answers. */
 export interface Reviewed {
 	id: string;
