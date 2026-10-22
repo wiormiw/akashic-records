@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, exists, isNotNull, sql } from 'drizzle-orm';
 import {
 	type Executor,
 	inTransaction,
@@ -150,16 +150,26 @@ export function createModerationService(deps: RoomAreaDeps) {
 
 		/** Deletes messages past a retention both participants agreed to; answers how many. */
 		async sweepExpired(): Promise<number> {
-			const removed = (await db.execute(sql`
-        DELETE FROM room_message m
-        USING room r
-        WHERE m.room_id = r.id
-          AND r.retention_days IS NOT NULL
-          AND r.low_user_id = ANY(r.retention_agreed_by)
-          AND r.high_user_id = ANY(r.retention_agreed_by)
-          AND m.created_at < now() - make_interval(days => r.retention_days)
-        RETURNING m.id
-      `)) as unknown as unknown[];
+			// A message goes when its room's retention is agreed by both participants and has run out.
+			const removed = await db
+				.delete(roomMessages)
+				.where(
+					exists(
+						db
+							.select({ one: sql`1` })
+							.from(rooms)
+							.where(
+								and(
+									eq(rooms.id, roomMessages.roomId),
+									isNotNull(rooms.retentionDays),
+									sql`${rooms.lowUserId} = ANY(${rooms.retentionAgreedBy})`,
+									sql`${rooms.highUserId} = ANY(${rooms.retentionAgreedBy})`,
+									sql`${roomMessages.createdAt} < now() - make_interval(days => ${rooms.retentionDays})`,
+								),
+							),
+					),
+				)
+				.returning({ id: roomMessages.id });
 			return removed.length;
 		},
 	};
