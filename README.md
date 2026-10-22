@@ -4,6 +4,23 @@ A Bun monorepo: a Hono API (`apps/api`) over Postgres, OpenFGA, Redis and Rabbit
 packages for the database, contracts, authorization and messaging. The design and rationale are in
 [docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md](docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md).
 
+Communities form **realms**, each with its own members, roles and rules, and run job listings, event
+RSVPs and a marketplace inside them.
+
+## Screenshots
+
+Fictional demo data (TCG, Cosplay, Animanga, Idol and VTuber realms), seeded through the API
+on the local production stack (`deploy/up-local.sh --web`).
+
+| | |
+| :-: | :-: |
+| ![Landing page](docs/screenshots/home.png) | ![Realm directory](docs/screenshots/realms.png) |
+| Landing page | Realm directory |
+| ![A realm, seen by a member](docs/screenshots/realm.png) | ![An event with RSVPs and discussion](docs/screenshots/event.png) |
+| A realm, seen by a member | An event: RSVP, capacity and discussion |
+| ![Jobs in a realm](docs/screenshots/jobs.png) | ![Marketplace in a realm](docs/screenshots/listings.png) |
+| Jobs (commissions and freelance) | Marketplace |
+
 ## Start
 
 ```
