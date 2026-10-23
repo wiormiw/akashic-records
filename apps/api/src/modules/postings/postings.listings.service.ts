@@ -52,8 +52,7 @@ async function findListing(
 			})
 			.from(listings)
 			.innerJoin(user, eq(user.id, listings.sellerId))
-			.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-			.limit(1),
+			.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId))),
 	);
 	return row && { ...row, createdAt: fromDate(row.createdAt) };
 }

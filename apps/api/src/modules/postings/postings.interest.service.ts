@@ -29,20 +29,21 @@ export async function hasOpenInterest(
 	subject: Subject,
 	userId: string,
 ): Promise<boolean> {
-	const row = first(
-		await db
-			.select({ id: postingInterests.id })
-			.from(postingInterests)
-			.where(
-				and(
-					ofSubject(subject),
-					eq(postingInterests.userId, userId),
-					eq(postingInterests.status, InterestStatus.open),
-				),
-			)
-			.limit(1),
+	return (
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(postingInterests)
+				.where(
+					and(
+						ofSubject(subject),
+						eq(postingInterests.userId, userId),
+						eq(postingInterests.status, InterestStatus.open),
+					),
+				)
+				.limit(1)
+		).length > 0
 	);
-	return row !== undefined;
 }
 
 /** Accepts the chosen user's interest and declines every other open one. */
@@ -66,14 +67,15 @@ export async function requireMember(
 	realmId: string,
 	userId: string,
 ): Promise<Result<void, RequireMemberError>> {
-	const row = first(
-		await db
-			.select({ role: realmMembers.role })
-			.from(realmMembers)
-			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-			.limit(1),
-	);
-	if (!row) return err(new MemberNotFound('That person is not in this realm.'));
+	const member =
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(realmMembers)
+				.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
+				.limit(1)
+		).length > 0;
+	if (!member) return err(new MemberNotFound('That person is not in this realm.'));
 	return ok(undefined);
 }
 
@@ -93,8 +95,7 @@ export function createInterestService(deps: InterestDeps) {
 				await db
 					.select({ owner: jobs.authorId })
 					.from(jobs)
-					.where(and(eq(jobs.id, subject.id), eq(jobs.realmId, realmId)))
-					.limit(1),
+					.where(and(eq(jobs.id, subject.id), eq(jobs.realmId, realmId))),
 			);
 			return row?.owner;
 		}
@@ -103,8 +104,7 @@ export function createInterestService(deps: InterestDeps) {
 				await db
 					.select({ owner: listings.sellerId })
 					.from(listings)
-					.where(and(eq(listings.id, subject.id), eq(listings.realmId, realmId)))
-					.limit(1),
+					.where(and(eq(listings.id, subject.id), eq(listings.realmId, realmId))),
 			);
 			return row?.owner;
 		}

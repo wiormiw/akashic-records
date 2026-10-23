@@ -87,8 +87,7 @@ async function centroidOf(db: Executor, realmId: string, lock = false): Promise<
 			samples: realms.centroidSamples,
 		})
 		.from(realms)
-		.where(eq(realms.id, realmId))
-		.limit(1);
+		.where(eq(realms.id, realmId));
 	return centroidFrom(first(await (lock ? query.for('update') : query)));
 }
 

@@ -49,8 +49,7 @@ async function findJob(db: Executor, realmId: string, jobId: string): Promise<Jo
 			})
 			.from(jobs)
 			.innerJoin(user, eq(user.id, jobs.authorId))
-			.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
-			.limit(1),
+			.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId))),
 	);
 	return row && { ...row, createdAt: fromDate(row.createdAt) };
 }

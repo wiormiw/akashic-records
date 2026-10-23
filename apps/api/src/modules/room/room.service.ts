@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { and, asc, count, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { DeviceKey, RoomSummary, UserDeviceKey } from '@akashic/contracts';
 import {
 	type Executor,
@@ -100,7 +100,7 @@ export async function findFor(
 	roomId: string,
 	userId: string,
 ): Promise<Room | undefined> {
-	const row = first(
+	return first(
 		await db
 			.select({
 				id: rooms.id,
@@ -109,10 +109,8 @@ export async function findFor(
 				highUserId: rooms.highUserId,
 			})
 			.from(rooms)
-			.where(and(eq(rooms.id, roomId), participantIn(userId)))
-			.limit(1),
+			.where(and(eq(rooms.id, roomId), participantIn(userId))),
 	);
-	return row;
 }
 
 /**
@@ -129,21 +127,21 @@ export async function participant(
 }
 
 async function realmIdOf(db: Executor, slug: string): Promise<string | undefined> {
-	const row = first(
-		await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)).limit(1),
-	);
+	const row = first(await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)));
 	return row?.id;
 }
 
-async function isMember(db: Executor, realmId: string, userId: string): Promise<boolean> {
-	const row = first(
-		await db
-			.select({ role: realmMembers.role })
-			.from(realmMembers)
-			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-			.limit(1),
-	);
-	return row !== undefined;
+/** Whether both people are in the realm: one lookup for the pair (they are two different people). */
+async function bothMembers(
+	db: Executor,
+	realmId: string,
+	userIds: readonly [string, string],
+): Promise<boolean> {
+	const found = await db
+		.select({ one: sql`1` })
+		.from(realmMembers)
+		.where(and(eq(realmMembers.realmId, realmId), inArray(realmMembers.userId, [...userIds])));
+	return found.length === 2;
 }
 
 /** Whether the job or listing a room would be about is posted in that realm. */
@@ -154,14 +152,15 @@ async function subjectIn(
 	subjectId: string,
 ): Promise<boolean> {
 	const table = kind === RoomSubject.job ? jobs : listings;
-	const row = first(
-		await db
-			.select({ id: table.id })
-			.from(table)
-			.where(and(eq(table.id, subjectId), eq(table.realmId, realmId)))
-			.limit(1),
+	return (
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(table)
+				.where(and(eq(table.id, subjectId), eq(table.realmId, realmId)))
+				.limit(1)
+		).length > 0
 	);
-	return row !== undefined;
 }
 
 async function roomsOpenedSince(
@@ -169,14 +168,7 @@ async function roomsOpenedSince(
 	userId: string,
 	since: Temporal.Instant,
 ): Promise<number> {
-	const row = one(
-		await db
-			.select({ n: count() })
-			.from(rooms)
-			.where(and(participantIn(userId), gt(rooms.createdAt, toDate(since)))),
-		'room count',
-	);
-	return row.n;
+	return db.$count(rooms, and(participantIn(userId), gt(rooms.createdAt, toDate(since))));
 }
 
 /** The existing room for this pair and posting, or a new one. */
@@ -280,11 +272,7 @@ export function createRoomService(deps: RoomAccessDeps) {
 			const realmId = await realmIdOf(db, request.realmSlug);
 			if (!realmId) return err(new RealmNotFound('No such realm.'));
 
-			const [mine, theirs] = await Promise.all([
-				isMember(db, realmId, userId),
-				isMember(db, realmId, request.withUserId),
-			]);
-			if (!mine || !theirs) {
+			if (!(await bothMembers(db, realmId, [userId, request.withUserId]))) {
 				return err(
 					new NotBothMembers('Both people have to be in the realm the posting belongs to.'),
 				);

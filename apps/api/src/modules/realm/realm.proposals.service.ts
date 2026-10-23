@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import type { Proposal } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import {
@@ -161,18 +161,19 @@ export function createProposals(deps: ProposalDeps) {
 
 	return {
 		async propose(proposal: NewProposal): Promise<Result<ProposalRef, ProposeError>> {
-			const pending = first(
-				await db
-					.select({ id: realmProposals.id })
-					.from(realmProposals)
-					.where(
-						and(
-							eq(realmProposals.proposedBy, proposal.proposedBy),
-							eq(realmProposals.status, ProposalStatus.pending),
-						),
-					)
-					.limit(1),
-			);
+			const pending =
+				(
+					await db
+						.select({ one: sql`1` })
+						.from(realmProposals)
+						.where(
+							and(
+								eq(realmProposals.proposedBy, proposal.proposedBy),
+								eq(realmProposals.status, ProposalStatus.pending),
+							),
+						)
+						.limit(1)
+				).length > 0;
 			if (pending) {
 				return err(
 					new DuplicateSlug(
@@ -180,13 +181,14 @@ export function createProposals(deps: ProposalDeps) {
 					),
 				);
 			}
-			const taken = first(
-				await db
-					.select({ id: realms.id })
-					.from(realms)
-					.where(eq(realms.slug, proposal.slug))
-					.limit(1),
-			);
+			const taken =
+				(
+					await db
+						.select({ one: sql`1` })
+						.from(realms)
+						.where(eq(realms.slug, proposal.slug))
+						.limit(1)
+				).length > 0;
 			if (taken) {
 				return err(new DuplicateSlug(`The name "${proposal.slug}" is already taken.`));
 			}

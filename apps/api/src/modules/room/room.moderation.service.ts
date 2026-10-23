@@ -47,8 +47,7 @@ async function senderOf(
 		await db
 			.select({ senderId: roomMessages.senderId })
 			.from(roomMessages)
-			.where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId)))
-			.limit(1),
+			.where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId))),
 	);
 	return row?.senderId;
 }
@@ -73,8 +72,7 @@ async function agreeRetention(
 					})
 					.from(rooms)
 					.where(eq(rooms.id, roomId))
-					.for('update')
-					.limit(1),
+					.for('update'),
 			);
 			if (!room) return ok(false);
 
@@ -92,7 +90,7 @@ async function agreeRetention(
 
 /** Closing a room, reporting a message, and how long messages are kept. */
 /** A message the retention sweep deleted. */
-type SweptMessage = { id: string };
+type SweptMessageRow = { id: string };
 
 export function createModerationService(deps: RoomAreaDeps) {
 	const { db } = deps;
@@ -161,7 +159,7 @@ export function createModerationService(deps: RoomAreaDeps) {
 		/** Deletes messages past a retention both participants agreed to; answers how many. */
 		async sweepExpired(): Promise<number> {
 			// A message goes when its room's retention is agreed by both participants and has run out.
-			const removed = await db.execute<SweptMessage>(sql`
+			const removed = await db.execute<SweptMessageRow>(sql`
         DELETE FROM room_message m
         USING room r
         WHERE m.room_id = r.id

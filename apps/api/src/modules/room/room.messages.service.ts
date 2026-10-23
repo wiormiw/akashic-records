@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gt, inArray } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { StoredMessage } from '@akashic/contracts';
 import {
 	type Executor,
@@ -9,7 +9,7 @@ import {
 	rooms,
 	userKeys,
 } from '@akashic/db';
-import { first, one } from '@akashic/db/sql';
+import { one } from '@akashic/db/sql';
 import { RateLimited, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result, value } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
@@ -62,14 +62,15 @@ async function messagesOf(
 }
 
 async function isBlocked(db: Executor, roomId: string): Promise<boolean> {
-	const row = first(
-		await db
-			.select({ roomId: roomBlocks.roomId })
-			.from(roomBlocks)
-			.where(eq(roomBlocks.roomId, roomId))
-			.limit(1),
+	return (
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(roomBlocks)
+				.where(eq(roomBlocks.roomId, roomId))
+				.limit(1)
+		).length > 0
 	);
-	return row !== undefined;
 }
 
 async function messagesSentSince(
@@ -78,20 +79,14 @@ async function messagesSentSince(
 	senderId: string,
 	since: Temporal.Instant,
 ): Promise<number> {
-	const row = one(
-		await db
-			.select({ n: count() })
-			.from(roomMessages)
-			.where(
-				and(
-					eq(roomMessages.roomId, roomId),
-					eq(roomMessages.senderId, senderId),
-					gt(roomMessages.createdAt, toDate(since)),
-				),
-			),
-		'message count',
+	return db.$count(
+		roomMessages,
+		and(
+			eq(roomMessages.roomId, roomId),
+			eq(roomMessages.senderId, senderId),
+			gt(roomMessages.createdAt, toDate(since)),
+		),
 	);
-	return row.n;
 }
 
 /** Every device of these people. */

@@ -58,7 +58,7 @@ export interface NewProposal {
 }
 
 /** One proposal row, joined to its proposer (`proposed_by` cascades, so there always is one). */
-export interface ProposalRow {
+export type ProposalRow = {
 	id: string;
 	slug: string;
 	name: string;
@@ -74,7 +74,7 @@ export interface ProposalRow {
 	proposerId: string;
 	proposerName: string;
 	proposerEmail: string;
-}
+};
 
 /** A proposal's id. */
 export interface ProposalRef {
