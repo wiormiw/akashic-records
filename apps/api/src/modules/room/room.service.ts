@@ -316,7 +316,15 @@ export function createRoomService(deps: RoomAccessDeps) {
 		async admit(roomId: string, ticket: string): Promise<TicketClaim | null> {
 			const claim = tickets.read(ticket, clock.now());
 			if (!claim || claim.roomId !== roomId) return null;
-			return (await findFor(db, roomId, claim.userId)) ? claim : null;
+			const present =
+				(
+					await db
+						.select({ one: sql`1` })
+						.from(rooms)
+						.where(and(eq(rooms.id, roomId), participantIn(claim.userId)))
+						.limit(1)
+				).length > 0;
+			return present ? claim : null;
 		},
 	};
 }

@@ -149,7 +149,13 @@ export function createListingService(deps: PostingAreaDeps) {
 			actorId: string,
 			buyerId: string,
 		): Promise<Result<Dealt, DealError>> {
-			const listing = await findListing(db, realmId, listingId);
+			// Only the seller and whether it is active; the realm in the path scopes the read.
+			const listing = first(
+				await db
+					.select({ sellerId: listings.sellerId, status: listings.status })
+					.from(listings)
+					.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId))),
+			);
 			if (!listing) return err(noListing());
 			if (listing.sellerId !== actorId) {
 				return err(new RealmForbidden('Only the seller can close a deal.'));

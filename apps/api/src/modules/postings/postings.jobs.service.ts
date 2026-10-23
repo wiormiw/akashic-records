@@ -136,7 +136,13 @@ export function createJobService(deps: PostingAreaDeps) {
 			actorId: string,
 			hiredUserId: string,
 		): Promise<Result<Hired, HireError>> {
-			const job = await findJob(db, realmId, jobId);
+			// Only who posted it and whether it is open; the realm in the path scopes the read.
+			const job = first(
+				await db
+					.select({ authorId: jobs.authorId, status: jobs.status })
+					.from(jobs)
+					.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId))),
+			);
 			if (!job) return err(noJob());
 			if (job.authorId !== actorId) {
 				return err(new RealmForbidden('Only the person who posted it can hire.'));

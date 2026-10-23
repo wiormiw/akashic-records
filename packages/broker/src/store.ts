@@ -57,11 +57,12 @@ export function createOutboxStore(db: Db): OutboxStore & OutboxRecovery {
 				const revived = (await deadRows(tx, limit).for('update')).map((row) =>
 					revive(fromRow(row), now),
 				);
-				if (revived.length === 0) return revived;
+				const sample = first(revived);
+				if (!sample) return revived;
 				// revive() sets the same constants on every event, so one statement writes them all; a
 				// per-event difference there must bring back a per-event write. The rows are locked
 				// above, so none has left `dead` since.
-				const { status, attemptCount, nextAttemptAt } = changedColumns(first(revived)!);
+				const { status, attemptCount, nextAttemptAt } = changedColumns(sample);
 				await tx
 					.update(outboxMessages)
 					.set({ status, attemptCount, nextAttemptAt })

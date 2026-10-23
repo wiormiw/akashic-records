@@ -72,10 +72,6 @@ async function selectTakedowns(
 	}));
 }
 
-async function findTakedown(db: Executor, id: string): Promise<Takedown | undefined> {
-	return first(await selectTakedowns(db, eq(takedowns.id, id), 1));
-}
-
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
 async function castVote(
 	db: Executor,
@@ -217,7 +213,18 @@ export function createTakedownService(deps: GovernanceDeps) {
 			voterId: string,
 			agree: boolean,
 		): Promise<Result<TakedownTally, VoteTakedownError>> {
-			const takedown = await findTakedown(db, takedownId);
+			// The columns the vote reads; the tallies come from castVote.
+			const takedown = first(
+				await db
+					.select({
+						realmId: takedowns.realmId,
+						status: takedowns.status,
+						subjectId: takedowns.subjectId,
+						reason: takedowns.reason,
+					})
+					.from(takedowns)
+					.where(eq(takedowns.id, takedownId)),
+			);
 			// Scoped to the realm in the path, so a moderator elsewhere can't vote here.
 			if (!takedown || takedown.realmId !== realmId)
 				return err(new RealmNotFound('No such takedown.'));

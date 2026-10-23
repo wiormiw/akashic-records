@@ -84,10 +84,6 @@ async function selectRecalls(
 	}));
 }
 
-async function findRecall(db: Executor, id: string): Promise<Recall | undefined> {
-	return first(await selectRecalls(db, eq(recalls.id, id), 1));
-}
-
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
 async function castVote(
 	db: Executor,
@@ -202,18 +198,31 @@ export function createRecallService(deps: RecallDeps) {
 			voterId: string,
 			agree: boolean,
 		): Promise<Result<RecallTally, VoteRecallError>> {
-			const recall = await findRecall(db, recallId);
+			// The columns the vote reads; the tallies come from castVote.
+			const recall = first(
+				await db
+					.select({
+						realmId: recalls.realmId,
+						kind: recalls.kind,
+						status: recalls.status,
+						reason: recalls.reason,
+						subjectId: recalls.subjectId,
+					})
+					.from(recalls)
+					.where(eq(recalls.id, recallId)),
+			);
 			// Scoped to the realm in the path, so a member elsewhere can't vote here.
 			if (!recall || recall.realmId !== realmId) return err(new RealmNotFound('No such recall.'));
 			if (recall.status !== RecallStatus.open) {
 				return err(new AlreadyMember('That recall is already settled.'));
 			}
-			if (!mayTakePart(recall.kind, await roleOf(db, realmId, voterId))) return notTheirs();
+			const kind = narrow(RecallKind, recall.kind);
+			if (!mayTakePart(kind, await roleOf(db, realmId, voterId))) return notTheirs();
 
 			return inTransaction(db, async (tx) => {
 				const size = await sizeOf(tx, realmId);
-				const electorate = recall.kind === RecallKind.members ? size.members : size.moderators;
-				const needed = recallThreshold(recall.kind, electorate);
+				const electorate = kind === RecallKind.members ? size.members : size.moderators;
+				const needed = recallThreshold(kind, electorate);
 				const { agrees, refusals } = await castVote(tx, recallId, voterId, agree);
 				const now = toDate(clock.now());
 
@@ -225,7 +234,7 @@ export function createRecallService(deps: RecallDeps) {
 					// Read under the members' lock. A subject promoted to admin, demoted or gone since the
 					// recall opened holds no seat to take: refused, so the recall neither sticks open nor
 					// carries later against a seat they hold again.
-					const subjectId = recall.subject?.id;
+					const subjectId = recall.subjectId;
 					if (!subjectId || !(await seats.lockSeatHolder(tx, realmId, subjectId))) {
 						await resolve(tx, recallId, RecallStatus.refused, now);
 						return ok({ status: RecallStatus.refused, agrees, refusals, needed });
@@ -234,7 +243,7 @@ export function createRecallService(deps: RecallDeps) {
 					const unseated = await seats.unseat(tx, realmId, subjectId, {
 						actorId: voterId,
 						changes: {
-							by: `recall.${recall.kind === RecallKind.members ? 'members' : 'moderators'}`,
+							by: `recall.${kind === RecallKind.members ? 'members' : 'moderators'}`,
 							reason: recall.reason,
 							agrees,
 						},
