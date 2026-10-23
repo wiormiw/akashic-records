@@ -108,8 +108,6 @@ export async function findEvent(
 	};
 }
 
-type TallyRow = { going: number; already: boolean };
-
 /**
  * Who is going, and whether this person already is: only asked when the answer can matter, a
  * place in a capped event. Run while the event row is locked.
@@ -118,7 +116,7 @@ export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<Going
 	if (rsvp.status !== RsvpStatus.going || rsvp.capacity === null) return undefined;
 	const { eventId, userId } = rsvp;
 	// Two scalar subqueries read together; the casts make the row match its type.
-	const [tally] = await tx.execute<TallyRow>(sql`
+	const [tally] = await tx.execute<GoingTally>(sql`
     SELECT
       (SELECT count(*)::int FROM event_rsvp
          WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
@@ -126,6 +124,8 @@ export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<Going
          WHERE event_id = ${eventId} AND user_id = ${userId}
            AND status = ${RsvpStatus.going}) AS already
   `);
+	// Two scalar subqueries always yield a row. Returning none would read as "room left".
+	if (!tally) throw new Error('going tally returned no row');
 	return tally;
 }
 

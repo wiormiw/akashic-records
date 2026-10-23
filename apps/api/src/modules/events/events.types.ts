@@ -39,10 +39,10 @@ export interface RsvpRequest {
 }
 
 /** How many are going, and whether the asker already is. */
-export interface GoingTally {
+export type GoingTally = {
 	going: number;
 	already: boolean;
-}
+};
 
 /** The answer an RSVP recorded. */
 export interface RsvpAnswer {
