@@ -12,7 +12,7 @@ import {
 	realms,
 	user,
 } from '@akashic/db';
-import { pgVector } from '@akashic/db/sql';
+import { first, pgVector } from '@akashic/db/sql';
 import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
 import {
 	AlreadyMember,
@@ -153,7 +153,7 @@ export function createRealmService(deps: RealmDeps) {
 
 		/** Live realms only. */
 		async read(slug: string): Promise<Result<RealmSummary, ReadRealmError>> {
-			const [realm] = await liveSummaries(db, eq(realms.slug, slug), 1);
+			const realm = first(await liveSummaries(db, eq(realms.slug, slug), 1));
 			return realm ? ok(realm) : err(new RealmNotFound(`No realm called "${slug}".`));
 		},
 
@@ -212,10 +212,12 @@ export function createRealmService(deps: RealmDeps) {
 
 		/** The role `userId` holds in the realm now, or null when they aren't in it. */
 		async memberRole(realmId: string, userId: string): Promise<RealmRole | null> {
-			const [row] = await db
-				.select({ role: realmMembers.role })
-				.from(realmMembers)
-				.where(ofMember(realmId, userId));
+			const row = first(
+				await db
+					.select({ role: realmMembers.role })
+					.from(realmMembers)
+					.where(ofMember(realmId, userId)),
+			);
 			return row ? narrow(RealmRole, row.role) : null;
 		},
 

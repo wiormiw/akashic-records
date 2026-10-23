@@ -9,6 +9,7 @@ import {
 	takedownVotes,
 	user,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, CommentSubject, narrow, TakedownStatus } from '@akashic/lib/enums';
 import { AlreadyMember, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -72,7 +73,7 @@ async function selectTakedowns(
 }
 
 async function findTakedown(db: Executor, id: string): Promise<Takedown | undefined> {
-	const [takedown] = await selectTakedowns(db, eq(takedowns.id, id), 1);
+	const takedown = first(await selectTakedowns(db, eq(takedowns.id, id), 1));
 	return takedown;
 }
 
@@ -90,14 +91,16 @@ async function castVote(
 			target: [takedownVotes.takedownId, takedownVotes.voterId],
 			set: { agree },
 		});
-	const [row] = await db
-		.select({
-			agrees: sql<number>`count(*) FILTER (WHERE ${takedownVotes.agree})`.mapWith(Number),
-			refusals: sql<number>`count(*) FILTER (WHERE NOT ${takedownVotes.agree})`.mapWith(Number),
-		})
-		.from(takedownVotes)
-		.where(eq(takedownVotes.takedownId, takedownId));
-	return row ?? { agrees: 0, refusals: 0 };
+	return one(
+		await db
+			.select({
+				agrees: sql<number>`count(*) FILTER (WHERE ${takedownVotes.agree})`.mapWith(Number),
+				refusals: sql<number>`count(*) FILTER (WHERE NOT ${takedownVotes.agree})`.mapWith(Number),
+			})
+			.from(takedownVotes)
+			.where(eq(takedownVotes.takedownId, takedownId)),
+		'takedown tally',
+	);
 }
 
 /** Only an open takedown resolves; false when it was already settled. */
@@ -118,21 +121,25 @@ async function resolve(
 /** Undefined when a takedown is already open against that comment. */
 async function openTakedown(db: Executor, takedown: NewTakedown): Promise<string | undefined> {
 	const { commentId, ...rest } = takedown;
-	const [created] = await db
-		.insert(takedowns)
-		.values({ ...rest, subjectId: commentId })
-		.onConflictDoNothing()
-		.returning({ id: takedowns.id });
+	const created = first(
+		await db
+			.insert(takedowns)
+			.values({ ...rest, subjectId: commentId })
+			.onConflictDoNothing()
+			.returning({ id: takedowns.id }),
+	);
 	return created?.id;
 }
 
 /** Whether the comment is one of this realm's: a comment elsewhere is indistinguishable from none. */
 async function commentInRealm(db: Executor, realmId: string, commentId: string): Promise<boolean> {
-	const [row] = await db
-		.select({ id: comments.id })
-		.from(comments)
-		.where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ id: comments.id })
+			.from(comments)
+			.where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
+			.limit(1),
+	);
 	return row !== undefined;
 }
 

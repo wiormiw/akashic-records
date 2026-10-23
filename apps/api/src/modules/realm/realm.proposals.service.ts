@@ -12,6 +12,7 @@ import {
 	type Tx,
 	user,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, ProposalStatus, RealmModule, RealmRole } from '@akashic/lib/enums';
 import { DuplicateSlug, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -71,17 +72,19 @@ export async function foundIn(
 	realm: FoundRealm,
 	now: Temporal.Instant,
 ): Promise<Result<string, FoundRealmError>> {
-	const [created] = await tx
-		.insert(realms)
-		.values({
-			slug: realm.slug,
-			name: realm.name,
-			description: realm.description ?? null,
-			category: realm.category ?? null,
-			createdBy: founderId,
-		})
-		.onConflictDoNothing()
-		.returning({ id: realms.id });
+	const created = first(
+		await tx
+			.insert(realms)
+			.values({
+				slug: realm.slug,
+				name: realm.name,
+				description: realm.description ?? null,
+				category: realm.category ?? null,
+				createdBy: founderId,
+			})
+			.onConflictDoNothing()
+			.returning({ id: realms.id }),
+	);
 	if (!created) {
 		return err(new DuplicateSlug(`The slug "${realm.slug}" is taken.`));
 	}
@@ -158,16 +161,18 @@ export function createProposals(deps: ProposalDeps) {
 
 	return {
 		async propose(proposal: NewProposal): Promise<Result<ProposalRef, ProposeError>> {
-			const [pending] = await db
-				.select({ id: realmProposals.id })
-				.from(realmProposals)
-				.where(
-					and(
-						eq(realmProposals.proposedBy, proposal.proposedBy),
-						eq(realmProposals.status, ProposalStatus.pending),
-					),
-				)
-				.limit(1);
+			const pending = first(
+				await db
+					.select({ id: realmProposals.id })
+					.from(realmProposals)
+					.where(
+						and(
+							eq(realmProposals.proposedBy, proposal.proposedBy),
+							eq(realmProposals.status, ProposalStatus.pending),
+						),
+					)
+					.limit(1),
+			);
 			if (pending) {
 				return err(
 					new DuplicateSlug(
@@ -175,19 +180,23 @@ export function createProposals(deps: ProposalDeps) {
 					),
 				);
 			}
-			const [taken] = await db
-				.select({ id: realms.id })
-				.from(realms)
-				.where(eq(realms.slug, proposal.slug))
-				.limit(1);
+			const taken = first(
+				await db
+					.select({ id: realms.id })
+					.from(realms)
+					.where(eq(realms.slug, proposal.slug))
+					.limit(1),
+			);
 			if (taken) {
 				return err(new DuplicateSlug(`The name "${proposal.slug}" is already taken.`));
 			}
-			const [created] = await db
-				.insert(realmProposals)
-				.values({ ...proposal, modules: [...proposal.modules] })
-				.returning({ id: realmProposals.id });
-			if (!created) throw new Error('proposal insert returned no row');
+			const created = one(
+				await db
+					.insert(realmProposals)
+					.values({ ...proposal, modules: [...proposal.modules] })
+					.returning({ id: realmProposals.id }),
+				'proposal insert',
+			);
 			return ok({ id: created.id });
 		},
 
@@ -215,11 +224,21 @@ export function createProposals(deps: ProposalDeps) {
 		): Promise<Result<ApprovedRealm, ApproveError>> {
 			const approved = await inTransaction(db, async (tx) => {
 				// Locked, so a second approval waits for this one and then finds it decided.
-				const [proposal] = await tx
-					.select()
-					.from(realmProposals)
-					.where(eq(realmProposals.id, proposalId))
-					.for('update');
+				const proposal = first(
+					await tx
+						.select({
+							status: realmProposals.status,
+							proposedBy: realmProposals.proposedBy,
+							slug: realmProposals.slug,
+							name: realmProposals.name,
+							description: realmProposals.description,
+							category: realmProposals.category,
+							modules: realmProposals.modules,
+						})
+						.from(realmProposals)
+						.where(eq(realmProposals.id, proposalId))
+						.for('update'),
+				);
 				if (!proposal) return err(new RealmNotFound('No such proposal.'));
 				if (proposal.status !== ProposalStatus.pending) {
 					return err(new DuplicateSlug('That proposal has already been decided.'));

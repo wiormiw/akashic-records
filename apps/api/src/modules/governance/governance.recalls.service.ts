@@ -2,6 +2,7 @@ import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { NamedUser, Recall, Votes } from '@akashic/contracts';
 import { type Executor, inTransaction, recalls, recallVotes, user } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { narrow, RealmRole, RecallKind, RecallStatus } from '@akashic/lib/enums';
 import { AlreadyMember, RealmForbidden, RealmNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -84,7 +85,7 @@ async function selectRecalls(
 }
 
 async function findRecall(db: Executor, id: string): Promise<Recall | undefined> {
-	const [recall] = await selectRecalls(db, eq(recalls.id, id), 1);
+	const recall = first(await selectRecalls(db, eq(recalls.id, id), 1));
 	return recall;
 }
 
@@ -99,14 +100,16 @@ async function castVote(
 		.insert(recallVotes)
 		.values({ recallId, voterId, agree })
 		.onConflictDoUpdate({ target: [recallVotes.recallId, recallVotes.voterId], set: { agree } });
-	const [row] = await db
-		.select({
-			agrees: sql<number>`count(*) FILTER (WHERE ${recallVotes.agree})`.mapWith(Number),
-			refusals: sql<number>`count(*) FILTER (WHERE NOT ${recallVotes.agree})`.mapWith(Number),
-		})
-		.from(recallVotes)
-		.where(eq(recallVotes.recallId, recallId));
-	return row ?? { agrees: 0, refusals: 0 };
+	return one(
+		await db
+			.select({
+				agrees: sql<number>`count(*) FILTER (WHERE ${recallVotes.agree})`.mapWith(Number),
+				refusals: sql<number>`count(*) FILTER (WHERE NOT ${recallVotes.agree})`.mapWith(Number),
+			})
+			.from(recallVotes)
+			.where(eq(recallVotes.recallId, recallId)),
+		'recall tally',
+	);
 }
 
 /** Only an open recall resolves; false when it was already settled, by a concurrent vote say. */
@@ -125,22 +128,22 @@ async function resolve(db: Executor, id: string, status: RecallStatus, at: Date)
  * vote's insert holds on the row through its foreign key, and two deciding votes would deadlock.
  */
 async function lockStatus(db: Executor, id: string): Promise<RecallStatus> {
-	const [row] = await db
-		.select({ status: recalls.status })
-		.from(recalls)
-		.where(eq(recalls.id, id))
-		.for('no key update');
-	if (!row) throw new Error(`recall ${id} vanished mid-vote`);
+	const row = one(
+		await db
+			.select({ status: recalls.status })
+			.from(recalls)
+			.where(eq(recalls.id, id))
+			.for('no key update'),
+		`recall ${id} (it vanished mid-vote)`,
+	);
 	return narrow(RecallStatus, row.status);
 }
 
 /** Undefined when a recall is already open against that member. */
 async function openRecall(db: Executor, recall: NewRecall): Promise<string | undefined> {
-	const [created] = await db
-		.insert(recalls)
-		.values(recall)
-		.onConflictDoNothing()
-		.returning({ id: recalls.id });
+	const created = first(
+		await db.insert(recalls).values(recall).onConflictDoNothing().returning({ id: recalls.id }),
+	);
 	return created?.id;
 }
 

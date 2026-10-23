@@ -11,6 +11,7 @@ import {
 	type Tx,
 	user,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, narrow, RealmRole } from '@akashic/lib/enums';
 import { NoSeatInRealm, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -53,17 +54,19 @@ export const cannotCarry = (refusals: number, electorate: number, needed: number
 
 /** How many members the realm has, and how many of them moderate (moderators and admins). */
 export async function sizeOf(db: Executor, realmId: string): Promise<RealmSize> {
-	const [row] = await db
-		.select({
-			members: sql<number>`count(*)`.mapWith(Number),
-			moderators:
-				sql<number>`count(*) FILTER (WHERE ${realmMembers.role} >= ${RealmRole.moderator})`.mapWith(
-					Number,
-				),
-		})
-		.from(realmMembers)
-		.where(eq(realmMembers.realmId, realmId));
-	return row ?? { members: 0, moderators: 0 };
+	return one(
+		await db
+			.select({
+				members: sql<number>`count(*)`.mapWith(Number),
+				moderators:
+					sql<number>`count(*) FILTER (WHERE ${realmMembers.role} >= ${RealmRole.moderator})`.mapWith(
+						Number,
+					),
+			})
+			.from(realmMembers)
+			.where(eq(realmMembers.realmId, realmId)),
+		'realm size',
+	);
 }
 
 /** The member's role in the realm; null when they aren't in it. */
@@ -72,11 +75,13 @@ export async function roleOf(
 	realmId: string,
 	userId: string,
 ): Promise<RealmRole | null> {
-	const [row] = await db
-		.select({ role: realmMembers.role })
-		.from(realmMembers)
-		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ role: realmMembers.role })
+			.from(realmMembers)
+			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
+			.limit(1),
+	);
 	return row ? narrow(RealmRole, row.role) : null;
 }
 
