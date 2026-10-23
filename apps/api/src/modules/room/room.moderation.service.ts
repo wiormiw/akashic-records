@@ -86,6 +86,9 @@ async function agreeRetention(
 // ---- Service ---------------------------------------------------------------------------------
 
 /** Closing a room, reporting a message, and how long messages are kept. */
+/** A message the retention sweep deleted. */
+type SweptMessage = { id: string };
+
 export function createModerationService(deps: RoomAreaDeps) {
 	const { db } = deps;
 
@@ -151,7 +154,7 @@ export function createModerationService(deps: RoomAreaDeps) {
 		/** Deletes messages past a retention both participants agreed to; answers how many. */
 		async sweepExpired(): Promise<number> {
 			// A message goes when its room's retention is agreed by both participants and has run out.
-			const removed = await db.execute<{ id: string }>(sql`
+			const removed = await db.execute<SweptMessage>(sql`
         DELETE FROM room_message m
         USING room r
         WHERE m.room_id = r.id
