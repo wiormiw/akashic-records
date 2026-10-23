@@ -85,8 +85,7 @@ async function selectRecalls(
 }
 
 async function findRecall(db: Executor, id: string): Promise<Recall | undefined> {
-	const recall = first(await selectRecalls(db, eq(recalls.id, id), 1));
-	return recall;
+	return first(await selectRecalls(db, eq(recalls.id, id), 1));
 }
 
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
@@ -126,6 +125,7 @@ async function resolve(db: Executor, id: string, status: RecallStatus, at: Date)
  * The recall's status, its row locked for the rest of the transaction. NO KEY UPDATE, the lock
  * `resolve`'s UPDATE takes: FOR UPDATE would conflict with the KEY SHARE lock every concurrent
  * vote's insert holds on the row through its foreign key, and two deciding votes would deadlock.
+ * The vote just written points at the recall, so a missing row is a bug, not a lookup that missed.
  */
 async function lockStatus(db: Executor, id: string): Promise<RecallStatus> {
 	const row = one(
@@ -134,7 +134,7 @@ async function lockStatus(db: Executor, id: string): Promise<RecallStatus> {
 			.from(recalls)
 			.where(eq(recalls.id, id))
 			.for('no key update'),
-		`recall ${id} (it vanished mid-vote)`,
+		'recall status',
 	);
 	return narrow(RecallStatus, row.status);
 }

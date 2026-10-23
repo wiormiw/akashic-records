@@ -73,8 +73,7 @@ async function selectTakedowns(
 }
 
 async function findTakedown(db: Executor, id: string): Promise<Takedown | undefined> {
-	const takedown = first(await selectTakedowns(db, eq(takedowns.id, id), 1));
-	return takedown;
+	return first(await selectTakedowns(db, eq(takedowns.id, id), 1));
 }
 
 /** Records the vote, replacing the voter's earlier one, and answers the tally after it. */
@@ -133,14 +132,15 @@ async function openTakedown(db: Executor, takedown: NewTakedown): Promise<string
 
 /** Whether the comment is one of this realm's: a comment elsewhere is indistinguishable from none. */
 async function commentInRealm(db: Executor, realmId: string, commentId: string): Promise<boolean> {
-	const row = first(
-		await db
-			.select({ id: comments.id })
-			.from(comments)
-			.where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
-			.limit(1),
+	return (
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(comments)
+				.where(and(eq(comments.id, commentId), eq(comments.realmId, realmId)))
+				.limit(1)
+		).length > 0
 	);
-	return row !== undefined;
 }
 
 /** Soft delete, as the comments module does it: the comment keeps its place in the thread. */

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { SeatStanding } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import {
@@ -57,7 +57,7 @@ export async function sizeOf(db: Executor, realmId: string): Promise<RealmSize> 
 	return one(
 		await db
 			.select({
-				members: sql<number>`count(*)`.mapWith(Number),
+				members: count(),
 				moderators:
 					sql<number>`count(*) FILTER (WHERE ${realmMembers.role} >= ${RealmRole.moderator})`.mapWith(
 						Number,
@@ -79,8 +79,7 @@ export async function roleOf(
 		await db
 			.select({ role: realmMembers.role })
 			.from(realmMembers)
-			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-			.limit(1),
+			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId))),
 	);
 	return row ? narrow(RealmRole, row.role) : null;
 }
@@ -100,18 +99,19 @@ const upvotesOf = (db: Executor) =>
 
 /** Members ranked by upvotes, ties broken by seniority. */
 async function standingsOf(db: Executor, realmId: string, limit: number): Promise<SeatStanding[]> {
+	const upvotes = upvotesOf(db).as('upvotes');
 	const rows = await db
 		.select({
 			userId: realmMembers.userId,
 			role: realmMembers.role,
 			joinedAt: realmMembers.joinedAt,
 			name: user.name,
-			upvotes: upvotesOf(db),
+			upvotes,
 		})
 		.from(realmMembers)
 		.innerJoin(user, eq(user.id, realmMembers.userId))
 		.where(eq(realmMembers.realmId, realmId))
-		.orderBy(desc(upvotesOf(db)), asc(realmMembers.joinedAt))
+		.orderBy(desc(upvotes), asc(realmMembers.joinedAt))
 		.limit(limit);
 	return rows.map((row) => ({
 		userId: row.userId,
