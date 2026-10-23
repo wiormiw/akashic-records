@@ -418,25 +418,36 @@ describe('structure', () => {
 	});
 
 	// One cardinality convention (CLAUDE.md, "Queries"): `one()` or `first()` from @akashic/db/sql,
-	// never a positional read of a result. A text heuristic over comment-stripped source; it catches
-	// `(await q)[0]`, `rows[0]` / `row[0]` / `result[0]`, `.then((r) => r[0])`, a `[row = {}]`
-	// default, and `const [row] = await ...` with one name (a `Promise.all` pair has two).
+	// never a positional read of a result. A text heuristic over comment-stripped source in
+	// apps/api/src, apps/api/scripts and every packages/*/src. It catches: `[0]` after a call or on
+	// rows/row/result/results/found/updated/removed/inserted, `?.[0]`, `.at(0)`, `.then(r => r[0])`,
+	// `.then(([r]) => r)`, a `[row = {...}]` default, and `const|let [..] (: Type)? = await ...` or
+	// `= rows` (a `Promise.all` is exempt). It cannot catch: a destructure or index of a variable
+	// with another name, `rows.shift()`, or a positional read through a helper. Exempt: sql.ts (the
+	// helpers) and integrations/embedder.ts (`data?.[0]` of an HTTP reply, not a query).
 	test('query results are read with one() or first(), never by position', async () => {
 		const stripComments = (src: string) =>
 			src.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/^\s*\/\/.*$/gm, '');
 		const rules: [string, RegExp][] = [
 			['[0] on a call result', /\)\s*\[0\]/],
-			['[0] on rows', /\b(?:rows?|result|results)\s*\[0\]/],
+			['[0] on rows', /\b(?:rows?|result|results|found|updated|removed|inserted)\s*\[0\]/],
+			['?.[0]', /\?\.\[0\]/],
+			['.at(0)', /\.at\(\s*0\s*\)/],
 			['.then(r => r[0])', /\.then\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\s*\[0\]/],
-			['[row = {}] default', /\[\s*\w+\s*=\s*\{\s*\}\s*\]/],
-			['const [row] = await', /const\s*\[\s*\w+\s*\]\s*=\s*await\b(?!\s+Promise\.all)/],
+			['.then(([r]) => r)', /\.then\(\s*\(\s*\[/],
+			['[row = {...}] default', /\[\s*\w+\s*=\s*\{/],
+			[
+				'destructured await or rows',
+				/(?:const|let)\s*\[[^\]=]*\]\s*(?::[^=]+)?=\s*(?:await\b(?!\s+Promise\.all)|rows\b)/,
+			],
 		];
 		const bad: string[] = [];
 		for (const f of scan(
 			'apps/api/src/**/*.ts',
-			'packages/broker/src/**/*.ts',
-			'packages/db/src/**/*.ts',
+			'apps/api/scripts/**/*.ts',
+			'packages/*/src/**/*.ts',
 		)) {
+			if (f === 'packages/db/src/sql.ts' || f === 'apps/api/src/integrations/embedder.ts') continue;
 			const code = stripComments(await read(f));
 			for (const [name, rule] of rules) if (rule.test(code)) bad.push(`${f}: ${name}`);
 		}
