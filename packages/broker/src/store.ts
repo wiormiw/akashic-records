@@ -6,6 +6,7 @@ import {
 	type Executor,
 	type OutboxEvent,
 } from '@akashic/db';
+import { first } from '@akashic/db/sql';
 import { fromDate, toDate } from '@akashic/lib/time';
 import { claimUntil, revive } from './event.ts';
 
@@ -56,15 +57,23 @@ export function createOutboxStore(db: Db): OutboxStore & OutboxRecovery {
 				const revived = (await deadRows(tx, limit).for('update')).map((row) =>
 					revive(fromRow(row), now),
 				);
-				for (const event of revived) {
-					const { status, attemptCount, nextAttemptAt } = changedColumns(event);
-					await tx
-						.update(outboxMessages)
-						.set({ status, attemptCount, nextAttemptAt })
-						.where(
-							and(eq(outboxMessages.id, event.id), eq(outboxMessages.status, OutboxStatus.dead)),
-						);
-				}
+				const sample = first(revived);
+				if (!sample) return revived;
+				// Every revival writes the same three columns, so one statement; the rows are locked
+				// above, so none has left `dead` since.
+				const { status, attemptCount, nextAttemptAt } = changedColumns(sample);
+				await tx
+					.update(outboxMessages)
+					.set({ status, attemptCount, nextAttemptAt })
+					.where(
+						and(
+							inArray(
+								outboxMessages.id,
+								revived.map((event) => event.id),
+							),
+							eq(outboxMessages.status, OutboxStatus.dead),
+						),
+					);
 				return revived;
 			}),
 

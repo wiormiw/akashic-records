@@ -1,6 +1,7 @@
 import type { BatchObservableCallback } from '@opentelemetry/api';
 import { sql } from 'drizzle-orm';
 import { type Db, OutboxStatus } from '@akashic/db';
+import { one } from '@akashic/db/sql';
 import { owned } from '@akashic/lib/lifecycle';
 import { meter } from '@akashic/lib/metrics';
 
@@ -22,11 +23,10 @@ export function observeOutbox(db: Db) {
 		// it sees in the query text. `sql.raw` inlines them, tied to the enum.
 		const pendingStatus = sql.raw(String(OutboxStatus.pending));
 		const deadStatus = sql.raw(String(OutboxStatus.dead));
-		const [row] = await db.execute<OutboxCounts>(sql`
+		const rows = await db.execute<OutboxCounts>(sql`
         SELECT (SELECT count(*) FROM outbox_messages WHERE status = ${pendingStatus})::int AS pending,
                (SELECT count(*) FROM outbox_messages WHERE status = ${deadStatus})::int AS dead`);
-		// Two scalar subqueries always yield a row; none is a bug.
-		if (!row) throw new Error('outbox counts returned no row');
+		const row = one(rows, 'outbox counts');
 		result.observe(backlog, row.pending);
 		result.observe(dead, row.dead);
 	};
