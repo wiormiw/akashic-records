@@ -1,8 +1,10 @@
 import type { BatchObservableCallback } from '@opentelemetry/api';
 import { sql } from 'drizzle-orm';
-import { type Db, OutboxStatus, outboxMessages } from '@akashic/db';
+import type { Db } from '@akashic/db';
 import { owned } from '@akashic/lib/lifecycle';
 import { meter } from '@akashic/lib/metrics';
+
+type OutboxCounts = { pending: number; dead: number };
 
 /**
  * Outbox backlog and dead count as observable gauges, read when the exporter collects. A growing
@@ -18,14 +20,13 @@ export function observeOutbox(db: Db) {
 	const callback: BatchObservableCallback = async (result) => {
 		// Literal statuses, not parameters: the planner can only use a partial index whose predicate
 		// it sees in the query text.
-		const withStatus = (status: OutboxStatus) =>
-			sql`${outboxMessages.status} = ${sql.raw(String(status))}`;
-		const [pendingCount, deadCount] = await Promise.all([
-			db.$count(outboxMessages, withStatus(OutboxStatus.pending)),
-			db.$count(outboxMessages, withStatus(OutboxStatus.dead)),
-		]);
-		result.observe(backlog, pendingCount);
-		result.observe(dead, deadCount);
+		const [row] = await db.execute<OutboxCounts>(sql`
+        SELECT (SELECT count(*) FROM outbox_messages WHERE status = 0)::int AS pending,
+               (SELECT count(*) FROM outbox_messages WHERE status = 3)::int AS dead`);
+		// Two scalar subqueries always yield a row; none is a bug.
+		if (!row) throw new Error('outbox counts returned no row');
+		result.observe(backlog, row.pending);
+		result.observe(dead, row.dead);
 	};
 	meter().addBatchObservableCallback(callback, [backlog, dead]);
 	// Disposing removes the callback, so a stopped container stops querying.
