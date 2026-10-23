@@ -122,6 +122,8 @@ async function upvotesFor(db: Executor, realmId: string, candidateId: string): P
 	return db.$count(realmEndorsements, ofCandidate(realmId, candidateId));
 }
 
+type CandidateRow = { user_id: string; should_hold: boolean; holds: boolean };
+
 /**
  * Who should hold the realm's seats (the top `seats` by upvotes with at least `minimum`) and who
  * holds one now. Admins are never candidates.
@@ -132,29 +134,24 @@ async function seatCandidates(
 	seatCount: number,
 	minimum: number,
 ): Promise<SeatCandidates> {
-	const ranked = db.$with('ranked').as(
-		db
-			.select({
-				userId: realmMembers.userId,
-				role: realmMembers.role,
-				joinedAt: realmMembers.joinedAt,
-				upvotes: upvotesOf(db).as('upvotes'),
-			})
-			.from(realmMembers)
-			.where(and(eq(realmMembers.realmId, realmId), ne(realmMembers.role, RealmRole.admin))),
-	);
-	const rows = await db
-		.with(ranked)
-		.select({
-			userId: ranked.userId,
-			shouldHold: sql<boolean>`(${ranked.upvotes} >= ${minimum}
-        AND row_number() OVER (ORDER BY ${ranked.upvotes} DESC, ${ranked.joinedAt} ASC) <= ${seatCount})`,
-			holds: sql<boolean>`(${ranked.role} = ${RealmRole.moderator})`,
-		})
-		.from(ranked);
+	// A CTE and a window function read plainer as SQL than as builder calls.
+	const rows = await db.execute<CandidateRow>(sql`
+    WITH ranked AS (
+      SELECT m.user_id, m.role, m.joined_at,
+        (SELECT count(*)::int FROM realm_endorsement e
+           WHERE e.realm_id = m.realm_id AND e.candidate_id = m.user_id) AS upvotes
+      FROM realm_member m
+      WHERE m.realm_id = ${realmId} AND m.role <> ${RealmRole.admin}
+    )
+    SELECT user_id,
+      (upvotes >= ${minimum}
+        AND row_number() OVER (ORDER BY upvotes DESC, joined_at ASC) <= ${seatCount}) AS should_hold,
+      (role = ${RealmRole.moderator}) AS holds
+    FROM ranked
+  `);
 	return {
-		shouldHold: rows.filter((row) => row.shouldHold).map((row) => row.userId),
-		currentlyHold: rows.filter((row) => row.holds).map((row) => row.userId),
+		shouldHold: rows.filter((row) => row.should_hold).map((row) => row.user_id),
+		currentlyHold: rows.filter((row) => row.holds).map((row) => row.user_id),
 	};
 }
 
