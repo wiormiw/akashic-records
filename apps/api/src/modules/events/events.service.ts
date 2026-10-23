@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import type { EventDetail, EventSummary } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import { eventRsvps, events, type Executor, inTransaction, publish, user } from '@akashic/db';
@@ -108,6 +108,8 @@ export async function findEvent(
 	};
 }
 
+type TallyRow = { going: number; already: boolean };
+
 /**
  * Who is going, and whether this person already is: only asked when the answer can matter, a
  * place in a capped event. Run while the event row is locked.
@@ -115,20 +117,15 @@ export async function findEvent(
 export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<GoingTally | undefined> {
 	if (rsvp.status !== RsvpStatus.going || rsvp.capacity === null) return undefined;
 	const { eventId, userId } = rsvp;
-	const going = and(eq(eventRsvps.eventId, eventId), eq(eventRsvps.status, RsvpStatus.going));
-	const [tally] = await tx
-		.select({
-			going: tx.$count(eventRsvps, going),
-			already: sql<boolean>`${exists(
-				tx
-					.select({ one: sql`1` })
-					.from(eventRsvps)
-					.where(and(going, eq(eventRsvps.userId, userId))),
-			)}`,
-		})
-		// Anchored on the locked event row, so the select has a FROM and exactly one row.
-		.from(events)
-		.where(eq(events.id, eventId));
+	// Two scalar subqueries read together; the casts make the row match its type.
+	const [tally] = await tx.execute<TallyRow>(sql`
+    SELECT
+      (SELECT count(*)::int FROM event_rsvp
+         WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
+      EXISTS (SELECT 1 FROM event_rsvp
+         WHERE event_id = ${eventId} AND user_id = ${userId}
+           AND status = ${RsvpStatus.going}) AS already
+  `);
 	return tally;
 }
 
