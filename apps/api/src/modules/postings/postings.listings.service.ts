@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Listing, ListingSummary } from '@akashic/contracts';
 import { audit, type Executor, inTransaction, listings, user } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, CommentSubject, ListingStatus } from '@akashic/lib/enums';
 import {
 	EventNotFound,
@@ -33,25 +34,27 @@ async function findListing(
 	realmId: string,
 	listingId: string,
 ): Promise<Listing | undefined> {
-	const [row] = await db
-		.select({
-			id: listings.id,
-			title: listings.title,
-			description: listings.description,
-			priceCents: listings.priceCents,
-			currency: listings.currency,
-			status: listings.status,
-			buyerId: listings.buyerId,
-			imageUrl: listings.imageUrl,
-			commentsEnabled: listings.commentsEnabled,
-			sellerId: listings.sellerId,
-			sellerName: user.name,
-			createdAt: listings.createdAt,
-		})
-		.from(listings)
-		.innerJoin(user, eq(user.id, listings.sellerId))
-		.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({
+				id: listings.id,
+				title: listings.title,
+				description: listings.description,
+				priceCents: listings.priceCents,
+				currency: listings.currency,
+				status: listings.status,
+				buyerId: listings.buyerId,
+				imageUrl: listings.imageUrl,
+				commentsEnabled: listings.commentsEnabled,
+				sellerId: listings.sellerId,
+				sellerName: user.name,
+				createdAt: listings.createdAt,
+			})
+			.from(listings)
+			.innerJoin(user, eq(user.id, listings.sellerId))
+			.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
+			.limit(1),
+	);
 	return row && { ...row, createdAt: fromDate(row.createdAt) };
 }
 
@@ -99,11 +102,10 @@ export function createListingService(deps: PostingAreaDeps) {
 			fit.admit(
 				{ ...listing, type: 'listing', kind: CommentSubject.listing, authorId: listing.sellerId },
 				async (tx) => {
-					const [created] = await tx
-						.insert(listings)
-						.values(listing)
-						.returning({ id: listings.id });
-					if (!created) throw new Error('listing insert returned no row');
+					const created = one(
+						await tx.insert(listings).values(listing).returning({ id: listings.id }),
+						'listing insert',
+					);
 					return created.id;
 				},
 			),
@@ -120,11 +122,13 @@ export function createListingService(deps: PostingAreaDeps) {
 				return err(new RealmForbidden("Removing a listing is a moderator's call."));
 			}
 			return inTransaction(db, async (tx) => {
-				const [updated] = await tx
-					.update(listings)
-					.set({ status, updatedAt: toDate(clock.now()) })
-					.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
-					.returning({ sellerId: listings.sellerId });
+				const updated = first(
+					await tx
+						.update(listings)
+						.set({ status, updatedAt: toDate(clock.now()) })
+						.where(and(eq(listings.id, listingId), eq(listings.realmId, realmId)))
+						.returning({ sellerId: listings.sellerId }),
+				);
 				if (!updated) return err(noListing());
 				if (updated.sellerId !== actorId) {
 					await audit(tx, {

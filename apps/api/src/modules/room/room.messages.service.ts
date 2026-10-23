@@ -9,6 +9,7 @@ import {
 	rooms,
 	userKeys,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { RateLimited, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result, value } from '@akashic/lib/result';
 import { fromDate, toDate } from '@akashic/lib/time';
@@ -61,11 +62,13 @@ async function messagesOf(
 }
 
 async function isBlocked(db: Executor, roomId: string): Promise<boolean> {
-	const [row] = await db
-		.select({ roomId: roomBlocks.roomId })
-		.from(roomBlocks)
-		.where(eq(roomBlocks.roomId, roomId))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ roomId: roomBlocks.roomId })
+			.from(roomBlocks)
+			.where(eq(roomBlocks.roomId, roomId))
+			.limit(1),
+	);
 	return row !== undefined;
 }
 
@@ -75,17 +78,20 @@ async function messagesSentSince(
 	senderId: string,
 	since: Temporal.Instant,
 ): Promise<number> {
-	const [row] = await db
-		.select({ n: count() })
-		.from(roomMessages)
-		.where(
-			and(
-				eq(roomMessages.roomId, roomId),
-				eq(roomMessages.senderId, senderId),
-				gt(roomMessages.createdAt, toDate(since)),
+	const row = one(
+		await db
+			.select({ n: count() })
+			.from(roomMessages)
+			.where(
+				and(
+					eq(roomMessages.roomId, roomId),
+					eq(roomMessages.senderId, senderId),
+					gt(roomMessages.createdAt, toDate(since)),
+				),
 			),
-		);
-	return row?.n ?? 0;
+		'message count',
+	);
+	return row.n;
 }
 
 /** Every device of these people. */
@@ -108,11 +114,13 @@ async function append(
 	const { keys, body, iv, signature } = message;
 	return value(
 		await inTransaction(db, async (tx) => {
-			const [stored] = await tx
-				.insert(roomMessages)
-				.values({ roomId, senderId, body, iv, signature })
-				.returning({ id: roomMessages.id, createdAt: roomMessages.createdAt });
-			if (!stored) throw new Error('message insert returned no row');
+			const stored = one(
+				await tx
+					.insert(roomMessages)
+					.values({ roomId, senderId, body, iv, signature })
+					.returning({ id: roomMessages.id, createdAt: roomMessages.createdAt }),
+				'message insert',
+			);
 
 			if (keys.length > 0) {
 				await tx.insert(roomMessageKeys).values(

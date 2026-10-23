@@ -11,6 +11,7 @@ import {
 	user,
 	userKeys,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { RoomSubject } from '@akashic/lib/enums';
 import {
 	EventNotFound,
@@ -99,16 +100,18 @@ export async function findFor(
 	roomId: string,
 	userId: string,
 ): Promise<Room | undefined> {
-	const [row] = await db
-		.select({
-			id: rooms.id,
-			realmId: rooms.realmId,
-			lowUserId: rooms.lowUserId,
-			highUserId: rooms.highUserId,
-		})
-		.from(rooms)
-		.where(and(eq(rooms.id, roomId), participantIn(userId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({
+				id: rooms.id,
+				realmId: rooms.realmId,
+				lowUserId: rooms.lowUserId,
+				highUserId: rooms.highUserId,
+			})
+			.from(rooms)
+			.where(and(eq(rooms.id, roomId), participantIn(userId)))
+			.limit(1),
+	);
 	return row;
 }
 
@@ -126,20 +129,20 @@ export async function participant(
 }
 
 async function realmIdOf(db: Executor, slug: string): Promise<string | undefined> {
-	const [row] = await db
-		.select({ id: realms.id })
-		.from(realms)
-		.where(eq(realms.slug, slug))
-		.limit(1);
+	const row = first(
+		await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)).limit(1),
+	);
 	return row?.id;
 }
 
 async function isMember(db: Executor, realmId: string, userId: string): Promise<boolean> {
-	const [row] = await db
-		.select({ role: realmMembers.role })
-		.from(realmMembers)
-		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ role: realmMembers.role })
+			.from(realmMembers)
+			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
+			.limit(1),
+	);
 	return row !== undefined;
 }
 
@@ -151,11 +154,13 @@ async function subjectIn(
 	subjectId: string,
 ): Promise<boolean> {
 	const table = kind === RoomSubject.job ? jobs : listings;
-	const [row] = await db
-		.select({ id: table.id })
-		.from(table)
-		.where(and(eq(table.id, subjectId), eq(table.realmId, realmId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ id: table.id })
+			.from(table)
+			.where(and(eq(table.id, subjectId), eq(table.realmId, realmId)))
+			.limit(1),
+	);
 	return row !== undefined;
 }
 
@@ -164,31 +169,36 @@ async function roomsOpenedSince(
 	userId: string,
 	since: Temporal.Instant,
 ): Promise<number> {
-	const [row] = await db
-		.select({ n: count() })
-		.from(rooms)
-		.where(and(participantIn(userId), gt(rooms.createdAt, toDate(since))));
-	return row?.n ?? 0;
+	const row = one(
+		await db
+			.select({ n: count() })
+			.from(rooms)
+			.where(and(participantIn(userId), gt(rooms.createdAt, toDate(since)))),
+		'room count',
+	);
+	return row.n;
 }
 
 /** The existing room for this pair and posting, or a new one. */
 async function open(db: Executor, room: NewRoom): Promise<string> {
 	const { low, high } = ordered(room.a, room.b);
-	const [row] = await db
-		.insert(rooms)
-		.values({
-			realmId: room.realmId,
-			subjectKind: room.subjectKind,
-			subjectId: room.subjectId,
-			lowUserId: low,
-			highUserId: high,
-		})
-		.onConflictDoUpdate({
-			target: [rooms.subjectKind, rooms.subjectId, rooms.lowUserId, rooms.highUserId],
-			set: { realmId: room.realmId },
-		})
-		.returning({ id: rooms.id });
-	if (!row) throw new Error('room upsert returned no row');
+	const row = one(
+		await db
+			.insert(rooms)
+			.values({
+				realmId: room.realmId,
+				subjectKind: room.subjectKind,
+				subjectId: room.subjectId,
+				lowUserId: low,
+				highUserId: high,
+			})
+			.onConflictDoUpdate({
+				target: [rooms.subjectKind, rooms.subjectId, rooms.lowUserId, rooms.highUserId],
+				set: { realmId: room.realmId },
+			})
+			.returning({ id: rooms.id }),
+		'room upsert',
+	);
 	return row.id;
 }
 

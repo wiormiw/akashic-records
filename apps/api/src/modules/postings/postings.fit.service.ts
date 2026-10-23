@@ -12,7 +12,7 @@ import {
 	realms,
 	type Tx,
 } from '@akashic/db';
-import { centroidFrom, parseVector, pgVector } from '@akashic/db/sql';
+import { centroidFrom, first, parseVector, pgVector } from '@akashic/db/sql';
 import { AuditAction, CommentSubject, JobStatus, ListingStatus } from '@akashic/lib/enums';
 import { EventNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -89,7 +89,7 @@ async function centroidOf(db: Executor, realmId: string, lock = false): Promise<
 		.from(realms)
 		.where(eq(realms.id, realmId))
 		.limit(1);
-	return centroidFrom((await (lock ? query.for('update') : query))[0]);
+	return centroidFrom(first(await (lock ? query.for('update') : query)));
 }
 
 async function setCentroid(
@@ -135,21 +135,23 @@ async function decideReview(
 	kept: boolean,
 	now: Date,
 ): Promise<DecidedEntry | undefined> {
-	const [row] = await db
-		.update(realmFitQueue)
-		.set({ kept, keptBy: moderatorId, decidedAt: now })
-		.where(
-			and(
-				eq(realmFitQueue.id, entryId),
-				eq(realmFitQueue.realmId, realmId),
-				isNull(realmFitQueue.kept),
-			),
-		)
-		.returning({
-			subjectKind: realmFitQueue.subjectKind,
-			subjectId: realmFitQueue.subjectId,
-			embedding: sql<string | null>`${realmFitQueue.embedding}::text`,
-		});
+	const row = first(
+		await db
+			.update(realmFitQueue)
+			.set({ kept, keptBy: moderatorId, decidedAt: now })
+			.where(
+				and(
+					eq(realmFitQueue.id, entryId),
+					eq(realmFitQueue.realmId, realmId),
+					isNull(realmFitQueue.kept),
+				),
+			)
+			.returning({
+				subjectKind: realmFitQueue.subjectKind,
+				subjectId: realmFitQueue.subjectId,
+				embedding: sql<string | null>`${realmFitQueue.embedding}::text`,
+			}),
+	);
 	return row && { ...row, embedding: row.embedding ? parseVector(row.embedding) : null };
 }
 

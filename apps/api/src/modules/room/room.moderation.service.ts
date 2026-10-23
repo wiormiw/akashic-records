@@ -7,6 +7,7 @@ import {
 	roomReports,
 	rooms,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { EventNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result, value } from '@akashic/lib/result';
 import { participant } from './room.service.ts';
@@ -42,11 +43,13 @@ async function senderOf(
 	roomId: string,
 	messageId: string,
 ): Promise<string | undefined> {
-	const [row] = await db
-		.select({ senderId: roomMessages.senderId })
-		.from(roomMessages)
-		.where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ senderId: roomMessages.senderId })
+			.from(roomMessages)
+			.where(and(eq(roomMessages.id, messageId), eq(roomMessages.roomId, roomId)))
+			.limit(1),
+	);
 	return row?.senderId;
 }
 
@@ -60,17 +63,19 @@ async function agreeRetention(
 	return value(
 		await inTransaction(db, async (tx) => {
 			// Locked, so two people agreeing at once don't each overwrite the other's agreement.
-			const [room] = await tx
-				.select({
-					days: rooms.retentionDays,
-					agreedBy: rooms.retentionAgreedBy,
-					low: rooms.lowUserId,
-					high: rooms.highUserId,
-				})
-				.from(rooms)
-				.where(eq(rooms.id, roomId))
-				.for('update')
-				.limit(1);
+			const room = first(
+				await tx
+					.select({
+						days: rooms.retentionDays,
+						agreedBy: rooms.retentionAgreedBy,
+						low: rooms.lowUserId,
+						high: rooms.highUserId,
+					})
+					.from(rooms)
+					.where(eq(rooms.id, roomId))
+					.for('update')
+					.limit(1),
+			);
 			if (!room) return ok(false);
 
 			const { agreedBy, inForce } = agreeOn(room, days, userId);
@@ -125,18 +130,20 @@ export function createModerationService(deps: RoomAreaDeps) {
 				return err(new ValidationFailed('That message was sent by you.'));
 			}
 
-			const [created] = await db
-				.insert(roomReports)
-				.values({
-					roomId,
-					messageId: report.messageId,
-					reporterId,
-					accusedId,
-					reason: report.reason,
-					disclosedText: report.disclosedText,
-				})
-				.returning({ id: roomReports.id });
-			if (!created) throw new Error('report insert returned no row');
+			const created = one(
+				await db
+					.insert(roomReports)
+					.values({
+						roomId,
+						messageId: report.messageId,
+						reporterId,
+						accusedId,
+						reason: report.reason,
+						disclosedText: report.disclosedText,
+					})
+					.returning({ id: roomReports.id }),
+				'report insert',
+			);
 			return ok({ id: created.id });
 		},
 

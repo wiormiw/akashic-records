@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Interest } from '@akashic/contracts';
 import { type Executor, jobs, listings, postingInterests, realmMembers, user } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { CommentSubject, InterestStatus } from '@akashic/lib/enums';
 import { EventNotFound, MemberNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -28,17 +29,19 @@ export async function hasOpenInterest(
 	subject: Subject,
 	userId: string,
 ): Promise<boolean> {
-	const [row] = await db
-		.select({ id: postingInterests.id })
-		.from(postingInterests)
-		.where(
-			and(
-				ofSubject(subject),
-				eq(postingInterests.userId, userId),
-				eq(postingInterests.status, InterestStatus.open),
-			),
-		)
-		.limit(1);
+	const row = first(
+		await db
+			.select({ id: postingInterests.id })
+			.from(postingInterests)
+			.where(
+				and(
+					ofSubject(subject),
+					eq(postingInterests.userId, userId),
+					eq(postingInterests.status, InterestStatus.open),
+				),
+			)
+			.limit(1),
+	);
 	return row !== undefined;
 }
 
@@ -63,11 +66,13 @@ export async function requireMember(
 	realmId: string,
 	userId: string,
 ): Promise<Result<void, RequireMemberError>> {
-	const [row] = await db
-		.select({ role: realmMembers.role })
-		.from(realmMembers)
-		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({ role: realmMembers.role })
+			.from(realmMembers)
+			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
+			.limit(1),
+	);
 	if (!row) return err(new MemberNotFound('That person is not in this realm.'));
 	return ok(undefined);
 }
@@ -84,19 +89,23 @@ export function createInterestService(deps: InterestDeps) {
 	 */
 	async function ownerOf(realmId: string, subject: Subject): Promise<string | undefined> {
 		if (subject.kind === CommentSubject.job) {
-			const [row] = await db
-				.select({ owner: jobs.authorId })
-				.from(jobs)
-				.where(and(eq(jobs.id, subject.id), eq(jobs.realmId, realmId)))
-				.limit(1);
+			const row = first(
+				await db
+					.select({ owner: jobs.authorId })
+					.from(jobs)
+					.where(and(eq(jobs.id, subject.id), eq(jobs.realmId, realmId)))
+					.limit(1),
+			);
 			return row?.owner;
 		}
 		if (subject.kind === CommentSubject.listing) {
-			const [row] = await db
-				.select({ owner: listings.sellerId })
-				.from(listings)
-				.where(and(eq(listings.id, subject.id), eq(listings.realmId, realmId)))
-				.limit(1);
+			const row = first(
+				await db
+					.select({ owner: listings.sellerId })
+					.from(listings)
+					.where(and(eq(listings.id, subject.id), eq(listings.realmId, realmId)))
+					.limit(1),
+			);
 			return row?.owner;
 		}
 		return undefined;
@@ -115,26 +124,32 @@ export function createInterestService(deps: InterestDeps) {
 			if (owner === userId) {
 				return err(new RealmForbidden('That posting is yours.'));
 			}
-			const [row] = await db
-				.insert(postingInterests)
-				.values({
-					realmId,
-					subjectKind: subject.kind,
-					subjectId: subject.id,
-					userId,
-					note: note ?? null,
-					status: InterestStatus.open,
-				})
-				.onConflictDoUpdate({
-					target: [
-						postingInterests.subjectKind,
-						postingInterests.subjectId,
-						postingInterests.userId,
-					],
-					set: { status: InterestStatus.open, note: note ?? null, createdAt: toDate(clock.now()) },
-				})
-				.returning({ id: postingInterests.id });
-			if (!row) throw new Error('interest upsert returned no row');
+			const row = one(
+				await db
+					.insert(postingInterests)
+					.values({
+						realmId,
+						subjectKind: subject.kind,
+						subjectId: subject.id,
+						userId,
+						note: note ?? null,
+						status: InterestStatus.open,
+					})
+					.onConflictDoUpdate({
+						target: [
+							postingInterests.subjectKind,
+							postingInterests.subjectId,
+							postingInterests.userId,
+						],
+						set: {
+							status: InterestStatus.open,
+							note: note ?? null,
+							createdAt: toDate(clock.now()),
+						},
+					})
+					.returning({ id: postingInterests.id }),
+				'interest upsert',
+			);
 			return ok({ id: row.id });
 		},
 

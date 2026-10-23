@@ -1,6 +1,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { Job, JobSummary } from '@akashic/contracts';
 import { audit, type Executor, inTransaction, jobs, user } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, CommentSubject, JobStatus } from '@akashic/lib/enums';
 import {
 	EventNotFound,
@@ -29,26 +30,28 @@ const settled = () => new PostingSettled('This posting is no longer available.')
 
 /** One job of the realm; undefined for another realm's. */
 async function findJob(db: Executor, realmId: string, jobId: string): Promise<Job | undefined> {
-	const [row] = await db
-		.select({
-			id: jobs.id,
-			title: jobs.title,
-			description: jobs.description,
-			type: jobs.type,
-			budgetCents: jobs.budgetCents,
-			currency: jobs.currency,
-			status: jobs.status,
-			hiringFlow: jobs.hiringFlow,
-			hiredUserId: jobs.hiredUserId,
-			commentsEnabled: jobs.commentsEnabled,
-			authorId: jobs.authorId,
-			authorName: user.name,
-			createdAt: jobs.createdAt,
-		})
-		.from(jobs)
-		.innerJoin(user, eq(user.id, jobs.authorId))
-		.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({
+				id: jobs.id,
+				title: jobs.title,
+				description: jobs.description,
+				type: jobs.type,
+				budgetCents: jobs.budgetCents,
+				currency: jobs.currency,
+				status: jobs.status,
+				hiringFlow: jobs.hiringFlow,
+				hiredUserId: jobs.hiredUserId,
+				commentsEnabled: jobs.commentsEnabled,
+				authorId: jobs.authorId,
+				authorName: user.name,
+				createdAt: jobs.createdAt,
+			})
+			.from(jobs)
+			.innerJoin(user, eq(user.id, jobs.authorId))
+			.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
+			.limit(1),
+	);
 	return row && { ...row, createdAt: fromDate(row.createdAt) };
 }
 
@@ -91,8 +94,10 @@ export function createJobService(deps: PostingAreaDeps) {
 
 		post: (job: NewJob): Promise<Result<Posted, PostError>> =>
 			fit.admit({ ...job, type: 'job', kind: CommentSubject.job }, async (tx) => {
-				const [created] = await tx.insert(jobs).values(job).returning({ id: jobs.id });
-				if (!created) throw new Error('job insert returned no row');
+				const created = one(
+					await tx.insert(jobs).values(job).returning({ id: jobs.id }),
+					'job insert',
+				);
 				return created.id;
 			}),
 
@@ -104,11 +109,13 @@ export function createJobService(deps: PostingAreaDeps) {
 			status: JobStatus,
 		): Promise<Result<JobStatusSet, SetJobStatusError>> {
 			return inTransaction(db, async (tx) => {
-				const [updated] = await tx
-					.update(jobs)
-					.set({ status, updatedAt: toDate(clock.now()) })
-					.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
-					.returning({ authorId: jobs.authorId });
+				const updated = first(
+					await tx
+						.update(jobs)
+						.set({ status, updatedAt: toDate(clock.now()) })
+						.where(and(eq(jobs.id, jobId), eq(jobs.realmId, realmId)))
+						.returning({ authorId: jobs.authorId }),
+				);
 				if (!updated) return err(noJob());
 				if (updated.authorId !== actorId) {
 					await audit(tx, {
