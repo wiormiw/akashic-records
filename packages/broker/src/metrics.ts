@@ -5,7 +5,7 @@ import { one } from '@akashic/db/sql';
 import { owned } from '@akashic/lib/lifecycle';
 import { meter } from '@akashic/lib/metrics';
 
-type OutboxCounts = { pending: number; dead: number };
+type OutboxCountsRow = { pending: number; dead: number };
 
 /**
  * Outbox backlog and dead count as observable gauges, read when the exporter collects. A growing
@@ -23,7 +23,7 @@ export function observeOutbox(db: Db) {
 		// it sees in the query text. `sql.raw` inlines them, tied to the enum.
 		const pendingStatus = sql.raw(String(OutboxStatus.pending));
 		const deadStatus = sql.raw(String(OutboxStatus.dead));
-		const rows = await db.execute<OutboxCounts>(sql`
+		const rows = await db.execute<OutboxCountsRow>(sql`
         SELECT (SELECT count(*) FROM outbox_messages WHERE status = ${pendingStatus})::int AS pending,
                (SELECT count(*) FROM outbox_messages WHERE status = ${deadStatus})::int AS dead`);
 		const row = one(rows, 'outbox counts');

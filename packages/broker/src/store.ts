@@ -14,7 +14,7 @@ import { claimUntil, revive } from './event.ts';
 // The broker doesn't depend on contracts, so it is spelled out here.
 export const MAIL_TOPIC = 'mail.requested';
 
-type Row = typeof outboxMessages.$inferSelect;
+type OutboxMessageRow = typeof outboxMessages.$inferSelect;
 
 /** Where outbox events live between the transaction that wrote them and their delivery. */
 export interface OutboxStore {
@@ -57,11 +57,11 @@ export function createOutboxStore(db: Db): OutboxStore & OutboxRecovery {
 				const revived = (await deadRows(tx, limit).for('update')).map((row) =>
 					revive(fromRow(row), now),
 				);
-				const sample = first(revived);
-				if (!sample) return revived;
-				// Every revival writes the same three columns, so one statement; the rows are locked
+				if (revived.length === 0) return revived;
+				// revive() sets the same constants on every event, so one statement writes them all; a
+				// per-event difference there must bring back a per-event write. The rows are locked
 				// above, so none has left `dead` since.
-				const { status, attemptCount, nextAttemptAt } = changedColumns(sample);
+				const { status, attemptCount, nextAttemptAt } = changedColumns(first(revived)!);
 				await tx
 					.update(outboxMessages)
 					.set({ status, attemptCount, nextAttemptAt })
@@ -186,7 +186,7 @@ function changedColumns(event: OutboxEvent) {
 	};
 }
 
-function fromRow(row: Row): OutboxEvent {
+function fromRow(row: OutboxMessageRow): OutboxEvent {
 	return {
 		id: row.id,
 		eventType: row.messageType,
