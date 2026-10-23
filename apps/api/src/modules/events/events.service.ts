@@ -9,7 +9,7 @@ import { err, ok, type Result } from '@akashic/lib/result';
 import { fromDate, isBefore, toDate } from '@akashic/lib/time';
 import type {
 	EventsDeps,
-	GoingTally,
+	GoingTallyRow,
 	NewEvent,
 	PostEventError,
 	PostedEvent,
@@ -95,8 +95,7 @@ export async function findEvent(
 			})
 			.from(events)
 			.innerJoin(user, eq(user.id, events.authorId))
-			.where(and(eq(events.id, eventId), eq(events.realmId, realmId)))
-			.limit(1),
+			.where(and(eq(events.id, eventId), eq(events.realmId, realmId))),
 	);
 	if (!row) return undefined;
 	return {
@@ -115,12 +114,15 @@ export async function findEvent(
  * Who is going, and whether this person already is: only asked when the answer can matter, a
  * place in a capped event. Run while the event row is locked.
  */
-export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<GoingTally | undefined> {
+export async function goingTally(
+	tx: Executor,
+	rsvp: RsvpRequest,
+): Promise<GoingTallyRow | undefined> {
 	if (rsvp.status !== RsvpStatus.going || rsvp.capacity === null) return undefined;
 	const { eventId, userId } = rsvp;
 	// Two scalar subqueries read together; the casts make the row match its type.
 	return one(
-		await tx.execute<GoingTally>(sql`
+		await tx.execute<GoingTallyRow>(sql`
     SELECT
       (SELECT count(*)::int FROM event_rsvp
          WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
@@ -129,6 +131,19 @@ export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<Going
            AND status = ${RsvpStatus.going}) AS already
   `),
 		'going tally',
+	);
+}
+
+/** Whether the event is one of this realm's: another realm's is indistinguishable from none. */
+async function inRealm(db: Executor, realmId: string, eventId: string): Promise<boolean> {
+	return (
+		(
+			await db
+				.select({ one: sql`1` })
+				.from(events)
+				.where(and(eq(events.id, eventId), eq(events.realmId, realmId)))
+				.limit(1)
+		).length > 0
 	);
 }
 
@@ -150,7 +165,7 @@ export async function removeRsvp(db: Executor, eventId: string, userId: string):
 export function hasRoomFor(
 	status: RsvpStatus,
 	capacity: number | null,
-	tally: GoingTally | undefined,
+	tally: GoingTallyRow | undefined,
 ): boolean {
 	if (status !== RsvpStatus.going || capacity === null || !tally) return true;
 	return tally.already || tally.going < capacity;
@@ -212,7 +227,7 @@ export function createEventService(deps: EventsDeps) {
 			userId: string,
 			status: RsvpStatus,
 		): Promise<Result<RsvpAnswer, RsvpError>> {
-			if (!(await findEvent(db, realmId, eventId, userId))) return err(notFound());
+			if (!(await inRealm(db, realmId, eventId))) return err(notFound());
 			// Its own transaction (a savepoint inside a caller's), because the capacity check needs the
 			// event row locked until the RSVP is written: two people can't take the last place.
 			return inTransaction(db, async (tx) => {
@@ -249,7 +264,7 @@ export function createEventService(deps: EventsDeps) {
 			eventId: string,
 			userId: string,
 		): Promise<Result<Withdrawal, WithdrawError>> {
-			if (!(await findEvent(db, realmId, eventId, userId))) return err(notFound());
+			if (!(await inRealm(db, realmId, eventId))) return err(notFound());
 			return ok({ cleared: await removeRsvp(db, eventId, userId) });
 		},
 	};

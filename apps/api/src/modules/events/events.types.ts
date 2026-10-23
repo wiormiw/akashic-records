@@ -39,7 +39,7 @@ export interface RsvpRequest {
 }
 
 /** How many are going, and whether the asker already is. */
-export type GoingTally = {
+export type GoingTallyRow = {
 	going: number;
 	already: boolean;
 };

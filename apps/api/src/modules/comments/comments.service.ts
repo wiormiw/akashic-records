@@ -1,6 +1,6 @@
 import type { CommentEntry } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
 	audit,
 	comments,
@@ -50,8 +50,7 @@ async function threadOpen(
 	const query = db
 		.select({ open: table.commentsEnabled })
 		.from(table)
-		.where(and(eq(table.id, subject.id), eq(table.realmId, realmId)))
-		.limit(1);
+		.where(and(eq(table.id, subject.id), eq(table.realmId, realmId)));
 	// FOR SHARE: a concurrent switch-off (an UPDATE) waits for this comment, or this waits for it.
 	return first(await (lock ? query.for('share') : query))?.open;
 }
@@ -113,7 +112,7 @@ export function createCommentService(deps: CommentsDeps) {
 						.insert(comments)
 						.values({ realmId, subjectKind: subject.kind, subjectId: subject.id, authorId, body })
 						.returning({ id: comments.id }),
-					'inserted comment',
+					'comment insert',
 				);
 				await publish(
 					tx,
@@ -145,8 +144,15 @@ export function createCommentService(deps: CommentsDeps) {
 						.returning({ authorId: comments.authorId }),
 				);
 				if (!removed) {
-					const gone = first(await tx.select({ id: comments.id }).from(comments).where(ofRealm));
-					return gone
+					const exists =
+						(
+							await tx
+								.select({ one: sql`1` })
+								.from(comments)
+								.where(ofRealm)
+								.limit(1)
+						).length > 0;
+					return exists
 						? ok({ removed: true as const })
 						: err(new EventNotFound('No such comment in this realm.'));
 				}

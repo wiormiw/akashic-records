@@ -224,8 +224,7 @@ export function createAdminService(deps: AdminDeps) {
 					emailVerified: user.emailVerified,
 				})
 				.from(user)
-				.where(eq(user.email, email))
-				.limit(1),
+				.where(eq(user.email, email)),
 		);
 	}
 
@@ -272,7 +271,7 @@ export function createAdminService(deps: AdminDeps) {
 			actorId: string,
 		): Promise<Result<Granted, GrantRealmAdminError>> {
 			const realm = first(
-				await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)).limit(1),
+				await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)),
 			);
 			if (!realm) return err(new RealmNotFound(`No realm called "${slug}".`));
 			const account = await findAccountByEmail(email);
