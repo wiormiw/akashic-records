@@ -416,4 +416,30 @@ describe('structure', () => {
 		}
 		expect(bad).toEqual([]);
 	});
+
+	// One cardinality convention (CLAUDE.md, "Queries"): `one()` or `first()` from @akashic/db/sql,
+	// never a positional read of a result. A text heuristic over comment-stripped source; it catches
+	// `(await q)[0]`, `rows[0]` / `row[0]` / `result[0]`, `.then((r) => r[0])`, a `[row = {}]`
+	// default, and `const [row] = await ...` with one name (a `Promise.all` pair has two).
+	test('query results are read with one() or first(), never by position', async () => {
+		const stripComments = (src: string) =>
+			src.replaceAll(/\/\*[\s\S]*?\*\//g, '').replaceAll(/^\s*\/\/.*$/gm, '');
+		const rules: [string, RegExp][] = [
+			['[0] on a call result', /\)\s*\[0\]/],
+			['[0] on rows', /\b(?:rows?|result|results)\s*\[0\]/],
+			['.then(r => r[0])', /\.then\(\s*\(?\s*(\w+)\s*\)?\s*=>\s*\1\s*\[0\]/],
+			['[row = {}] default', /\[\s*\w+\s*=\s*\{\s*\}\s*\]/],
+			['const [row] = await', /const\s*\[\s*\w+\s*\]\s*=\s*await\b(?!\s+Promise\.all)/],
+		];
+		const bad: string[] = [];
+		for (const f of scan(
+			'apps/api/src/**/*.ts',
+			'packages/broker/src/**/*.ts',
+			'packages/db/src/**/*.ts',
+		)) {
+			const code = stripComments(await read(f));
+			for (const [name, rule] of rules) if (rule.test(code)) bad.push(`${f}: ${name}`);
+		}
+		expect(bad).toEqual([]);
+	});
 });
