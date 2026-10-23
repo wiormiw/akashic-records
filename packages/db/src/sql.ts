@@ -24,10 +24,12 @@ export const centroidFrom = (
 /** An ILIKE pattern matching `text` anywhere, with its wildcards escaped. */
 export const containing = (text: string): string => `%${text.replaceAll(/[\\%_]/g, '\\$&')}%`;
 
-/** The row the SQL guarantees (scalar subqueries, a one-row RETURNING, an aggregate); none is a bug. */
+/** The row the SQL guarantees (scalar subqueries, a one-row RETURNING, an aggregate); any other count is a bug. */
 export function one<T>(rows: readonly T[], what: string): T {
 	const [row] = rows;
-	if (row === undefined) throw new Error(`expected one ${what}, got none`);
+	if (rows.length !== 1 || row === undefined) {
+		throw new Error(`expected one ${what}, got ${rows.length}`);
+	}
 	return row;
 }
 

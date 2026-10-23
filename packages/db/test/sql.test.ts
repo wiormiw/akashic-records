@@ -27,7 +27,8 @@ test('a stored centroid is read as numbers; none means nothing learned', () => {
 
 test('one returns the single row and throws, naming it, when there is none', () => {
 	expect(one([7], 'count')).toBe(7);
-	expect(() => one([], 'platform counts')).toThrow('expected one platform counts, got none');
+	expect(() => one([], 'platform counts')).toThrow('expected one platform counts, got 0');
+	expect(() => one([1, 2], 'platform counts')).toThrow('expected one platform counts, got 2');
 });
 
 test('first returns the row or undefined', () => {

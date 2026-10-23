@@ -81,24 +81,35 @@ project `akashic-prod`; never touch project `akashic` (dev, holds real data).
 
 ## Queries
 
-One convention, in `apps/api/src` and `packages/*/src`:
+One convention, in `apps/api/src`, `apps/api/scripts` and every `packages/*/src`:
 
 - **Form.** Drizzle's builder by default, with `sql<T>` fragments for expressions and
-  `.mapWith(Number)` where Postgres returns bigint/numeric (`count(*)`, `sum`). A whole statement as
+  `.mapWith(Number)` where Postgres returns bigint/numeric. A whole statement as
   `db.execute<ThingRow>(sql`...`)` only where the builder hides the intent (several scalar
   subqueries in one snapshot, window functions, CTEs, `DELETE ... USING`); its SQL casts (`::int`)
-  so the type is true. `ThingRow` is a `type`. Never `as unknown as`.
-- **Cardinality, through `@akashic/db/sql`.** `one(rows, what)` when the SQL guarantees one row
-  (scalar subqueries, a one-row `RETURNING`, an aggregate without GROUP BY): none throws.
-  `first(rows)` when zero or one is possible (lookup by id or unique key): the caller turns
-  `undefined` into its domain error on the spot. No `const [x] = await`, `[0]`, `.then(r => r[0])`
-  or `[row = {}]` on a query result; `structure.test.ts` checks. Multi-row reads stay arrays.
-- **Performance.** Select only the columns used. Existence is `exists()` or `select 1 ... limit 1`,
-  never `count(*) > 0`. `.limit(1)` on a lookup by a non-unique key. No query inside a loop: one
-  `inArray` (arrays through `pgArray()`) or a join. Independent reads outside a transaction may use
-  `Promise.all`; inside one they share a connection, so stay sequential. Enum values stay bound
-  parameters, except a predicate a partial index must see in the query text: `sql.raw(String(Enum.x))`
-  with a comment naming the index.
+  so the type is true. Row types are `type ThingRow`, never `interface`. Never `as unknown as`.
+- **Counts.** A plain count, standalone or correlated, is `db.$count(table, where)`. Inside a
+  select or group-by use drizzle's `count()`; `sql`count(*)`.mapWith(Number)` is not used, and
+  `sql` is only for what has a FILTER or another expression (`count(*) FILTER (WHERE ...)`).
+- **Cardinality, through `@akashic/db/sql`.** `one(rows, 'noun phrase')` when the SQL guarantees
+  one row (scalar subqueries, a one-row `RETURNING`, an aggregate without GROUP BY): any other count
+  throws `expected one <what>, got <n>`. `first(rows)` when zero or one is possible (a lookup by id
+  or unique key, an `ON CONFLICT DO NOTHING`): the caller turns `undefined` into its domain error on
+  the spot. Always inline, `first(await q)` / `one(await q, 'comment insert')`: no `const rows =
+  await q; first(rows)`, no `const x = first(...); return x`. No `const [x] = await`, `[0]`,
+  `?.[0]`, `.at(0)`, `.then(r => r[0])` or `[row = {}]` on a result; `structure.test.ts` checks
+  (its comment lists what it cannot catch). Multi-row reads stay arrays.
+- **Existence.** Presence only is `(await db.select({ one: sql`1` })...limit(1)).length > 0`, never
+  `first(...) !== undefined` and never `count(*) > 0`. A write that must say whether it changed a
+  row keeps `.returning(...)` and tests `.length`. The value itself is `first()`.
+- **`.limit(1)`.** On a lookup by a non-unique key and on existence reads; not on a lookup by
+  primary or unique key.
+- **Performance.** Select only the columns used. No query inside a loop: one `inArray(col, ids)`
+  (a plain JS array; the helper expands it) or a join. Bind a whole array inside an `sql` fragment
+  with `pgArray()` (trap 2). Independent reads outside a transaction may use `Promise.all`; inside
+  one they share a connection, so stay sequential. A subquery used twice is aliased once. Enum
+  values stay bound parameters, except a predicate a partial index must see in the query text:
+  `sql.raw(String(Enum.x))` with a comment naming the index.
 
 ## Testing
 
