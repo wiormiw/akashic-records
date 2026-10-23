@@ -1,5 +1,13 @@
 import { expect, test } from 'bun:test';
-import { centroidFrom, containing, parseVector, pgArray, pgVector } from '@akashic/db/sql';
+import {
+	centroidFrom,
+	containing,
+	first,
+	one,
+	parseVector,
+	pgArray,
+	pgVector,
+} from '@akashic/db/sql';
 
 test('array and vector literals bind as one text parameter', () => {
 	expect(pgArray(['a', 'b"c'])).toBe('{"a","b\\"c"}');
@@ -15,4 +23,14 @@ test('a stored centroid is read as numbers; none means nothing learned', () => {
 	});
 	expect(centroidFrom({ centroid: null, samples: null })).toEqual({ centroid: null, samples: 0 });
 	expect(centroidFrom(undefined)).toEqual({ centroid: null, samples: 0 });
+});
+
+test('one returns the single row and throws, naming it, when there is none', () => {
+	expect(one([7], 'count')).toBe(7);
+	expect(() => one([], 'platform counts')).toThrow('expected one platform counts, got none');
+});
+
+test('first returns the row or undefined', () => {
+	expect(first([1, 2])).toBe(1);
+	expect(first([])).toBeUndefined();
 });
