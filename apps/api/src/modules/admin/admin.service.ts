@@ -64,16 +64,16 @@ export function createAdminService(deps: AdminDeps) {
 		// One statement, so the six counts come from one snapshot.
 		const row = one(
 			await db.execute<PlatformCountsRow>(sql`
-      SELECT
-        (SELECT count(*)::int FROM realm) AS realms,
-        (SELECT count(*)::int FROM realm WHERE archived_at IS NOT NULL) AS archived,
-        (SELECT count(*)::int FROM realm r WHERE NOT EXISTS (
-           SELECT 1 FROM realm_member m WHERE m.realm_id = r.id AND m.role = ${RealmRole.admin}
-         )) AS orphaned,
-        (SELECT count(*)::int FROM "user") AS members,
-        (SELECT count(*)::int FROM room_report WHERE reviewed_at IS NULL) AS open_reports,
-        (SELECT count(*)::int FROM audit_entries) AS audit_entries
-    `),
+				SELECT
+					(SELECT count(*)::int FROM realm) AS realms,
+					(SELECT count(*)::int FROM realm WHERE archived_at IS NOT NULL) AS archived,
+					(SELECT count(*)::int FROM realm r WHERE NOT EXISTS (
+					SELECT 1 FROM realm_member m WHERE m.realm_id = r.id AND m.role = ${RealmRole.admin}
+					)) AS orphaned,
+					(SELECT count(*)::int FROM "user") AS members,
+					(SELECT count(*)::int FROM room_report WHERE reviewed_at IS NULL) AS open_reports,
+					(SELECT count(*)::int FROM audit_entries) AS audit_entries
+			`),
 			'platform counts',
 		);
 		return {

@@ -141,19 +141,19 @@ async function seatCandidates(
 ): Promise<SeatCandidates> {
 	// A CTE and a window function read plainer as SQL than as builder calls.
 	const rows = await db.execute<CandidateRow>(sql`
-    WITH ranked AS (
-      SELECT m.user_id, m.role, m.joined_at,
-        (SELECT count(*)::int FROM realm_endorsement e
-           WHERE e.realm_id = m.realm_id AND e.candidate_id = m.user_id) AS upvotes
-      FROM realm_member m
-      WHERE m.realm_id = ${realmId} AND m.role <> ${RealmRole.admin}
-    )
-    SELECT user_id,
-      (upvotes >= ${minimum}
-        AND row_number() OVER (ORDER BY upvotes DESC, joined_at ASC) <= ${seatCount}) AS should_hold,
-      (role = ${RealmRole.moderator}) AS holds
-    FROM ranked
-  `);
+		WITH ranked AS (
+		SELECT m.user_id, m.role, m.joined_at,
+			(SELECT count(*)::int FROM realm_endorsement e
+			WHERE e.realm_id = m.realm_id AND e.candidate_id = m.user_id) AS upvotes
+		FROM realm_member m
+		WHERE m.realm_id = ${realmId} AND m.role <> ${RealmRole.admin}
+		)
+		SELECT user_id,
+		(upvotes >= ${minimum}
+			AND row_number() OVER (ORDER BY upvotes DESC, joined_at ASC) <= ${seatCount}) AS should_hold,
+		(role = ${RealmRole.moderator}) AS holds
+		FROM ranked
+	`);
 	return {
 		shouldHold: rows.filter((row) => row.should_hold).map((row) => row.user_id),
 		currentlyHold: rows.filter((row) => row.holds).map((row) => row.user_id),

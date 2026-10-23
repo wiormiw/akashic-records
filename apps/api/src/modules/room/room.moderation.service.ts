@@ -160,15 +160,15 @@ export function createModerationService(deps: RoomAreaDeps) {
 		async sweepExpired(): Promise<number> {
 			// A message goes when its room's retention is agreed by both participants and has run out.
 			const removed = await db.execute<SweptMessageRow>(sql`
-        DELETE FROM room_message m
-        USING room r
-        WHERE m.room_id = r.id
-          AND r.retention_days IS NOT NULL
-          AND r.low_user_id = ANY(r.retention_agreed_by)
-          AND r.high_user_id = ANY(r.retention_agreed_by)
-          AND m.created_at < now() - make_interval(days => r.retention_days)
-        RETURNING m.id
-      `);
+				DELETE FROM room_message m
+				USING room r
+				WHERE m.room_id = r.id
+				AND r.retention_days IS NOT NULL
+				AND r.low_user_id = ANY(r.retention_agreed_by)
+				AND r.high_user_id = ANY(r.retention_agreed_by)
+				AND m.created_at < now() - make_interval(days => r.retention_days)
+				RETURNING m.id
+			`);
 			return removed.length;
 		},
 	};

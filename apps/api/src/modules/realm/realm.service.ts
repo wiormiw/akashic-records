@@ -68,9 +68,9 @@ export function summaryQuery(db: Executor, filter: SQL | undefined, limit: numbe
 			category: realms.category,
 			memberCount,
 			modules: sql<number[]>`(
-        SELECT coalesce(array_agg(${inTable(realmModules, 'module')} ORDER BY ${inTable(realmModules, 'module')}), '{}')
-        FROM ${realmModules}
-        WHERE ${inTable(realmModules, 'realmId')} = ${inTable(realms, 'id')})`,
+				SELECT coalesce(array_agg(${inTable(realmModules, 'module')} ORDER BY ${inTable(realmModules, 'module')}), '{}')
+				FROM ${realmModules}
+				WHERE ${inTable(realmModules, 'realmId')} = ${inTable(realms, 'id')})`,
 		})
 		.from(realms)
 		.where(and(isNull(realms.archivedAt), filter))

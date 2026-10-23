@@ -123,13 +123,13 @@ export async function goingTally(
 	// Two scalar subqueries read together; the casts make the row match its type.
 	return one(
 		await tx.execute<GoingTallyRow>(sql`
-    SELECT
-      (SELECT count(*)::int FROM event_rsvp
-         WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
-      EXISTS (SELECT 1 FROM event_rsvp
-         WHERE event_id = ${eventId} AND user_id = ${userId}
-           AND status = ${RsvpStatus.going}) AS already
-  `),
+			SELECT
+			(SELECT count(*)::int FROM event_rsvp
+				WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
+			EXISTS (SELECT 1 FROM event_rsvp
+				WHERE event_id = ${eventId} AND user_id = ${userId}
+				AND status = ${RsvpStatus.going}) AS already
+		`),
 		'going tally',
 	);
 }
