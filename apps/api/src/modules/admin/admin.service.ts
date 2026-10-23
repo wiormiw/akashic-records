@@ -1,5 +1,5 @@
 import { alias } from 'drizzle-orm/pg-core';
-import { and, asc, desc, eq, ilike, isNotNull, isNull, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type {
 	Account,
 	AuditRecord,
@@ -46,36 +46,42 @@ const person = (id: string | null, name: string | null, email: string | null) =>
 const reporter = alias(user, 'reporter');
 const accused = alias(user, 'accused');
 
+/** The overview's columns, each cast to int in the SQL so the numbers arrive as numbers. */
+type PlatformCountsRow = {
+	realms: number;
+	archived: number;
+	orphaned: number;
+	members: number;
+	open_reports: number;
+	audit_entries: number;
+};
+
 /** The platform's control panel: every realm, every account, the audit trail and reports. */
 export function createAdminService(deps: AdminDeps) {
 	const { db, clock } = deps;
 
 	async function overview(): Promise<PlatformCounts> {
-		const [total, archived, orphaned, members, openReports, auditCount] = await Promise.all([
-			db.$count(realms),
-			db.$count(realms, isNotNull(realms.archivedAt)),
-			db.$count(
-				realms,
-				notExists(
-					db
-						.select({ one: sql`1` })
-						.from(realmMembers)
-						.where(
-							and(eq(realmMembers.realmId, realms.id), eq(realmMembers.role, RealmRole.admin)),
-						),
-				),
-			),
-			db.$count(user),
-			db.$count(roomReports, isNull(roomReports.reviewedAt)),
-			db.$count(auditEntries),
-		]);
+		// One statement, so the six counts come from one snapshot.
+		const [row] = await db.execute<PlatformCountsRow>(sql`
+      SELECT
+        (SELECT count(*)::int FROM realm) AS realms,
+        (SELECT count(*)::int FROM realm WHERE archived_at IS NOT NULL) AS archived,
+        (SELECT count(*)::int FROM realm r WHERE NOT EXISTS (
+           SELECT 1 FROM realm_member m WHERE m.realm_id = r.id AND m.role = ${RealmRole.admin}
+         )) AS orphaned,
+        (SELECT count(*)::int FROM "user") AS members,
+        (SELECT count(*)::int FROM room_report WHERE reviewed_at IS NULL) AS open_reports,
+        (SELECT count(*)::int FROM audit_entries) AS audit_entries
+    `);
+		// Scalar subqueries always yield one row; none is a bug, not an empty platform.
+		if (!row) throw new Error('platform overview returned no row');
 		return {
-			realms: total,
-			archived,
-			orphaned,
-			members,
-			openReports,
-			auditEntries: auditCount,
+			realms: row.realms,
+			archived: row.archived,
+			orphaned: row.orphaned,
+			members: row.members,
+			openReports: row.open_reports,
+			auditEntries: row.audit_entries,
 		};
 	}
 
