@@ -2,6 +2,7 @@ import { and, asc, eq, gte, sql } from 'drizzle-orm';
 import type { EventDetail, EventSummary } from '@akashic/contracts';
 import { realmEvents } from '@akashic/contracts/events';
 import { eventRsvps, events, type Executor, inTransaction, publish, user } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { RsvpStatus } from '@akashic/lib/enums';
 import { EventFull, EventInPast, EventNotFound } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -76,25 +77,27 @@ export async function findEvent(
 	eventId: string,
 	viewerId: string,
 ): Promise<EventDetail | undefined> {
-	const [row] = await db
-		.select({
-			...summaryColumns(db),
-			description: events.description,
-			endsAt: events.endsAt,
-			location: events.location,
-			authorId: events.authorId,
-			authorName: user.name,
-			commentsEnabled: events.commentsEnabled,
-			// A scalar subquery, so a viewer with no answer reads null rather than dropping the row.
-			yourRsvp: sql<number | null>`(${db
-				.select({ status: eventRsvps.status })
-				.from(eventRsvps)
-				.where(and(eq(eventRsvps.eventId, events.id), eq(eventRsvps.userId, viewerId)))})`,
-		})
-		.from(events)
-		.innerJoin(user, eq(user.id, events.authorId))
-		.where(and(eq(events.id, eventId), eq(events.realmId, realmId)))
-		.limit(1);
+	const row = first(
+		await db
+			.select({
+				...summaryColumns(db),
+				description: events.description,
+				endsAt: events.endsAt,
+				location: events.location,
+				authorId: events.authorId,
+				authorName: user.name,
+				commentsEnabled: events.commentsEnabled,
+				// A scalar subquery, so a viewer with no answer reads null rather than dropping the row.
+				yourRsvp: sql<number | null>`(${db
+					.select({ status: eventRsvps.status })
+					.from(eventRsvps)
+					.where(and(eq(eventRsvps.eventId, events.id), eq(eventRsvps.userId, viewerId)))})`,
+			})
+			.from(events)
+			.innerJoin(user, eq(user.id, events.authorId))
+			.where(and(eq(events.id, eventId), eq(events.realmId, realmId)))
+			.limit(1),
+	);
 	if (!row) return undefined;
 	return {
 		...summaryOf(row),
@@ -116,17 +119,17 @@ export async function goingTally(tx: Executor, rsvp: RsvpRequest): Promise<Going
 	if (rsvp.status !== RsvpStatus.going || rsvp.capacity === null) return undefined;
 	const { eventId, userId } = rsvp;
 	// Two scalar subqueries read together; the casts make the row match its type.
-	const [tally] = await tx.execute<GoingTally>(sql`
+	return one(
+		await tx.execute<GoingTally>(sql`
     SELECT
       (SELECT count(*)::int FROM event_rsvp
          WHERE event_id = ${eventId} AND status = ${RsvpStatus.going}) AS going,
       EXISTS (SELECT 1 FROM event_rsvp
          WHERE event_id = ${eventId} AND user_id = ${userId}
            AND status = ${RsvpStatus.going}) AS already
-  `);
-	// Two scalar subqueries always yield a row. Returning none would read as "room left".
-	if (!tally) throw new Error('going tally returned no row');
-	return tally;
+  `),
+		'going tally',
+	);
 }
 
 /** Removes the person's answer; false when they had none. */
@@ -177,15 +180,17 @@ export function createEventService(deps: EventsDeps) {
 				return err(new EventInPast('An event cannot start in the past.'));
 			}
 			return inTransaction(db, async (tx) => {
-				const [created] = await tx
-					.insert(events)
-					.values({
-						...event,
-						startsAt: toDate(event.startsAt),
-						endsAt: event.endsAt && toDate(event.endsAt),
-					})
-					.returning({ id: events.id });
-				if (!created) throw new Error('event insert returned no row');
+				const created = one(
+					await tx
+						.insert(events)
+						.values({
+							...event,
+							startsAt: toDate(event.startsAt),
+							endsAt: event.endsAt && toDate(event.endsAt),
+						})
+						.returning({ id: events.id }),
+					'event insert',
+				);
 				await publish(
 					tx,
 					[
@@ -211,11 +216,13 @@ export function createEventService(deps: EventsDeps) {
 			// Its own transaction (a savepoint inside a caller's), because the capacity check needs the
 			// event row locked until the RSVP is written: two people can't take the last place.
 			return inTransaction(db, async (tx) => {
-				const [event] = await tx
-					.select({ capacity: events.capacity })
-					.from(events)
-					.where(eq(events.id, eventId))
-					.for('update');
+				const event = first(
+					await tx
+						.select({ capacity: events.capacity })
+						.from(events)
+						.where(eq(events.id, eventId))
+						.for('update'),
+				);
 				if (!event) return err(notFound());
 
 				const { capacity } = event;

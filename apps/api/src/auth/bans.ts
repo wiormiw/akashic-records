@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { user, type Executor } from '@akashic/db';
+import { first } from '@akashic/db/sql';
 import { fromDate } from '@akashic/lib/time';
 
 /** An account's current suspension. `until` null means until lifted by hand. */
@@ -35,10 +36,10 @@ export async function banOf(
 	{ now = Temporal.Now.instant(), signal }: { now?: Temporal.Instant; signal?: AbortSignal } = {},
 ): Promise<Ban | undefined> {
 	signal?.throwIfAborted();
-	const [row] = await db
+	const rows = await db
 		.select({ bannedAt: user.bannedAt, reason: user.banReason, until: user.bannedUntil })
 		.from(user)
 		.where(eq(user.id, userId))
 		.limit(1);
-	return banFrom(row, now);
+	return banFrom(first(rows), now);
 }

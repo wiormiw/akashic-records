@@ -21,7 +21,7 @@ import {
 	session,
 	user,
 } from '@akashic/db';
-import { containing } from '@akashic/db/sql';
+import { containing, first, one } from '@akashic/db/sql';
 import { AuditAction, RealmRole } from '@akashic/lib/enums';
 import { RealmNotFound, RouteNotFound, ValidationFailed } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -62,7 +62,8 @@ export function createAdminService(deps: AdminDeps) {
 
 	async function overview(): Promise<PlatformCounts> {
 		// One statement, so the six counts come from one snapshot.
-		const [row] = await db.execute<PlatformCountsRow>(sql`
+		const row = one(
+			await db.execute<PlatformCountsRow>(sql`
       SELECT
         (SELECT count(*)::int FROM realm) AS realms,
         (SELECT count(*)::int FROM realm WHERE archived_at IS NOT NULL) AS archived,
@@ -72,9 +73,9 @@ export function createAdminService(deps: AdminDeps) {
         (SELECT count(*)::int FROM "user") AS members,
         (SELECT count(*)::int FROM room_report WHERE reviewed_at IS NULL) AS open_reports,
         (SELECT count(*)::int FROM audit_entries) AS audit_entries
-    `);
-		// Scalar subqueries always yield one row; none is a bug, not an empty platform.
-		if (!row) throw new Error('platform overview returned no row');
+    `),
+			'platform counts',
+		);
 		return {
 			realms: row.realms,
 			archived: row.archived,
@@ -214,17 +215,18 @@ export function createAdminService(deps: AdminDeps) {
 	}
 
 	async function findAccountByEmail(email: string): Promise<AccountRef | undefined> {
-		const [row] = await db
-			.select({
-				id: user.id,
-				name: user.name,
-				email: user.email,
-				emailVerified: user.emailVerified,
-			})
-			.from(user)
-			.where(eq(user.email, email))
-			.limit(1);
-		return row;
+		return first(
+			await db
+				.select({
+					id: user.id,
+					name: user.name,
+					email: user.email,
+					emailVerified: user.emailVerified,
+				})
+				.from(user)
+				.where(eq(user.email, email))
+				.limit(1),
+		);
 	}
 
 	return {
@@ -269,11 +271,9 @@ export function createAdminService(deps: AdminDeps) {
 			email: string,
 			actorId: string,
 		): Promise<Result<Granted, GrantRealmAdminError>> {
-			const [realm] = await db
-				.select({ id: realms.id })
-				.from(realms)
-				.where(eq(realms.slug, slug))
-				.limit(1);
+			const realm = first(
+				await db.select({ id: realms.id }).from(realms).where(eq(realms.slug, slug)).limit(1),
+			);
 			if (!realm) return err(new RealmNotFound(`No realm called "${slug}".`));
 			const account = await findAccountByEmail(email);
 			if (!account) {

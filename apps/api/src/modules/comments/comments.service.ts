@@ -12,6 +12,7 @@ import {
 	publish,
 	user,
 } from '@akashic/db';
+import { first, one } from '@akashic/db/sql';
 import { AuditAction, CommentSubject } from '@akashic/lib/enums';
 import { EventNotFound, RealmForbidden } from '@akashic/lib/errors';
 import { err, ok, type Result } from '@akashic/lib/result';
@@ -52,8 +53,7 @@ async function threadOpen(
 		.where(and(eq(table.id, subject.id), eq(table.realmId, realmId)))
 		.limit(1);
 	// FOR SHARE: a concurrent switch-off (an UPDATE) waits for this comment, or this waits for it.
-	const [row] = await (lock ? query.for('share') : query);
-	return row?.open;
+	return first(await (lock ? query.for('share') : query))?.open;
 }
 
 /** A thread oldest first, with each author's name and picture. */
@@ -108,11 +108,13 @@ export function createCommentService(deps: CommentsDeps) {
 				const open = await threadOpen(tx, realmId, subject, true);
 				if (open === undefined) return err(noSubject());
 				if (!open) return err(new RealmForbidden('Comments are off for this.'));
-				const [created] = await tx
-					.insert(comments)
-					.values({ realmId, subjectKind: subject.kind, subjectId: subject.id, authorId, body })
-					.returning({ id: comments.id });
-				if (!created) throw new Error('comment insert returned no row');
+				const created = one(
+					await tx
+						.insert(comments)
+						.values({ realmId, subjectKind: subject.kind, subjectId: subject.id, authorId, body })
+						.returning({ id: comments.id }),
+					'inserted comment',
+				);
 				await publish(
 					tx,
 					[realmEvents.postingCreated('comment', { postingId: created.id, realmId, authorId })],
@@ -135,13 +137,15 @@ export function createCommentService(deps: CommentsDeps) {
 				const ofRealm = and(eq(comments.id, commentId), eq(comments.realmId, realmId));
 				// Only a comment still standing: removing it again keeps the first removal's time
 				// and record.
-				const [removed] = await tx
-					.update(comments)
-					.set({ removedAt: toDate(clock.now()) })
-					.where(and(ofRealm, isNull(comments.removedAt)))
-					.returning({ authorId: comments.authorId });
+				const removed = first(
+					await tx
+						.update(comments)
+						.set({ removedAt: toDate(clock.now()) })
+						.where(and(ofRealm, isNull(comments.removedAt)))
+						.returning({ authorId: comments.authorId }),
+				);
 				if (!removed) {
-					const [gone] = await tx.select({ id: comments.id }).from(comments).where(ofRealm);
+					const gone = first(await tx.select({ id: comments.id }).from(comments).where(ofRealm));
 					return gone
 						? ok({ removed: true as const })
 						: err(new EventNotFound('No such comment in this realm.'));

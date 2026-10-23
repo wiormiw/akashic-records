@@ -4,6 +4,7 @@ import { createMiddleware } from 'hono/factory';
 import { matchedRoutes } from 'hono/route';
 import { FgaType, Relation, type Authorizer } from '@akashic/authz';
 import { realmMembers, realmModules, realms, type Executor } from '@akashic/db';
+import { first } from '@akashic/db/sql';
 import { narrow, RealmModule, RealmRole } from '@akashic/lib/enums';
 import {
 	ModuleDisabled,
@@ -115,12 +116,12 @@ export function realmContext(options: { db: Executor; authorizer: Authorizer }) 
 }
 
 async function findBySlug(db: Executor, slug: string) {
-	const [row] = await db
+	const rows = await db
 		.select({ id: realms.id, slug: realms.slug, name: realms.name, archivedAt: realms.archivedAt })
 		.from(realms)
 		.where(eq(realms.slug, slug))
 		.limit(1);
-	return row;
+	return first(rows);
 }
 
 async function modulesOf(db: Executor, realmId: string): Promise<RealmModule[]> {
@@ -133,11 +134,12 @@ async function modulesOf(db: Executor, realmId: string): Promise<RealmModule[]> 
 }
 
 async function roleOf(db: Executor, realmId: string, userId: string): Promise<RealmRole | null> {
-	const [row] = await db
+	const rows = await db
 		.select({ role: realmMembers.role })
 		.from(realmMembers)
 		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
 		.limit(1);
+	const row = first(rows);
 	return row ? narrow(RealmRole, row.role) : null;
 }
 
