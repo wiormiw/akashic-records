@@ -36,10 +36,11 @@ export async function banOf(
 	{ now = Temporal.Now.instant(), signal }: { now?: Temporal.Instant; signal?: AbortSignal } = {},
 ): Promise<Ban | undefined> {
 	signal?.throwIfAborted();
-	const rows = await db
-		.select({ bannedAt: user.bannedAt, reason: user.banReason, until: user.bannedUntil })
-		.from(user)
-		.where(eq(user.id, userId))
-		.limit(1);
-	return banFrom(first(rows), now);
+	const row = first(
+		await db
+			.select({ bannedAt: user.bannedAt, reason: user.banReason, until: user.bannedUntil })
+			.from(user)
+			.where(eq(user.id, userId)),
+	);
+	return banFrom(row, now);
 }

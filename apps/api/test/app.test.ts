@@ -45,7 +45,7 @@ const build = (
 			auth,
 			// The ban lookup finds no row: nobody is suspended.
 			db: {
-				select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+				select: () => ({ from: () => ({ where: async () => [] }) }),
 			} as unknown as Db,
 			authorizer: { check: async () => false } as unknown as Authorizer,
 		}),

@@ -12,7 +12,7 @@ const signedIn = { user: { id: 'u1', email: 'u1@x.test' } };
 
 // The ban lookup answers with these rows; none means not suspended.
 const fakeDb = (rows: unknown[]) => ({
-	select: () => ({ from: () => ({ where: () => ({ limit: async () => rows }) }) }),
+	select: () => ({ from: () => ({ where: async () => rows }) }),
 });
 
 const build = (session: typeof signedIn | null, allowed = true, banRows: unknown[] = []) => {

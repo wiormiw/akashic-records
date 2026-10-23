@@ -116,12 +116,17 @@ export function realmContext(options: { db: Executor; authorizer: Authorizer }) 
 }
 
 async function findBySlug(db: Executor, slug: string) {
-	const rows = await db
-		.select({ id: realms.id, slug: realms.slug, name: realms.name, archivedAt: realms.archivedAt })
-		.from(realms)
-		.where(eq(realms.slug, slug))
-		.limit(1);
-	return first(rows);
+	return first(
+		await db
+			.select({
+				id: realms.id,
+				slug: realms.slug,
+				name: realms.name,
+				archivedAt: realms.archivedAt,
+			})
+			.from(realms)
+			.where(eq(realms.slug, slug)),
+	);
 }
 
 async function modulesOf(db: Executor, realmId: string): Promise<RealmModule[]> {
@@ -134,12 +139,12 @@ async function modulesOf(db: Executor, realmId: string): Promise<RealmModule[]> 
 }
 
 async function roleOf(db: Executor, realmId: string, userId: string): Promise<RealmRole | null> {
-	const rows = await db
-		.select({ role: realmMembers.role })
-		.from(realmMembers)
-		.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId)))
-		.limit(1);
-	const row = first(rows);
+	const row = first(
+		await db
+			.select({ role: realmMembers.role })
+			.from(realmMembers)
+			.where(and(eq(realmMembers.realmId, realmId), eq(realmMembers.userId, userId))),
+	);
 	return row ? narrow(RealmRole, row.role) : null;
 }
 

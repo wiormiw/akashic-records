@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import * as v from 'valibot';
 import { createAuthorizer, FgaType, PLATFORM_ID, type Authorizer } from '@akashic/authz';
 import { audit, createDb, type Executor, inTransaction, user } from '@akashic/db';
+import { first } from '@akashic/db/sql';
 import { loadEnv } from '@akashic/lib/config';
 import { AuditAction } from '@akashic/lib/enums';
 import { createLogger } from '@akashic/lib/log';
@@ -21,11 +22,12 @@ export async function grantPlatformAdmin(options: {
 	revoke: boolean;
 }): Promise<{ id: string; name: string }> {
 	const { db, authorizer, email, revoke } = options;
-	const [account] = await db
-		.select({ id: user.id, name: user.name, verified: user.emailVerified })
-		.from(user)
-		.where(eq(user.email, email))
-		.limit(1);
+	const account = first(
+		await db
+			.select({ id: user.id, name: user.name, verified: user.emailVerified })
+			.from(user)
+			.where(eq(user.email, email)),
+	);
 	if (!account) throw new Error(`no account for ${email}; register it first`);
 	if (!account.verified) throw new Error(`${email} has not verified its address`);
 
