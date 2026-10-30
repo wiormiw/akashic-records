@@ -3,7 +3,7 @@ import * as v from 'valibot';
 import { MessageFrameView, MessageView } from '@akashic/contracts';
 
 // bun test has no SvelteKit aliases, so the config module is stubbed before rooms.ts loads.
-mock.module('$lib/config', () => ({ API_BASE: 'http://api.test' }));
+mock.module('#lib/config.ts', () => ({ API_BASE: 'http://api.test' }));
 const rooms = await import('./rooms');
 
 const stored = {

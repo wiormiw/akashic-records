@@ -13,13 +13,13 @@
 		ServerFrame,
 		type PublicKeys,
 		type ReadMessage,
-	} from '$lib/api/rooms';
-	import type { Keyring } from '$lib/crypto/keys';
-	import { SITE_NAME } from '$lib/config';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
+	} from '#lib/api/rooms.ts';
+	import type { Keyring } from '#lib/crypto/keys.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
 	import * as v from 'valibot';
 	import type { PageData } from './$types';
 

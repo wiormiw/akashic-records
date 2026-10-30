@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { JOB_STATUS_LABELS, JOB_TYPE_LABELS, money, type JobDetail } from '$lib/api/realms';
+	import { JOB_STATUS_LABELS, JOB_TYPE_LABELS, money, type JobDetail } from '#lib/api/realms.ts';
 	import { RoomSubject } from '@akashic/lib/enums';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView } from '$lib/motion';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Breadcrumbs from '$lib/ui/Breadcrumbs.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Interest from '$lib/ui/Interest.svelte';
-	import MessageButton from '$lib/ui/MessageButton.svelte';
-	import Takedown from '$lib/ui/Takedown.svelte';
-	import Thread from '$lib/ui/Thread.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Breadcrumbs from '#lib/ui/Breadcrumbs.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Interest from '#lib/ui/Interest.svelte';
+	import MessageButton from '#lib/ui/MessageButton.svelte';
+	import Takedown from '#lib/ui/Takedown.svelte';
+	import Thread from '#lib/ui/Thread.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

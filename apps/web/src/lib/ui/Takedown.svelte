@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { setPostingStatus } from '$lib/api/realms';
+	import { setPostingStatus } from '#lib/api/realms.ts';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 

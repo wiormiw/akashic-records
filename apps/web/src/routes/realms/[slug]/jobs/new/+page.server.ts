@@ -1,5 +1,5 @@
 import { RealmModule } from '@akashic/lib/enums';
-import { requirePoster } from '$lib/api/guard';
+import { requirePoster } from '#lib/api/guard.ts';
 import type { PageServerLoad } from './$types';
 
 /**

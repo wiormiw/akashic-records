@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { listInterest, setInterest, settle, type Interest } from '$lib/api/realms';
-	import { openRoom } from '$lib/api/rooms';
+	import { listInterest, setInterest, settle, type Interest } from '#lib/api/realms.ts';
+	import { openRoom } from '#lib/api/rooms.ts';
 	import { RoomSubject } from '@akashic/lib/enums';
 	import { goto } from '$app/navigation';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
 
 	/**
 	 * Both sides of a posting: putting a hand up, and choosing among the hands.

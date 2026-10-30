@@ -1,4 +1,4 @@
-import { getAccounts } from '$lib/api/platform';
+import { getAccounts } from '#lib/api/platform.ts';
 import type { PageServerLoad } from './$types';
 
 /**

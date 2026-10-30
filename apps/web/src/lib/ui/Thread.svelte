@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { addComment, listComments, removeComment, type Comment } from '$lib/api/realms';
-	import { staggerChildren } from '$lib/motion';
+	import { addComment, listComments, removeComment, type Comment } from '#lib/api/realms.ts';
+	import { staggerChildren } from '#lib/motion.ts';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import Card from './Card.svelte';

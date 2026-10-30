@@ -3,10 +3,10 @@ import { context, propagation, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import {
-	BasicTracerProvider,
 	InMemorySpanExporter,
 	SimpleSpanProcessor,
-} from '@opentelemetry/sdk-trace-base';
+	TracerProvider,
+} from '@opentelemetry/sdk-trace';
 import { expect } from 'bun:test';
 import { pino } from 'pino';
 import { AppError } from './errors.ts';
@@ -25,7 +25,7 @@ export function recordSpans() {
 		// Production gets this from NodeSDK; a bare provider has no propagator, so traceparent is ignored.
 		propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 		trace.setGlobalTracerProvider(
-			new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }),
+			new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] }),
 		);
 	}
 	const shared = exporter;

@@ -1,4 +1,4 @@
-import { getPendingProposals } from '$lib/api/proposals';
+import { getPendingProposals } from '#lib/api/proposals.ts';
 import type { PageServerLoad } from './$types';
 
 /**

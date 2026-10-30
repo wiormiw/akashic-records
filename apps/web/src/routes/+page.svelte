@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { SITE_NAME, SITE_URL } from '$lib/config';
-	import { MODULE_LABELS } from '$lib/api/realms';
-	import { revealOnView, staggerChildren, tilt } from '$lib/motion';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import MeteorShower from '$lib/ui/MeteorShower.svelte';
+	import { SITE_NAME, SITE_URL } from '#lib/config.ts';
+	import { MODULE_LABELS } from '#lib/api/realms.ts';
+	import { revealOnView, staggerChildren, tilt } from '#lib/motion.ts';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import MeteorShower from '#lib/ui/MeteorShower.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

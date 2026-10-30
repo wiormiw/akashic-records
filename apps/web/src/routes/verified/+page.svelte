@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView } from '$lib/motion';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

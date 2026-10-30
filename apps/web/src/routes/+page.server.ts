@@ -1,4 +1,4 @@
-import { listRealmEvents, listRealms } from '$lib/api/realms';
+import { listRealmEvents, listRealms } from '#lib/api/realms.ts';
 import type { PageServerLoad } from './$types';
 
 /** The realms, and the next few events in the busiest one. */

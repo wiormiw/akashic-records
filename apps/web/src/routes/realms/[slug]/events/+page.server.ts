@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { RealmModule } from '@akashic/lib/enums';
-import { getRealm, getStanding, listRealmEvents } from '$lib/api/realms';
+import { getRealm, getStanding, listRealmEvents } from '#lib/api/realms.ts';
 import type { PageServerLoad } from './$types';
 
 /**

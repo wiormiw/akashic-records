@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { JOB_TYPE_LABELS, money, type JobTeaser } from '$lib/api/realms';
+	import { JOB_TYPE_LABELS, money, type JobTeaser } from '#lib/api/realms.ts';
 	import Badge from './Badge.svelte';
 
 	/**

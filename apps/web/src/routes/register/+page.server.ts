@@ -1,4 +1,4 @@
-import { mailStatus } from '$lib/api/mail';
+import { mailStatus } from '#lib/api/mail.ts';
 import type { PageServerLoad } from './$types';
 
 /**

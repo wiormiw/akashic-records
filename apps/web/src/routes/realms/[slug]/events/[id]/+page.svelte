@@ -1,15 +1,15 @@
 <script lang="ts">
 	import type { RsvpStatus } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
-	import { RSVP_LABELS, rsvp } from '$lib/api/realms';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView } from '$lib/motion';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Breadcrumbs from '$lib/ui/Breadcrumbs.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Thread from '$lib/ui/Thread.svelte';
+	import { RSVP_LABELS, rsvp } from '#lib/api/realms.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Breadcrumbs from '#lib/ui/Breadcrumbs.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Thread from '#lib/ui/Thread.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

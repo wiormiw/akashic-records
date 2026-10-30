@@ -37,7 +37,7 @@ typecheck; and either app can be deployed without the other.
 
 | Topic | Decision |
 | --- | --- |
-| HTTP | Hono 4 on Bun (`hono/bun`, including WebSockets) |
+| HTTP | Hono 4 on Bun (`@hono/bun`, including WebSockets) |
 | Validation | Valibot 1, through `@hono/standard-validator` |
 | ORM | Drizzle **1.0** (pinned to `1.0.0-rc.4`, newer than the last beta): `drizzle-orm/valibot` for row schemas, `defineRelations` for relations. Pre-release risk accepted; upgrade as it moves. |
 | Data access | Services call Drizzle directly |
@@ -69,7 +69,7 @@ akashic-records/
                             grant, realm centroids, events replay
       test/
       Dockerfile
-    web/                    SvelteKit, moved from akashic_records_fe
+    web/                    SvelteKit 3, moved from akashic_records_fe
   packages/
     db/          tables, defineRelations, row schemas, createDb(), migrations, drizzle config,
                  inTransaction, and the outbox and audit writers
@@ -378,9 +378,10 @@ already running:
 
 - Each app validates its environment at startup and refuses to start when a required variable is
   missing or malformed, as `config.ts` does today. A bad secret fails the deploy, not a request.
-- **Web:** variables live in the Cloudflare project, build variables and runtime variables set apart. The app
-  reads `$env/dynamic/public`, but the API and media origins are fixed per build (the CSP is baked
-  in), so changing `PUBLIC_API_BASE` or `PUBLIC_MEDIA_ORIGIN` needs a rebuild.
+- **Web:** variables live in the Cloudflare project, build variables and runtime variables set
+  apart. The app reads `$app/env/public` (declared in `src/env.ts`), but the API and media origins
+  are fixed per build (the CSP is baked in), so changing `PUBLIC_API_BASE` or
+  `PUBLIC_MEDIA_ORIGIN` needs a rebuild.
 - **API:** secrets live in a GitHub Environment named `production`, which can require approval
   before a deploy. The deploy workflow builds the image, pushes it to GHCR, writes
   `/opt/akashic/.env` on the VPS over SSH with mode 600, and restarts the stack with compose.

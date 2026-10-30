@@ -1,4 +1,4 @@
-import { getReports } from '$lib/api/platform';
+import { getReports } from '#lib/api/platform.ts';
 import type { PageServerLoad } from './$types';
 
 /**

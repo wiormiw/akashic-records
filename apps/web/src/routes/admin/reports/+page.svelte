@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { reviewReport } from '$lib/api/platform';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Empty from '$lib/ui/Empty.svelte';
+	import { reviewReport } from '#lib/api/platform.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Empty from '#lib/ui/Empty.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

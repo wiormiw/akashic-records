@@ -3,7 +3,7 @@
 A TypeScript API in a Bun monorepo: Bun 1.4, Hono, Valibot, Drizzle 1.0 rc, Postgres 17, OpenFGA,
 InferDI. The design is in
 [docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md](docs/superpowers/specs/2026-10-13-akashic-records-monorepo-design.md);
-read it once. Layout: `apps/api` (src, scripts, test), `apps/web` (SvelteKit) and
+read it once. Layout: `apps/api` (src, scripts, test), `apps/web` (SvelteKit 3) and
 `packages/{lib,db,contracts,authz,broker}`.
 
 Bun is usually off PATH here: `export PATH="$HOME/.bun/bin:$PATH"`.
@@ -58,6 +58,9 @@ project `akashic-prod`; never touch project `akashic` (dev, holds real data).
 - **The web app imports only `@akashic/contracts` and `@akashic/lib/enums`** (never the API, db or
   other packages). The browser talks only to the web's own `/bff`, except the room socket, which
   goes to the API with a ticket. A new enum value ships in the web app first, then the API sends it.
+  Inside the web, `#lib/...` (the `imports` of `apps/web/package.json`) replaces `$lib`, and names
+  the file: `#lib/config.ts`, `#lib/ui/Button.svelte`. Environment variables are declared, with a
+  valibot schema, in `apps/web/src/env.ts` and read from `$app/env/public` (or `/private`).
 - **One error funnel.** Every deliberate failure is a class from `@akashic/lib/errors`, made with
   `defineError` (one per code; `realm.not_member` has one per status). Services return
   `err(new RealmNotFound(...))`, and each names its error union in `<m>.types.ts`
@@ -76,8 +79,8 @@ project `akashic-prod`; never touch project `akashic` (dev, holds real data).
   the URL; otherwise a member of one realm can act in another.
 - **Comments say why, briefly.**
 - **One code style:** tabs, single quotes, 100 columns. `oxfmt` formats every `.ts`/`.js`
-  (`.oxfmtrc.json`); prettier formats only the web's `.svelte`, `app.css` and `app.html`.
-  `bun run format` applies both.
+  (`.oxfmtrc.json`); prettier formats only the web's `.svelte`, `app.css` and `app.html`, which
+  `.oxfmtrc.json` ignores so the two never fight over a file. `bun run format` applies both.
 
 ## Queries
 
@@ -164,3 +167,9 @@ they differ from the schema.
     dumped under one timestamp, because `authz-backfill` rebuilds neither the posting tuples nor
     the platform admin. `restore.sh <stamp>` needs the API and OpenFGA stopped, recreates both
     databases, and is followed by `migrate` (deploy/README.md, section 5).
+20. **The OpenTelemetry SDK accepts one minor of `@opentelemetry/api`** (SDK 3: `>=1.10.0 <1.11.0`),
+    and Bun does not warn on a mismatch. Every package pins the API with `~`, and moves it only with
+    the SDK.
+21. **Package `imports` targets are taken literally** by Node, Bun and TypeScript: `#lib/config`
+    finds nothing, `#lib/config.ts` does. TypeScript accepts the extension through SvelteKit's
+    `allowImportingTsExtensions`; `rewriteRelativeImportExtensions` would reject it.

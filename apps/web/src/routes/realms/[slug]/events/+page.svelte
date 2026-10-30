@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { SITE_NAME } from '$lib/config';
-	import { staggerChildren } from '$lib/motion';
-	import Button from '$lib/ui/Button.svelte';
-	import Empty from '$lib/ui/Empty.svelte';
-	import EventCard from '$lib/ui/EventCard.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { staggerChildren } from '#lib/motion.ts';
+	import Button from '#lib/ui/Button.svelte';
+	import Empty from '#lib/ui/Empty.svelte';
+	import EventCard from '#lib/ui/EventCard.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

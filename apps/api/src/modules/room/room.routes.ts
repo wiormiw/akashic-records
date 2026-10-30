@@ -1,6 +1,6 @@
 import type { ServerWebSocket } from 'bun';
 import { Hono, type MiddlewareHandler } from 'hono';
-import { upgradeWebSocket } from 'hono/bun';
+import { upgradeWebSocket } from '@hono/bun';
 import type { WSContext } from 'hono/ws';
 import * as v from 'valibot';
 import {

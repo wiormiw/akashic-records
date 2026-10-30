@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ensurePublished, listRooms, type RoomSummary } from '$lib/api/rooms';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView, staggerChildren } from '$lib/motion';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Avatar from '$lib/ui/Avatar.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Empty from '$lib/ui/Empty.svelte';
+	import { ensurePublished, listRooms, type RoomSummary } from '#lib/api/rooms.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView, staggerChildren } from '#lib/motion.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Avatar from '#lib/ui/Avatar.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Empty from '#lib/ui/Empty.svelte';
 
 	let rooms = $state<RoomSummary[]>([]);
 	let loading = $state(true);

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { websocket } from 'hono/bun';
+import { websocket } from '@hono/bun';
 import * as v from 'valibot';
 import type { Authorizer } from '@akashic/authz';
 import { MessageFrameView } from '@akashic/contracts';

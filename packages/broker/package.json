@@ -11,8 +11,8 @@
 	"dependencies": {
 		"@akashic/db": "workspace:*",
 		"@akashic/lib": "workspace:*",
-		"@opentelemetry/api": "^1.9.1",
+		"@opentelemetry/api": "~1.10.0",
 		"drizzle-orm": "1.0.0-rc.4",
-		"rabbitmq-client": "^5.0.8"
+		"rabbitmq-client": "^5.1.0"
 	}
 }

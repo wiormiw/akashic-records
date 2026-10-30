@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { LISTING_STATUS_LABELS, money, type ListingTeaser } from '$lib/api/realms';
-	import { identityOf } from '$lib/realm-identity';
+	import { LISTING_STATUS_LABELS, money, type ListingTeaser } from '#lib/api/realms.ts';
+	import { identityOf } from '#lib/realm-identity.ts';
 	import Badge from './Badge.svelte';
 	import Sigil from './Sigil.svelte';
 

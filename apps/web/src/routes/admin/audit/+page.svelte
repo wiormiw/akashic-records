@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { AUDIT_ACTION } from '$lib/api/platform';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Empty from '$lib/ui/Empty.svelte';
+	import { AUDIT_ACTION } from '#lib/api/platform.ts';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Empty from '#lib/ui/Empty.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

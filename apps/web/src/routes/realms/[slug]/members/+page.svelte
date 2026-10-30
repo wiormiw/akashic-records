@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { RealmRole } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
-	import { ROLE_LABELS, setRole, type Member } from '$lib/api/realms';
-	import { SITE_NAME } from '$lib/config';
-	import { staggerChildren } from '$lib/motion';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Avatar from '$lib/ui/Avatar.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Breadcrumbs from '$lib/ui/Breadcrumbs.svelte';
-	import Select from '$lib/ui/Select.svelte';
+	import { ROLE_LABELS, setRole, type Member } from '#lib/api/realms.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { staggerChildren } from '#lib/motion.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Avatar from '#lib/ui/Avatar.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Breadcrumbs from '#lib/ui/Breadcrumbs.svelte';
+	import Select from '#lib/ui/Select.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -10,9 +10,9 @@ import {
 	TicketView,
 } from '@akashic/contracts';
 import type { RoomSubject } from '@akashic/lib/enums';
-import { exportPublic, loadKeyring, type Keyring } from '$lib/crypto/keys';
-import { open, seal, verify } from '$lib/crypto/messages';
-import { API_BASE } from '$lib/config';
+import { exportPublic, loadKeyring, type Keyring } from '#lib/crypto/keys.ts';
+import { open, seal, verify } from '#lib/crypto/messages.ts';
+import { API_BASE } from '#lib/config.ts';
 
 /**
  * Private rooms, from the browser's side.

@@ -1,4 +1,4 @@
-import { API_BASE } from '$lib/config';
+import { API_BASE } from '#lib/config.ts';
 import type { RequestHandler } from './$types';
 
 /**

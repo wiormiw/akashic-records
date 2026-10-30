@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { SITE_NAME } from '$lib/config';
-	import Badge from '$lib/ui/Badge.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import Badge from '#lib/ui/Badge.svelte';
 	import type { LayoutData } from './$types';
 	import type { Snippet } from 'svelte';
 

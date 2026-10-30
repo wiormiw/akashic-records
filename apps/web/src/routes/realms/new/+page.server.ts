@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { getMyProposals } from '$lib/api/proposals';
+import { getMyProposals } from '#lib/api/proposals.ts';
 import type { PageServerLoad } from './$types';
 
 /**

@@ -1,6 +1,6 @@
 import { assertNestedBudget, loadEnv } from '@akashic/lib/config';
 import { handleSignals } from '@akashic/lib/lifecycle';
-import { websocket } from 'hono/bun';
+import { websocket } from '@hono/bun';
 import { Env } from '@/config.ts';
 import { buildContainer } from '@/container.ts';
 import { listen, MAX_REQUEST_BODY_BYTES, start, stop } from '@/runtime.ts';

@@ -1,5 +1,5 @@
 import { error, redirect } from '@sveltejs/kit';
-import { getRealm, getStanding, listMembers } from '$lib/api/realms';
+import { getRealm, getStanding, listMembers } from '#lib/api/realms.ts';
 import type { PageServerLoad } from './$types';
 
 /**

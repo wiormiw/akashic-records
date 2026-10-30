@@ -1,6 +1,6 @@
 import * as v from 'valibot';
 import { MailStatusView } from '@akashic/contracts';
-import { API_BASE } from '$lib/config';
+import { API_BASE } from '#lib/config.ts';
 
 /**
  * Whether verification mail is currently getting out of the deployment.

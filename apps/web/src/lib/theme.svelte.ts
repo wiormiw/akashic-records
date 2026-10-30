@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /** What the reader chose. `system` means no override — the OS decides via `prefers-color-scheme`. */
 export type Theme = 'system' | 'light' | 'dark';

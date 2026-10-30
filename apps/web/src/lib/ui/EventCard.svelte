@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { EventTeaser } from '$lib/api/realms';
+	import type { EventTeaser } from '#lib/api/realms.ts';
 	import Badge from './Badge.svelte';
 
 	/**

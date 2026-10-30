@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { countUp, revealOnView, staggerChildren } from '$lib/motion';
-	import Card from '$lib/ui/Card.svelte';
+	import { countUp, revealOnView, staggerChildren } from '#lib/motion.ts';
+	import Card from '#lib/ui/Card.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data }: { data: LayoutData } = $props();

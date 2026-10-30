@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { SITE_NAME } from '$lib/config';
-	import Logo from '$lib/icons/Logo.svelte';
-	import Button from '$lib/ui/Button.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import Logo from '#lib/icons/Logo.svelte';
+	import Button from '#lib/ui/Button.svelte';
 
 	/**
 	 * What a reader sees when a page does not exist, or the server could not answer.

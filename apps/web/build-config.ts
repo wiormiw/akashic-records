@@ -1,6 +1,6 @@
-import type { Config } from '@sveltejs/kit';
+import type { Config } from '@sveltejs/kit/vite';
 
-type Directives = NonNullable<NonNullable<NonNullable<Config['kit']>['csp']>['directives']>;
+type Directives = NonNullable<NonNullable<Config['csp']>['directives']>;
 type Sources = NonNullable<Directives['connect-src']>;
 // Kit's host-source template types are narrower than what URL yields, so the values are cast.
 type Source = Sources[number];

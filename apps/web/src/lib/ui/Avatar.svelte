@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { identityOf } from '$lib/realm-identity';
+	import { identityOf } from '#lib/realm-identity.ts';
 
 	/**
 	 * Somebody, at a glance.

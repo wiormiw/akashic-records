@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { openRoom } from '$lib/api/rooms';
+	import { openRoom } from '#lib/api/rooms.ts';
 	import type { RoomSubject } from '@akashic/lib/enums';
-	import Button from '$lib/ui/Button.svelte';
+	import Button from '#lib/ui/Button.svelte';
 
 	/**
 	 * Starts the private conversation about one posting.

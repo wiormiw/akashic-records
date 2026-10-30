@@ -1,4 +1,4 @@
-import { getOverview } from '$lib/api/platform';
+import { getOverview } from '#lib/api/platform.ts';
 import type { LayoutServerLoad } from './$types';
 
 /**

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { resendVerification } from '$lib/api/auth';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView } from '$lib/motion';
-	import { badgesFor, discriminator, initials, memberSince } from '$lib/profile';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
+	import { resendVerification } from '#lib/api/auth.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import { badgesFor, discriminator, initials, memberSince } from '#lib/profile.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

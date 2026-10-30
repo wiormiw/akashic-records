@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { LISTING_STATUS_LABELS, money, type ListingDetail } from '$lib/api/realms';
+	import { LISTING_STATUS_LABELS, money, type ListingDetail } from '#lib/api/realms.ts';
 	import { RoomSubject } from '@akashic/lib/enums';
-	import { SITE_NAME } from '$lib/config';
-	import { identityOf } from '$lib/realm-identity';
-	import { revealOnView } from '$lib/motion';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Breadcrumbs from '$lib/ui/Breadcrumbs.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Interest from '$lib/ui/Interest.svelte';
-	import MessageButton from '$lib/ui/MessageButton.svelte';
-	import Sigil from '$lib/ui/Sigil.svelte';
-	import Takedown from '$lib/ui/Takedown.svelte';
-	import Thread from '$lib/ui/Thread.svelte';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { identityOf } from '#lib/realm-identity.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Breadcrumbs from '#lib/ui/Breadcrumbs.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Interest from '#lib/ui/Interest.svelte';
+	import MessageButton from '#lib/ui/MessageButton.svelte';
+	import Sigil from '#lib/ui/Sigil.svelte';
+	import Takedown from '#lib/ui/Takedown.svelte';
+	import Thread from '#lib/ui/Thread.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

@@ -8,14 +8,14 @@
 		voteOnRecall,
 		withdrawUpvote,
 		type Standing,
-	} from '$lib/api/governance';
-	import { SITE_NAME } from '$lib/config';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Input from '$lib/ui/Input.svelte';
-	import Select from '$lib/ui/Select.svelte';
+	} from '#lib/api/governance.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Input from '#lib/ui/Input.svelte';
+	import Select from '#lib/ui/Select.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

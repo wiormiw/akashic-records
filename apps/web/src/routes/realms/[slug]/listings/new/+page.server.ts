@@ -1,6 +1,6 @@
 import { RealmModule } from '@akashic/lib/enums';
-import { requirePoster } from '$lib/api/guard';
-import { uploadPolicy } from '$lib/api/uploads';
+import { requirePoster } from '#lib/api/guard.ts';
+import { uploadPolicy } from '#lib/api/uploads.ts';
 import type { PageServerLoad } from './$types';
 
 /**

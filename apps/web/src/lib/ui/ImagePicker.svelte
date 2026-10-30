@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { uploadImage, type UploadPolicy } from '$lib/api/uploads';
+	import { uploadImage, type UploadPolicy } from '#lib/api/uploads.ts';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 

@@ -21,7 +21,7 @@ import {
 	RealmRole,
 	RsvpStatus,
 } from '@akashic/lib/enums';
-import { API_BASE } from '$lib/config';
+import { API_BASE } from '#lib/config.ts';
 
 /**
  * Realms: the communities, and what each one runs.

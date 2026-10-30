@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { createListing, money } from '$lib/api/realms';
-	import { SITE_NAME } from '$lib/config';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Field from '$lib/ui/Field.svelte';
-	import ImagePicker from '$lib/ui/ImagePicker.svelte';
+	import { createListing, money } from '#lib/api/realms.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Field from '#lib/ui/Field.svelte';
+	import ImagePicker from '#lib/ui/ImagePicker.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

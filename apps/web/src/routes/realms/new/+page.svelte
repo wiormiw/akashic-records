@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { RealmModule } from '@akashic/lib/enums';
 	import { goto } from '$app/navigation';
-	import { MODULE_LABELS } from '$lib/api/realms';
-	import { propose } from '$lib/api/proposals';
-	import { SITE_NAME } from '$lib/config';
-	import { identityOf } from '$lib/realm-identity';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Field from '$lib/ui/Field.svelte';
-	import Sigil from '$lib/ui/Sigil.svelte';
+	import { MODULE_LABELS } from '#lib/api/realms.ts';
+	import { propose } from '#lib/api/proposals.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { identityOf } from '#lib/realm-identity.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Field from '#lib/ui/Field.svelte';
+	import Sigil from '#lib/ui/Sigil.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

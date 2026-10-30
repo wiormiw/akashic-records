@@ -1,4 +1,4 @@
-import { listRealms } from '$lib/api/realms';
+import { listRealms } from '#lib/api/realms.ts';
 import type { PageServerLoad } from './$types';
 
 /**

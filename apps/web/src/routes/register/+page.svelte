@@ -1,13 +1,13 @@
 <script lang="ts">
 	import * as v from 'valibot';
-	import { Registration, resendVerification, signUp } from '$lib/api/auth';
-	import { SITE_NAME } from '$lib/config';
-	import { revealOnView } from '$lib/motion';
-	import BackLink from '$lib/ui/BackLink.svelte';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Card from '$lib/ui/Card.svelte';
-	import Field from '$lib/ui/Field.svelte';
+	import { Registration, resendVerification, signUp } from '#lib/api/auth.ts';
+	import { SITE_NAME } from '#lib/config.ts';
+	import { revealOnView } from '#lib/motion.ts';
+	import BackLink from '#lib/ui/BackLink.svelte';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Card from '#lib/ui/Card.svelte';
+	import Field from '#lib/ui/Field.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

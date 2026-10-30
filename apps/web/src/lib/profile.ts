@@ -1,4 +1,4 @@
-import type { SessionUser } from '$lib/api/auth';
+import type { SessionUser } from '#lib/api/auth.ts';
 
 /**
  * How a profile is put together from what the API already knows.

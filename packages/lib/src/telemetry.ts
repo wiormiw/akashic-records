@@ -52,10 +52,12 @@ export function createTelemetry(options: TelemetryOptions): AsyncDisposable {
 		}),
 		traceExporter: new OTLPTraceExporter({ url: `${options.endpoint}/v1/traces` }),
 		// Pushed to the Collector rather than scraped: a short-lived pod still reports.
-		metricReader: new PeriodicExportingMetricReader({
-			exporter: new OTLPMetricExporter({ url: `${options.endpoint}/v1/metrics` }),
-			exportIntervalMillis: options.metricIntervalMs,
-		}),
+		metricReaders: [
+			new PeriodicExportingMetricReader({
+				exporter: new OTLPMetricExporter({ url: `${options.endpoint}/v1/metrics` }),
+				exportIntervalMillis: options.metricIntervalMs,
+			}),
+		],
 	});
 
 	sdk.start();

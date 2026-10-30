@@ -1,7 +1,7 @@
 import * as v from 'valibot';
-import { SessionUser } from '$lib/api/auth';
-import { API_BASE } from '$lib/config';
-import type { Handle } from '@sveltejs/kit';
+import { SessionUser } from '#lib/api/auth.ts';
+import { API_BASE } from '#lib/config.ts';
+import type { Handle } from '@sveltejs/kit/hooks';
 
 /**
  * Resolves the session once per request, so every page and layout can read `locals.user`.

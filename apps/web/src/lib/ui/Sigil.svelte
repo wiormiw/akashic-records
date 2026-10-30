@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { identityOf, sigilRings } from '$lib/realm-identity';
+	import { identityOf, sigilRings } from '#lib/realm-identity.ts';
 
 	/**
 	 * A realm's mark, drawn from its slug.

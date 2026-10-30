@@ -9,7 +9,11 @@ src/lib/crypto/   end-to-end encryption for rooms
 src/lib/ui/       the primitives: Button, Card, Badge, Input, Select, Field, ...
 src/routes/       /, /realms, /realms/[slug]/..., /rooms, /profile, /admin, sign-in pages
 src/routes/bff/   proxy to the API, so the session cookie belongs to this origin
+src/env.ts        the environment variables, declared and validated (read from $app/env/public)
 ```
+
+Imports of `src/lib` go through `#lib/...` (the `imports` field of `package.json`) and name the
+file: `#lib/config.ts`, `#lib/ui/Button.svelte`.
 
 ## Run it
 

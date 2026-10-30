@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { RealmModule } from '@akashic/lib/enums';
 	import { invalidateAll } from '$app/navigation';
-	import { MODULE_LABELS, membership } from '$lib/api/realms';
-	import { SITE_NAME, SITE_URL } from '$lib/config';
-	import { identityOf } from '$lib/realm-identity';
-	import { countUp, revealOnView, staggerChildren } from '$lib/motion';
-	import Alert from '$lib/ui/Alert.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Empty from '$lib/ui/Empty.svelte';
-	import EventCard from '$lib/ui/EventCard.svelte';
-	import JobCard from '$lib/ui/JobCard.svelte';
-	import ListingCard from '$lib/ui/ListingCard.svelte';
-	import Section from '$lib/ui/Section.svelte';
-	import Sigil from '$lib/ui/Sigil.svelte';
+	import { MODULE_LABELS, membership } from '#lib/api/realms.ts';
+	import { SITE_NAME, SITE_URL } from '#lib/config.ts';
+	import { identityOf } from '#lib/realm-identity.ts';
+	import { countUp, revealOnView, staggerChildren } from '#lib/motion.ts';
+	import Alert from '#lib/ui/Alert.svelte';
+	import Badge from '#lib/ui/Badge.svelte';
+	import Button from '#lib/ui/Button.svelte';
+	import Empty from '#lib/ui/Empty.svelte';
+	import EventCard from '#lib/ui/EventCard.svelte';
+	import JobCard from '#lib/ui/JobCard.svelte';
+	import ListingCard from '#lib/ui/ListingCard.svelte';
+	import Section from '#lib/ui/Section.svelte';
+	import Sigil from '#lib/ui/Sigil.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();

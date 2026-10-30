@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { RealmModule } from '@akashic/lib/enums';
 
 // bun test has no SvelteKit aliases, so the config module is stubbed before realms.ts loads.
-mock.module('$lib/config', () => ({ API_BASE: 'http://api.test' }));
+mock.module('#lib/config.ts', () => ({ API_BASE: 'http://api.test' }));
 const { listRealms } = await import('./realms');
 
 type Equal<A, B> =
