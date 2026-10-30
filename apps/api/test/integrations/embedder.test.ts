@@ -36,6 +36,7 @@ const json =
 	() =>
 		Response.json(body, { status });
 const vector = Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => i / EMBEDDING_DIMENSIONS);
+const unit = vector.map((value) => value / Math.hypot(...vector));
 const logger = silentLogger();
 const options = { apiKey: 'k', baseUrl, model: 'embed-1', timeoutMs: 2000, attempts: 2, logger };
 const isUnavailable = (error: unknown) => (error as Error).name === 'AiUnavailableError';
@@ -56,7 +57,7 @@ describe('embedder', () => {
 		const embedder = createEmbedder({ ...options, provider: 'gemini' });
 		replies = [json({ embedding: { values: vector } })];
 
-		expect(await embedder.embed(`  ${'é'.repeat(1500)}  `)).toEqual(vector);
+		expect(await embedder.embed(`  ${'é'.repeat(1500)}  `)).toEqual(unit);
 		const [call] = seen;
 		expect(call?.path).toBe('/v1/models/embed-1:embedContent');
 		expect(call?.headers.get('x-goog-api-key')).toBe('k');
@@ -69,7 +70,7 @@ describe('embedder', () => {
 	test('OpenAI-compatible: no auth header without a key; blank text costs no call', async () => {
 		const embedder = createEmbedder({ ...options, provider: 'openai', apiKey: undefined });
 		replies = [json({ data: [{ embedding: vector }] })];
-		expect(await embedder.embed('x')).toEqual(vector);
+		expect(await embedder.embed('x')).toEqual(unit);
 		expect(seen[0]?.path).toBe('/v1/embeddings');
 		expect(seen[0]?.headers.get('authorization')).toBeNull();
 
@@ -77,9 +78,23 @@ describe('embedder', () => {
 		expect(seen).toHaveLength(1);
 	});
 
-	test('a model outage or a wrong-width reply means no fit check, never a blocked post', async () => {
+	test('every vector comes back unit length, in the direction the model gave', async () => {
+		const embedder = createEmbedder({ ...options, provider: 'gemini' });
+		// Gemini cut to 1536 answers with vectors about 0.69 long.
+		replies = [json({ embedding: { values: unit.map((value) => value * 0.69) } })];
+
+		const embedded = await embedder.embed('x');
+		expect(Math.hypot(...(embedded ?? []))).toBeCloseTo(1, 10);
+		for (const [i, value] of (embedded ?? []).entries())
+			expect(value).toBeCloseTo(unit[i] ?? 0, 10);
+	});
+
+	test('a model outage, a wrong-width or a zero reply means no fit check, never a blocked post', async () => {
 		const embedder = createEmbedder({ ...options, provider: 'openai' });
 		replies = [json({ data: [{ embedding: [1, 2, 3] }] })];
+		expect(await embedder.embed('x')).toBeNull();
+
+		replies = [json({ data: [{ embedding: vector.map(() => 0) }] })];
 		expect(await embedder.embed('x')).toBeNull();
 
 		replies = [json({}, 500), json({}, 500)];

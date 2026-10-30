@@ -11,7 +11,7 @@ export const EMBEDDING_DIMENSIONS = 1536;
 /** Turns text into a vector. Optional infrastructure: callers carry on without one. */
 export interface Embedder {
 	readonly available: boolean;
-	/** Null when the model is unavailable or not configured. */
+	/** Unit length; null when the model is unavailable or not configured. */
 	embed(text: string, signal?: AbortSignal): Promise<number[] | null>;
 }
 
@@ -62,7 +62,7 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
 						),
 					{ signal },
 				);
-				return vector?.length === EMBEDDING_DIMENSIONS ? vector : null;
+				return vector?.length === EMBEDDING_DIMENSIONS ? unitLength(vector) : null;
 			} catch (error) {
 				if (signal?.aborted) throw error;
 				// Fit is a courtesy check; a model outage must not block posting.
@@ -71,6 +71,14 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
 			}
 		},
 	};
+}
+
+// Gemini below its native width returns shorter vectors (about 0.69 at 1536) and OpenAI returns
+// unit ones. Callers blend vectors (the centroid nudge), so every provider must weigh the same.
+// A zero vector has no direction to keep.
+function unitLength(vector: number[]): number[] | null {
+	const norm = Math.hypot(...vector);
+	return norm === 0 ? null : vector.map((value) => value / norm);
 }
 
 /** Everything one embedding API needs: where it lives, what it is sent, where the vector is. */
