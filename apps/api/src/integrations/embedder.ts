@@ -1,6 +1,6 @@
 import type { Logger } from '@akashic/lib/log';
 import { traced } from '@akashic/lib/tracing';
-import { createModelClient, truncateBytes, type ModelClient } from './model-client.ts';
+import { createModelClient, truncateBytes } from './model-client.ts';
 
 /**
  * Width of every embedding. Part of the contract: an embedder must produce exactly this many
@@ -15,12 +15,10 @@ export interface Embedder {
 	embed(text: string, signal?: AbortSignal): Promise<number[] | null>;
 }
 
-const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const MAX_INPUT_BYTES = 2000;
 
 export interface EmbedderOptions {
-	provider: 'gemini' | 'openai' | undefined;
+	provider: keyof typeof providers | undefined;
 	apiKey: string | undefined;
 	baseUrl: string | undefined;
 	model: string;
@@ -32,7 +30,7 @@ export interface EmbedderOptions {
 /** The configured provider's embedder, or one that is unavailable when none is configured. */
 export function createEmbedder(options: EmbedderOptions): Embedder {
 	const log = options.logger.child({ component: 'embedder' });
-	const { apiKey } = options;
+	const { apiKey, model } = options;
 	const provider = options.provider && providers[options.provider];
 
 	if (!provider || (provider.requiresKey && !apiKey)) {
@@ -40,14 +38,14 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
 		return { available: false, embed: () => Promise.resolve(null) };
 	}
 
+	const auth = provider.auth ?? bearer;
 	const client = createModelClient({
 		baseUrl: (options.baseUrl ?? provider.baseUrl).replace(/\/+$/, ''),
-		headers: apiKey ? provider.auth(apiKey) : {},
+		headers: apiKey ? auth(apiKey) : {},
 		attempts: options.attempts,
 		timeoutMs: options.timeoutMs,
 		logger: log,
 	});
-	const request = provider.request(client, options.model);
 
 	return {
 		available: true,
@@ -57,8 +55,11 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
 			try {
 				const vector = await traced(
 					'embedder.embed',
-					{ 'akashic.ai.provider': options.provider, 'akashic.ai.model': options.model },
-					() => request(input, signal),
+					{ 'akashic.ai.provider': options.provider, 'akashic.ai.model': model },
+					async () =>
+						provider.vector(
+							await client.post(provider.path(model), provider.body(input, model), signal),
+						),
 					{ signal },
 				);
 				return vector?.length === EMBEDDING_DIMENSIONS ? vector : null;
@@ -72,48 +73,43 @@ export function createEmbedder(options: EmbedderOptions): Embedder {
 	};
 }
 
-type Request = (input: string, signal?: AbortSignal) => Promise<number[] | undefined>;
+/** Everything one embedding API needs: where it lives, what it is sent, where the vector is. */
+interface Provider<Reply = unknown> {
+	baseUrl: string;
+	requiresKey: boolean;
+	/** Headers carrying the key; a Bearer token when left out. */
+	auth?: (key: string) => Record<string, string>;
+	path: (model: string) => string;
+	body: (input: string, model: string) => unknown;
+	// Method syntax on purpose: its parameter is bivariant, so each provider types its own reply
+	// and still fits the one `Provider` the embedder calls.
+	vector(reply: Reply): number[] | undefined;
+}
 
-const gemini =
-	(client: ModelClient, model: string): Request =>
-	async (input, signal) => {
-		const reply = await client.post<{ embedding?: { values?: number[] } }>(
-			`models/${model}:embedContent`,
-			{
-				model: `models/${model}`,
-				content: { parts: [{ text: input }] },
-				taskType: 'SEMANTIC_SIMILARITY',
-				outputDimensionality: EMBEDDING_DIMENSIONS,
-			},
-			signal,
-		);
-		return reply.embedding?.values;
-	};
+const defineProvider = <Reply>(provider: Provider<Reply>): Provider => provider;
 
-const openAi =
-	(client: ModelClient, model: string): Request =>
-	async (input, signal) => {
-		const reply = await client.post<{ data?: { embedding?: number[] }[] }>(
-			'embeddings',
-			{ model, input, dimensions: EMBEDDING_DIMENSIONS },
-			signal,
-		);
-		return reply.data?.[0]?.embedding;
-	};
+const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
 
-// What each provider needs beyond the shared model client. OpenAI-compatible servers (Ollama,
-// vLLM) often run without a key, so only Gemini insists on one.
+// OpenAI-compatible servers (Ollama, vLLM) often run without a key, so only Gemini insists on one.
 const providers = {
-	gemini: {
-		baseUrl: GEMINI_BASE_URL,
+	gemini: defineProvider<{ embedding?: { values?: number[] } }>({
+		baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
 		requiresKey: true,
-		auth: (key: string) => ({ 'x-goog-api-key': key }),
-		request: gemini,
-	},
-	openai: {
-		baseUrl: OPENAI_BASE_URL,
+		auth: (key) => ({ 'x-goog-api-key': key }),
+		path: (model) => `models/${model}:embedContent`,
+		body: (text, model) => ({
+			model: `models/${model}`,
+			content: { parts: [{ text }] },
+			taskType: 'SEMANTIC_SIMILARITY',
+			outputDimensionality: EMBEDDING_DIMENSIONS,
+		}),
+		vector: (reply) => reply.embedding?.values,
+	}),
+	openai: defineProvider<{ data?: { embedding?: number[] }[] }>({
+		baseUrl: 'https://api.openai.com/v1',
 		requiresKey: false,
-		auth: (key: string) => ({ authorization: `Bearer ${key}` }),
-		request: openAi,
-	},
-} as const;
+		path: () => 'embeddings',
+		body: (input, model) => ({ model, input, dimensions: EMBEDDING_DIMENSIONS }),
+		vector: (reply) => reply.data?.[0]?.embedding,
+	}),
+};
